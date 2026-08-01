@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js"></script>
+  <style>
+    :root {
+      --primary-color: <?!= branding.primaryColor ?>;
+      --navy-color: <?!= branding.navyColor ?>;
+      --accent-color: <?!= branding.accentColor ?>;
+      --mint-color: <?!= branding.mintColor ?>;
+      --bg-color: <?!= branding.pageBgColor ?>;
+      --font-family: <?!= branding.fontFamily ?>;
+      --text-dark: var(--navy-color);
+      --text-muted: <?!= branding.mutedTextColor ?>;
+      --border-color: #dfe3ea;
+      --success-color: <?!= branding.successColor ?>;
+      --warning-color: <?!= branding.warningColor ?>;
+      --error-color: <?!= branding.errorColor ?>;
+      --category-tag-color: <?!= branding.categoryTagColor ?>;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); margin: 0; padding: 0; background: var(--bg-color); color: var(--text-dark); -webkit-font-smoothing: antialiased; }
+    button, input, select, textarea { font-family: var(--font-family); }
+
+    .session-expired { display:flex; align-items:center; justify-content:center; min-height:100vh; padding: 20px; }
+    .session-expired-box { background:white; border:1px solid var(--border-color); border-radius:16px; padding:32px; text-align:center; max-width:420px; }
+    .session-expired-box a { color: var(--primary-color); font-weight:700; }
+
+    .admin-screen { display: flex; flex-direction: column; height: 100vh; }
+    .admin-header { background: white; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; flex-wrap: wrap; gap: 8px; }
+    .admin-header h1 { font-size: 19px; margin: 0; color: var(--text-dark); font-weight: 800; }
+    .admin-header .who { font-size: 13px; color: var(--text-muted); }
+    .admin-header a.exit-link { font-size: 13px; color: var(--primary-color); text-decoration: underline; margin-left: 14px; font-weight: 600; }
+
+    .fp-main { flex: 1; overflow: auto; padding: 24px; }
+
+    /* ---- Event picker (shown until an Exhibition event is chosen) ---- */
+    .fp-picker-box { background: white; border: 1px solid var(--border-color); border-radius: 14px; padding: 24px; max-width: 520px; margin: 40px auto; }
+    .fp-picker-box h2 { margin: 0 0 6px; font-size: 17px; }
+    .fp-picker-box p { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
+    .fp-picker-box select { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+
+    /* ---- Toolbar ---- */
+    .fp-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .fp-toolbar .fp-event-name { font-weight: 800; font-size: 16px; margin-right: 6px; }
+    .fp-toolbar .fp-event-type-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; background: rgba(28,114,147,0.12); color: var(--primary-color); padding: 3px 8px; border-radius: 10px; margin-right: 12px; }
+    .fp-spacer { flex: 1; }
+
+    .btn { background: var(--primary-color); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; white-space: nowrap; }
+    .btn:hover { background: var(--navy-color); }
+    .btn.secondary { background: #eef1f5; color: var(--text-dark); }
+    .btn.secondary:hover { background: #e2e6ec; }
+    .btn.danger { background: #F9EBEA; color: var(--error-color); }
+    .btn.danger:hover { background: #f6cdc9; }
+    .btn:disabled { background: #bdc1c6; cursor: not-allowed; }
+
+    .fp-msg { font-size: 13px; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; display: none; }
+    .fp-msg.success { background: #EAF2EF; color: var(--success-color); display: block; }
+    .fp-msg.error { background: #F9EBEA; color: var(--error-color); display: block; }
+
+    /* ---- Canvas: fixed 800x600, dotted architectural grid via CSS ---- */
+    .fp-canvas-wrap { overflow: auto; border: 1px solid var(--border-color); border-radius: 10px; background: #eef1f5; padding: 24px; }
+    .fp-canvas {
+      position: relative;
+      width: 800px;
+      height: 600px;
+      margin: 0 auto;
+      background-color: #fbfcfe;
+      background-image: radial-gradient(circle, #b9c2d0 1px, transparent 1px);
+      background-size: 20px 20px;
+      background-position: 0 0;
+      border: 2px solid var(--border-color);
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08) inset;
+    }
+    .fp-canvas-caption { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+
+    /* ---- Floor plan elements ---- */
+    .fp-element {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      touch-action: none;
+      cursor: move;
+      border: 2px solid rgba(0,0,0,0.18);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.25;
+      padding: 4px 6px;
+      background: #55606e;
+      overflow: hidden;
+    }
+    .fp-element.selected { outline: 3px solid var(--accent-color); outline-offset: 2px; z-index: 5; }
+    .fp-element .fp-label-text { outline: none; max-width: 100%; word-break: break-word; }
+    .fp-element .fp-label-text:focus { background: rgba(255,255,255,0.15); border-radius: 3px; }
+    .fp-element .fp-remove-btn {
+      position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--error-color); color: #fff; border: 2px solid #fff; cursor: pointer; font-size: 12px;
+      line-height: 16px; padding: 0; font-weight: 800;
+    }
+
+    /* Booth: default element look (plain, neutral) */
+    .fp-type-booth { background: #55606e; }
+
+    /* Entrance landmark: success-green, so it reads as "start here" spatial context */
+    .facility-entrance { background: var(--success-color); border-radius: 6px; }
+
+    /* Coffee Lounge amenity: rounded corners, warm tone */
+    .facility-coffee { background: #8d5b2d; border-radius: 18px; }
+
+    /* Welcome Desk amenity: rounded corners, teal tone */
+    .facility-welcome { background: var(--primary-color); border-radius: 18px; }
+
+    /* Keynote Stage landmark: high-contrast treatment */
+    .facility-stage { background: #14161d; color: #ffd400; border: 2px solid #ffd400; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; border-radius: 4px; }
+
+    @media (max-width: 900px) {
+      .fp-canvas-wrap { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<? if (!adminEmail) { ?>
+  <div class="session-expired">
+    <div class="session-expired-box">
+      <h2>Session Expired</h2>
+      <p>Your admin session could not be verified or has expired.</p>
+      <a href="<?= portalUrl ?>">&larr; Return to login</a>
+    </div>
+  </div>
+<? } else { ?>
+
+  <div class="admin-screen">
+    <div class="admin-header">
+      <h1>Exhibition Floor Plan Builder</h1>
+      <div class="who">
+        <?= adminEmail ?>
+        <a class="exit-link" href="<?= portalUrl ?>?admin=1&token=<?= token ?>">&larr; Back to Admin Portal</a>
+      </div>
+    </div>
+
+    <div class="fp-main">
+
+      <!-- Event picker: shown until an Exhibition event is loaded -->
+      <div class="fp-picker-box" id="eventPickerBox">
+        <h2>Choose an Exhibition to lay out</h2>
+        <p>Only events (or sub-events) with Event Type "Exhibition" can have a floor plan.</p>
+        <div id="pickerMsg" class="fp-msg"></div>
+        <select id="eventPickerSelect"><option value="">Loading events…</option></select>
+        <button class="btn" style="width:100%;" onclick="loadChosenEvent()">Open Floor Plan</button>
+      </div>
+
+      <!-- Builder: shown once an event is loaded -->
+      <div id="builderBox" style="display:none;">
+        <div class="fp-toolbar">
+          <div>
+            <span class="fp-event-name" id="fpEventName"></span>
+            <span class="fp-event-type-tag">Exhibition</span>
+          </div>
+          <a href="javascript:void(0)" onclick="showEventPicker()" style="font-size:12px; color:var(--primary-color); text-decoration:underline;">Change event</a>
+          <div class="fp-spacer"></div>
+          <button class="btn secondary" onclick="addElement('booth')">+ Booth</button>
+          <button class="btn secondary" onclick="addElement('entrance')">+ Entrance</button>
+          <button class="btn secondary" onclick="addElement('coffee')">+ Coffee Lounge</button>
+          <button class="btn secondary" onclick="addElement('welcome')">+ Welcome Desk</button>
+          <button class="btn secondary" onclick="addElement('stage')">+ Keynote Stage</button>
+          <button class="btn" id="btnSaveLayout" onclick="saveLayout()">Save Layout</button>
+        </div>
+
+        <div id="fpMsg" class="fp-msg"></div>
+
+        <div class="fp-canvas-wrap">
+          <div class="fp-canvas" id="fpCanvas"></div>
+          <p class="fp-canvas-caption">800 × 600 canvas · snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<? } ?>
+
+<script>
+  var ADMIN_TOKEN = '<?= token ?>';
+  var INITIAL_EVENT_ID = '<?= eventId ?>';
+
+  // Mirrors the backend's FLOORPLAN_CANVAS_WIDTH / HEIGHT / GRID_SIZE
+  // constants (Code.gs) — the server re-validates and re-snaps everything
+  // on save regardless, so a mismatch here can't corrupt data, only look
+  // slightly off until the page is reloaded with the server's own values.
+  var CANVAS_WIDTH = 800;
+  var CANVAS_HEIGHT = 600;
+  var GRID_SIZE = 20;
+
+  // Toolbar element presets — the four required types.
+  var ELEMENT_PRESETS = {
+    booth:    { type: 'booth',    label: 'Booth',          width: 100, height: 80, cssClass: '' },
+    entrance: { type: 'landmark', label: 'Entrance',       width: 120, height: 50, cssClass: 'facility-entrance' },
+    coffee:   { type: 'amenity',  label: 'Coffee Lounge',  width: 180, height: 70, cssClass: 'facility-coffee' },
+    welcome:  { type: 'amenity',  label: 'Welcome Desk',   width: 240, height: 50, cssClass: 'facility-welcome' },
+    stage:    { type: 'landmark', label: 'Keynote Stage',  width: 500, height: 80, cssClass: 'facility-stage' }
+  };
+
+  var currentEventId = '';
+  var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass }]
+  var elementsById = {};   // elementId -> element object (same references as in `elements`)
+  var addCounter = 0;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (!ADMIN_TOKEN) return; // session-expired branch is shown server-side instead
+
+    if (INITIAL_EVENT_ID) {
+      loadFloorPlan(INITIAL_EVENT_ID);
+    } else {
+      populateEventPicker();
+    }
+  });
+
+  /* ---------------- Event picker ---------------- */
+
+  function populateEventPicker() {
+    google.script.run
+      .withSuccessHandler(function(options) {
+        var select = document.getElementById('eventPickerSelect');
+        if (!options.length) {
+          select.innerHTML = '<option value="">No Exhibition events found</option>';
+          return;
+        }
+        select.innerHTML = options.map(function(o) {
+          return '<option value="' + o.eventId + '">' + escapeHtml(o.eventName) + (o.isSubEvent ? ' (sub-event)' : '') + '</option>';
+        }).join('');
+      })
+      .withFailureHandler(function(err) { showPickerMsg(err.message, true); })
+      .getExhibitionEventOptions(ADMIN_TOKEN);
+  }
+
+  function loadChosenEvent() {
+    var eventId = document.getElementById('eventPickerSelect').value;
+    if (!eventId) { showPickerMsg('Please select an event.', true); return; }
+    loadFloorPlan(eventId);
+  }
+
+  function showEventPicker() {
+    document.getElementById('builderBox').style.display = 'none';
+    document.getElementById('eventPickerBox').style.display = 'block';
+    populateEventPicker();
+  }
+
+  function showPickerMsg(text, isError) {
+    var el = document.getElementById('pickerMsg');
+    el.className = 'fp-msg ' + (isError ? 'error' : 'success');
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  function showFpMsg(text, isError) {
+    var el = document.getElementById('fpMsg');
+    el.className = 'fp-msg ' + (isError ? 'error' : 'success');
+    el.textContent = text;
+    el.style.display = 'block';
+    if (!isError) setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
+
+  /* ---------------- Load / render ---------------- */
+
+  function loadFloorPlan(eventId) {
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (data.eventType !== 'Exhibition') {
+          showPickerMsg('"' + data.eventName + '" is not an Exhibition event.', true);
+          return;
+        }
+        currentEventId = data.eventId;
+        CANVAS_WIDTH = data.canvasWidth || CANVAS_WIDTH;
+        CANVAS_HEIGHT = data.canvasHeight || CANVAS_HEIGHT;
+        GRID_SIZE = data.gridSize || GRID_SIZE;
+
+        document.getElementById('fpEventName').textContent = data.eventName;
+        document.getElementById('eventPickerBox').style.display = 'none';
+        document.getElementById('builderBox').style.display = 'block';
+
+        var canvas = document.getElementById('fpCanvas');
+        canvas.style.width = CANVAS_WIDTH + 'px';
+        canvas.style.height = CANVAS_HEIGHT + 'px';
+        canvas.innerHTML = '';
+        elements = [];
+        elementsById = {};
+
+        (data.elements || []).forEach(function(el) { addElementToCanvas(el, false); });
+      })
+      .withFailureHandler(function(err) { showPickerMsg(err.message, true); })
+      .getFloorPlanLayout(ADMIN_TOKEN, eventId);
+  }
+
+  /* ---------------- Toolbar: add elements ---------------- */
+
+  function addElement(presetKey) {
+    var preset = ELEMENT_PRESETS[presetKey];
+    if (!preset) return;
+
+    // Cascade each newly-added element a little so they don't stack
+    // exactly on top of one another; still grid-aligned.
+    var offset = (addCounter * GRID_SIZE) % (GRID_SIZE * 8);
+    addCounter++;
+
+    // Every new booth defaulting to the literal string "Booth" meant a
+    // floor plan with several un-renamed booths rendered identically to
+    // attendees with no way to tell them apart. Auto-generate a unique
+    // code (A1, A2, ... B1, ...) instead; the admin can still rename it.
+    var label = presetKey === 'booth'
+      ? nextBoothLabel(elements.filter(function(e) { return e.type === 'booth'; }).length)
+      : preset.label;
+
+    var el = {
+      elementId: '',
+      x: snap(20 + offset),
+      y: snap(20 + offset),
+      width: preset.width,
+      height: preset.height,
+      type: preset.type,
+      label: label,
+      cssClass: preset.cssClass
+    };
+    addElementToCanvas(el, true);
+  }
+
+  function nextBoothLabel(existingBoothCount) {
+    var letter = String.fromCharCode(65 + (Math.floor(existingBoothCount / 26) % 26));
+    var number = (existingBoothCount % 26) + 1;
+    return letter + number;
+  }
+
+  function snap(n) { return Math.round(n / GRID_SIZE) * GRID_SIZE; }
+
+  function addElementToCanvas(elData, isNew) {
+    var el = {
+      elementId: elData.elementId || ('local-' + new Date().getTime() + '-' + Math.floor(Math.random() * 100000)),
+      x: elData.x, y: elData.y, width: elData.width, height: elData.height,
+      type: elData.type, label: elData.label, cssClass: elData.cssClass || ''
+    };
+    elements.push(el);
+    elementsById[el.elementId] = el;
+
+    var div = document.createElement('div');
+    div.className = 'fp-element fp-type-' + el.type + (el.cssClass ? ' ' + el.cssClass : '');
+    div.dataset.id = el.elementId;
+    div.style.left = el.x + 'px';
+    div.style.top = el.y + 'px';
+    div.style.width = el.width + 'px';
+    div.style.height = el.height + 'px';
+    div.innerHTML =
+      '<span class="fp-label-text" contenteditable="true">' + escapeHtml(el.label) + '</span>' +
+      '<button type="button" class="fp-remove-btn" title="Remove">&times;</button>';
+
+    div.querySelector('.fp-label-text').addEventListener('blur', function() {
+      el.label = this.textContent.trim() || el.label;
+    });
+    div.querySelector('.fp-remove-btn').addEventListener('click', function(evt) {
+      evt.stopPropagation();
+      removeElement(el.elementId);
+    });
+    div.addEventListener('click', function() {
+      document.querySelectorAll('.fp-element.selected').forEach(function(n) { n.classList.remove('selected'); });
+      div.classList.add('selected');
+    });
+
+    document.getElementById('fpCanvas').appendChild(div);
+    makeInteractive(div, el);
+  }
+
+  function removeElement(elementId) {
+    var div = document.querySelector('.fp-element[data-id="' + elementId + '"]');
+    if (div) div.remove();
+    delete elementsById[elementId];
+    elements = elements.filter(function(e) { return e.elementId !== elementId; });
+  }
+
+  /* ---------------- interact.js: drag + resize with 20px grid snap ---------------- */
+
+  function makeInteractive(div, el) {
+    interact(div)
+      .draggable({
+        listeners: { move: dragMoveListener },
+        modifiers: [
+          interact.modifiers.snap({
+            targets: [interact.snappers.grid({ x: GRID_SIZE, y: GRID_SIZE })],
+            range: Infinity,
+            relativePoints: [{ x: 0, y: 0 }]
+          }),
+          interact.modifiers.restrictRect({ restriction: 'parent', endOnly: true })
+        ],
+        inertia: false
+      })
+      .resizable({
+        edges: { left: true, right: true, top: true, bottom: true },
+        listeners: { move: resizeMoveListener },
+        modifiers: [
+          interact.modifiers.snapSize({
+            targets: [interact.snappers.grid({ x: GRID_SIZE, y: GRID_SIZE })]
+          }),
+          interact.modifiers.restrictSize({ min: { width: GRID_SIZE, height: GRID_SIZE } }),
+          interact.modifiers.restrictEdges({ outer: 'parent' })
+        ],
+        inertia: false
+      });
+
+    function dragMoveListener(event) {
+      var target = event.target;
+      var e = elementsById[target.dataset.id];
+      if (!e) return;
+      e.x = snap(e.x + event.dx);
+      e.y = snap(e.y + event.dy);
+      target.style.left = e.x + 'px';
+      target.style.top = e.y + 'px';
+    }
+
+    function resizeMoveListener(event) {
+      var target = event.target;
+      var e = elementsById[target.dataset.id];
+      if (!e) return;
+
+      e.width = snap(event.rect.width);
+      e.height = snap(event.rect.height);
+      e.x = snap(e.x + event.deltaRect.left);
+      e.y = snap(e.y + event.deltaRect.top);
+
+      target.style.width = e.width + 'px';
+      target.style.height = e.height + 'px';
+      target.style.left = e.x + 'px';
+      target.style.top = e.y + 'px';
+    }
+  }
+
+  /* ---------------- Save (single bulk call) ---------------- */
+
+  function saveLayout() {
+    if (!currentEventId) return;
+
+    // Make sure any in-progress label edit is committed before reading.
+    document.activeElement && document.activeElement.blur && document.activeElement.blur();
+
+    var btn = document.getElementById('btnSaveLayout');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    var payload = elements.map(function(el) {
+      return {
+        elementId: el.elementId.indexOf('local-') === 0 ? '' : el.elementId, // let the server assign a durable ID for brand-new elements
+        x: el.x, y: el.y, width: el.width, height: el.height,
+        type: el.type, label: el.label, cssClass: el.cssClass
+      };
+    });
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        btn.disabled = false;
+        btn.textContent = 'Save Layout';
+        showFpMsg('Saved ' + res.savedCount + ' element(s).', false);
+        loadFloorPlan(currentEventId); // reload so server-assigned IDs/snapping are reflected
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Save Layout';
+        showFpMsg('Error saving layout: ' + err.message, true);
+      })
+      .saveFloorPlanLayout(ADMIN_TOKEN, currentEventId, payload);
+  }
+
+  /* ---------------- Utils ---------------- */
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+</script>
+</body>
+</html>

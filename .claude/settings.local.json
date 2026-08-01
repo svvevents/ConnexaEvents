@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(mkdir -p /tmp_extract)",
+      "Bash(unzip -o ConnexaEvents.xlsx -d /tmp_extract)",
+      "Read(//tmp_extract/xl/**)",
+      "Bash(unzip -l ConnexaEvents.xlsx)",
+      "Bash(rm -rf /tmp/xlsx_extract)",
+      "Bash(mkdir -p /tmp/xlsx_extract)",
+      "Bash(unzip -oq ConnexaEvents.xlsx -d /tmp/xlsx_extract)",
+      "Read(//tmp/xlsx_extract/xl/**)",
+      "Bash(node -e ' *)",
+      "Bash(node \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\aeb0b314-91cd-4327-acae-9dfc1b9c20dc\\\\scratchpad\\\\parse.js\")",
+      "Bash(node -c Code.js)",
+      "Bash(node --check \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\aeb0b314-91cd-4327-acae-9dfc1b9c20dc\\\\scratchpad\\\\portal_script.js\")",
+      "Bash(node \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\68d2db19-eb9b-42a9-aa64-8501992539ec\\\\scratchpad\\\\extract.js\")",
+      "Bash(node \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\68d2db19-eb9b-42a9-aa64-8501992539ec\\\\scratchpad\\\\extract2.js\")",
+      "Bash(node \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\68d2db19-eb9b-42a9-aa64-8501992539ec\\\\scratchpad\\\\extract3.js\")",
+      "Bash(clasp push *)",
+      "Bash(curl -sL \"https://script.google.com/macros/s/AKfycbwdgktNSR835IzmUlng6qiRf4jRSWdko_QMY4OUEdTpqw91FCdY19HWvahr0kwhvXE/exec\" -o /tmp/live_page2.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(node \"C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\68d2db19-eb9b-42a9-aa64-8501992539ec\\\\scratchpad\\\\server.js\")",
+      "Bash(taskkill //F //PID 17092)",
+      "Bash(rm -f \"/c/Users/saara/clasp_codelab/clasp_codelab_connexaevents/.claude/launch.json\")",
+      "Bash(clasp redeploy *)",
+      "Bash(cp 'C:\\\\Users\\\\saara\\\\clasp_codelab\\\\clasp_codelab_connexaevents\\\\Code.js' 'C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\0d23a121-04dc-47db-bb0b-eaef1357b235\\\\scratchpad\\\\backup/Code.js.pre-milestones.bak')",
+      "Bash(cp 'C:\\\\Users\\\\saara\\\\clasp_codelab\\\\clasp_codelab_connexaevents\\\\Portal.html' 'C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\0d23a121-04dc-47db-bb0b-eaef1357b235\\\\scratchpad\\\\backup/Portal.html.pre-milestones.bak')",
+      "Bash(cp 'C:\\\\Users\\\\saara\\\\clasp_codelab\\\\clasp_codelab_connexaevents\\\\AdminPortal.html' 'C:\\\\Users\\\\saara\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-saara-clasp-codelab-clasp-codelab-connexaevents\\\\0d23a121-04dc-47db-bb0b-eaef1357b235\\\\scratchpad\\\\backup/AdminPortal.html.pre-milestones.bak')",
+      "Bash(node --check Code.js)",
+      "Bash(node --check admin_script_0.js)",
+      "Bash(rm -f admin_script_0.js)",
+      "Bash(node --check portal_script_0.js)",
+      "Bash(rm -f portal_script_0.js)",
+      "Bash(echo done *)"
+    ]
+  }
+}

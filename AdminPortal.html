@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: <?!= branding.primaryColor ?>;
+      --navy-color: <?!= branding.navyColor ?>;
+      --accent-color: <?!= branding.accentColor ?>;
+      --mint-color: <?!= branding.mintColor ?>;
+      --bg-color: <?!= branding.pageBgColor ?>;
+      --font-family: <?!= branding.fontFamily ?>;
+      --text-dark: var(--navy-color);
+      --text-muted: <?!= branding.mutedTextColor ?>;
+      --border-color: #dfe3ea;
+      --success-color: <?!= branding.successColor ?>;
+      --warning-color: <?!= branding.warningColor ?>;
+      --error-color: <?!= branding.errorColor ?>;
+      --category-tag-color: <?!= branding.categoryTagColor ?>;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); margin: 0; padding: 0; background: var(--bg-color); color: var(--text-dark); -webkit-font-smoothing: antialiased; }
+    button, input, select, textarea { font-family: var(--font-family); }
+
+    .session-expired { display:flex; align-items:center; justify-content:center; min-height:100vh; padding: 20px; }
+    .session-expired-box { background:white; border:1px solid var(--border-color); border-radius:16px; padding:32px; text-align:center; max-width:420px; }
+    .session-expired-box a { color: var(--primary-color); font-weight:700; }
+
+    .admin-screen { display: flex; flex-direction: column; height: 100vh; }
+    .admin-header { background: white; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; flex-wrap: wrap; gap: 8px; }
+    .admin-header h1 { font-size: 19px; margin: 0; color: var(--text-dark); font-weight: 800; }
+    .admin-header .who { font-size: 13px; color: var(--text-muted); }
+    .admin-header a.exit-link { font-size: 13px; color: var(--primary-color); text-decoration: underline; margin-left: 14px; font-weight: 600; }
+
+    .admin-body { display: flex; flex: 1; overflow: hidden; }
+    .admin-sidebar { width: 220px; background: var(--navy-color); padding: 12px; flex-shrink: 0; }
+    .admin-nav-item { padding: 12px 14px; font-size: 14px; font-weight: 600; color: #b9c2d0; cursor: pointer; border-radius: 10px; margin-bottom: 4px; }
+    .admin-nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .admin-nav-item.active { background: var(--primary-color); color: #fff; }
+
+    .admin-main { flex: 1; padding: 24px; overflow-y: auto; }
+    .admin-panel { display: none; }
+    .admin-panel.active { display: block; }
+
+    .panel-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .panel-header-row h2 { margin: 0; font-weight: 800; }
+    .btn { background: var(--primary-color); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+    .btn:hover { background: var(--navy-color); }
+    .btn.secondary { background: #eef1f5; color: var(--text-dark); }
+    .btn.secondary:hover { background: #e2e6ec; }
+    .btn.small { padding: 6px 12px; font-size: 12px; }
+    .btn:disabled { background: #bdc1c6; cursor: not-allowed; }
+
+    /* My Events */
+    .event-card { background: white; border: 1px solid var(--border-color); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
+    .event-card-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; cursor: pointer; flex-wrap: wrap; gap: 10px; }
+    .event-card-header:hover { background: #f8f9fa; }
+    .event-card-header h3 { margin: 0; font-size: 16px; font-weight: 700; }
+    .event-card-header .meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .event-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .subevents-wrap { display: none; border-top: 1px solid #f1f3f4; padding: 12px 20px 20px; background: var(--bg-color); }
+    .subevents-wrap.open { display: block; }
+    .subevent-row { display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #eee; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+    .subevent-row .name { font-weight: 700; font-size: 14px; }
+    .subevent-row .tags { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .subevent-row-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px; }
+    .tag.live { background: rgba(34,211,197,0.15); color: var(--success-color); }
+    .tag.draft { background: #FBF4E6; color: var(--warning-color); }
+    .tag.closed { background: #F9EBEA; color: var(--error-color); }
+    .tag.type { background: #F0EDF6; color: var(--category-tag-color); }
+    .empty-state { color: var(--text-muted); background: white; border: 1px dashed var(--border-color); border-radius: 12px; padding: 40px; text-align: center; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(13,27,42,0.55); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
+    .modal-box { background: white; border-radius: 16px; max-width: 560px; width: 100%; padding: 24px; max-height: 88vh; overflow-y: auto; position: relative; }
+    .modal-close { position: absolute; top: 14px; right: 16px; font-size: 20px; cursor: pointer; color: var(--text-muted); }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%; padding: 9px 11px; box-sizing: border-box; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; background: #fbfcfe;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(28,114,147,0.12); }
+    /* Placeholder (example text) vs. real saved data — same convention as the attendee portal: an empty field showing only its placeholder is styled distinctly (italic, muted, dashed border) so it can't be mistaken for a real saved value. */
+    .form-group input::placeholder, .form-group textarea::placeholder { color: var(--text-muted); font-style: italic; }
+    .form-group input:placeholder-shown, .form-group textarea:placeholder-shown { border-style: dashed; }
+    .form-group input:not(:placeholder-shown), .form-group textarea:not(:placeholder-shown) { color: var(--text-dark); font-style: normal; border-style: solid; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 14px; }
+    .checkbox-row input { width: auto; accent-color: var(--primary-color); }
+
+    /* Per-option TypeConfig editors: Exhibition's floor-plan tables live in
+       the separate Floor Plan Designer now, but Curated Event's ranked
+       options (label/price/places, with "Unlimited" support) are edited
+       right here, alongside the flat Price/Places fallback used when no
+       options are configured (#eventPricingFields). */
+    .type-config-wrap { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #fbfcfe; }
+    .type-config-wrap > label.section-label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+    .type-config-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
+    .type-config-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+    .type-config-row input { flex: 1; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; min-width: 0; }
+    .type-config-row .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
+    .add-row-btn { background: #eef1f5; color: var(--text-dark); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    /* Dashboard */
+    .tiles-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .tile { flex: 1; min-width: 150px; background: #ffffff; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; text-align: center; }
+    .tile .val { font-size: 28px; font-weight: 800; color: var(--primary-color); }
+    .tile .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
+    .section { background: white; border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; margin-top: 20px; }
+    .section h3 { font-size: 15px; margin: 0 0 14px; border-bottom: 2px solid #f1f3f4; padding-bottom: 8px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
+    th { color: var(--text-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; background: var(--bg-color); }
+    .bar-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 13px; }
+    .bar-label { width: 140px; flex-shrink: 0; }
+    .bar-track { flex: 1; background: #f1f3f4; border-radius: 6px; height: 18px; overflow: hidden; margin: 0 10px; }
+    .bar-fill { background: var(--primary-color); height: 100%; }
+    .bar-count { width: 30px; text-align: right; font-weight: 700; }
+    .event-picker { margin-bottom: 20px; }
+    .event-picker select { padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; min-width: 260px; max-width: 100%; background: #fbfcfe; }
+    .badge-warn { background: #FBF4E6; color: var(--warning-color); font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
+
+    /* ---------- MOBILE RESPONSIVE ---------- */
+    @media (max-width: 860px) {
+      .admin-body { flex-direction: column; overflow: visible; }
+      .admin-screen { height: auto; min-height: 100vh; }
+      .admin-sidebar {
+        width: auto; display: flex; overflow-x: auto; padding: 10px 12px; gap: 8px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .admin-nav-item { margin-bottom: 0; flex-shrink: 0; white-space: nowrap; }
+      .admin-main { padding: 16px; overflow-y: visible; }
+      .admin-header { padding: 12px 16px; }
+      .tiles-row { gap: 10px; }
+      .form-row { flex-direction: column; gap: 0; }
+      .section { overflow-x: auto; }
+      table { min-width: 480px; }
+      .bar-label { width: 100px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<? if (!adminEmail) { ?>
+  <div class="session-expired">
+    <div class="session-expired-box">
+      <h2>Session Expired</h2>
+      <p>Your admin session could not be verified or has expired.</p>
+      <a href="<?= portalUrl ?>">&larr; Return to login</a>
+    </div>
+  </div>
+<? } else { ?>
+
+  <div class="admin-screen">
+    <div class="admin-header">
+      <h1>Admin Portal</h1>
+      <div class="who"><?= adminEmail ?> <a class="exit-link" href="<?= portalUrl ?>">Exit to Main Portal</a></div>
+    </div>
+
+    <div class="admin-body">
+      <div class="admin-sidebar">
+        <div class="admin-nav-item active" id="admin-nav-events">My Events</div>
+        <div class="admin-nav-item" id="admin-nav-dashboard">Dashboard</div>
+      </div>
+
+      <div class="admin-main">
+
+        <!-- ============ MY EVENTS ============ -->
+        <div id="admin-panel-events" class="admin-panel active">
+          <div class="panel-header-row">
+            <h2>My Events</h2>
+            <button class="btn" onclick="openEventModal()">+ New Event</button>
+          </div>
+          <div id="eventsListWrap"><p>Loading events...</p></div>
+        </div>
+
+        <!-- ============ DASHBOARD ============ -->
+        <div id="admin-panel-dashboard" class="admin-panel">
+          <div class="panel-header-row">
+            <h2>Dashboard</h2>
+          </div>
+
+          <div class="section">
+            <h3>Executive Summary</h3>
+            <div id="execSummaryTiles" class="tiles-row"></div>
+            <div id="execSummaryEvents"></div>
+          </div>
+
+          <div class="section">
+            <h3>Event-Specific Detail</h3>
+            <div class="event-picker">
+              <select id="dashboardEventPicker" onchange="loadEventDashboard()">
+                <option value="">-- Select an event --</option>
+              </select>
+            </div>
+            <div id="eventDashboardContent"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Event / Sub-Event Modal -->
+  <div id="eventModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeEventModal()">&times;</span>
+      <h3 id="eventModalTitle" style="margin-top:0;">New Event</h3>
+      <div id="eventModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+
+      <input type="hidden" id="eventIdField">
+      <input type="hidden" id="parentEventIdField">
+
+      <div class="form-group">
+        <label>Event Name *</label>
+        <input type="text" id="eventNameField" placeholder="e.g. Annual Convention">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="eventDescField" rows="3"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Event Date</label>
+          <input type="date" id="eventDateField">
+        </div>
+        <div class="form-group" id="eventTimeGroup">
+          <label>Event Time</label>
+          <input type="time" id="eventTimeField">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="eventLocationField">
+      </div>
+      <div class="form-group">
+        <label>Website</label>
+        <input type="text" id="eventWebsiteField">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="eventStatusField">
+          <option value="Draft">Draft</option>
+          <option value="Live">Live</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </div>
+
+      <div id="eventTypeFields">
+        <div class="form-group">
+          <label>Event Type *</label>
+          <select id="eventTypeField" onchange="onEventTypeChange()">
+            <option value="">-- Select Event Type --</option>
+          </select>
+        </div>
+        <div id="eventTypeRegTypesHint" style="font-size:12px; color:#5f6368; margin-bottom:14px;"></div>
+
+        <div id="exhibitionConfigWrap" class="type-config-wrap" style="display:none;">
+          <label class="section-label">Exhibition Floor Plan</label>
+          <p class="type-config-hint">
+            Booths, amenities, and landmarks are laid out visually in the Floor Plan Designer — attendees rank up to 3
+            preferred booths and the top available one is allocated automatically. Set a flat Price per booth below.
+          </p>
+          <button type="button" class="btn secondary" id="editFloorPlanBtn" onclick="openFloorPlanDesigner()" disabled>🗺️ Open Floor Plan Designer</button>
+          <p class="type-config-hint" id="floorPlanSaveHint" style="margin-top:8px;">Save this event first to unlock the Floor Plan Designer.</p>
+        </div>
+
+        <div id="curatedEventConfigWrap" class="type-config-wrap" style="display:none;">
+          <label class="section-label">Curated Event Options *</label>
+          <p class="type-config-hint">
+            Give attendees a choice of options (e.g. different tour times or add-ons), each with its own Price
+            and Places. By default attendees can select as many options as they like — each selection is its own
+            registration, confirmed or waitlisted against that option's own capacity. Leave Places blank for
+            Unlimited on that option.
+            <strong>At least one option, with a price and capacity, is required to save this event.</strong>
+          </p>
+          <div id="curatedEventOptionRows"></div>
+          <button type="button" class="add-row-btn" onclick="addCuratedEventOptionRow()">+ Add Option</button>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Max options per attendee</label>
+            <input type="number" id="curatedEventMaxOptionsField" min="1" step="1" placeholder="Blank = unlimited" style="max-width:150px;">
+          </div>
+        </div>
+
+        <div id="b2bMeetingsConfigWrap" class="type-config-wrap" style="display:none;">
+          <label class="section-label">B2B Pre-scheduled Meetings Options *</label>
+          <p class="type-config-hint">
+            Give attendees a single choice of Registration Types (sourced from the ClientOnboarding tab for "B2B
+            Pre-scheduled Meetings"), each with its own Price and Places. Attendees pick exactly one option; it is
+            allocated automatically, with a waiting list if it's full. Leave Places blank
+            for Unlimited on that option. <strong>At least one option, with a price and capacity, is required to save
+            this event.</strong>
+          </p>
+          <div id="b2bMeetingsOptionRows"></div>
+          <button type="button" class="add-row-btn" onclick="addB2BMeetingsOptionRow()">+ Add Option</button>
+        </div>
+      </div>
+
+      <p id="umbrellaHint" style="display:none; font-size:12px; color:#5f6368; margin:-6px 0 14px;">
+        This event is an <strong>Umbrella Event</strong>: attendees register once at the common base form, then opt into
+        each sub-event below individually. Add sub-events with "+ Add Sub-Event" — each one needs its own Event Type.
+      </p>
+
+      <div id="eventPricingFields" class="type-config-wrap" style="display:none;">
+        <label class="section-label" id="pricingFieldsLabel">Pricing &amp; Capacity</label>
+        <p class="type-config-hint" id="pricingFieldsHint">A single price and place count for the whole event (e.g. a Curated Event). Leave Places blank for no limit.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label id="priceFieldLabel">Price per Registrant<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span></label>
+            <input type="number" id="priceField" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-group" id="placesFieldWrap">
+            <label>Places / Capacity</label>
+            <input type="text" id="placesField" placeholder="Blank = Unlimited">
+          </div>
+        </div>
+      </div>
+
+      <div id="eventTopLevelOnlyFields">
+        <div class="checkbox-row">
+          <input type="checkbox" id="dietaryReqField">
+          <label for="dietaryReqField" style="font-weight:normal;">Capture Dietary Requirements for this event</label>
+        </div>
+        <div class="form-group">
+          <label>Details Page URL (optional)</label>
+          <input type="text" id="detailsPageUrlField" placeholder="https://... (internal or external page shown when a tile is expanded)">
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <select id="currencyField" onchange="updatePriceCurrencySuffix()">
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="AED">AED</option>
+            <option value="SAR">SAR</option>
+            <option value="INR">INR (₹)</option>
+          </select>
+          <p class="type-config-hint" style="margin:6px 0 0;">Applies to this event and every sub-event beneath it.</p>
+        </div>
+      </div>
+      <p id="subEventHint" style="display:none; font-size:12px; color:#5f6368; margin:-6px 0 14px;">
+        Sub-events are only allowed under an "Umbrella Event". Choose this sub-event's own Event Type above — the
+        attendee opts into it individually during registration, and its type-specific rules (Curated Event price/
+        capacity, Exhibition floor plan, etc.) apply exactly as they would for a standalone event. Currency is
+        inherited from the parent event.
+      </p>
+
+      <div id="milestonesConfigWrap" class="type-config-wrap">
+        <label class="section-label">Milestones</label>
+        <p class="type-config-hint">
+          Tasks attendees must complete by a due date for this event/sub-event (e.g. upload artwork, confirm company
+          details). Shown to registered attendees under "My Events". Optional — leave empty for none.
+        </p>
+        <div id="milestoneRows"></div>
+        <button type="button" class="add-row-btn" onclick="addMilestoneRow()">+ Add Milestone</button>
+      </div>
+
+      <button class="btn" style="width:100%;" onclick="saveEvent()">Save Event</button>
+    </div>
+  </div>
+
+<? } ?>
+
+<script>
+  var ADMIN_TOKEN = '<?= token ?>';
+  var PORTAL_URL = '<?= portalUrl ?>';
+  var onboardingData = {};
+  var eventTypeOptions = { topLevelTypes: [], subEventTypes: [] };
+  var currentParentForModal = null;
+  // Client-side cache of getEventDashboardData results, keyed by eventId:
+  // { data, fetchedAt, pending }. Prefetched in the background as soon as
+  // the executive summary lists which events exist (see
+  // prefetchEventDashboards), so picking an event in the dropdown usually
+  // renders instantly instead of waiting on a fresh round trip. Kept short
+  // relative to Portal.html's registration-form cache since registration
+  // counts here change continuously as attendees register, independent of
+  // anything the admin does.
+  var eventDashboardCache = {};
+  var EVENT_DASHBOARD_CACHE_TTL_MS = 20000;
+  var UMBRELLA_TYPE = 'Umbrella Event';
+  var EXHIBITION_TYPE = 'Exhibition';
+  var CURATED_EVENT_TYPE = 'Curated Event';
+  var B2B_MEETINGS_TYPE = 'B2B Pre-scheduled Meetings';
+  var MILESTONE_TYPE_CONFIRM_INFO = 'ConfirmInfo';
+  var MILESTONE_TYPE_FILE_UPLOAD = 'FileUpload';
+  var MILESTONE_TYPE_SET_PREFERENCES = 'SetPreferences';
+  var CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', INR: '₹' };
+
+  /** Renders a capacity state (from getEventCapacityState_ on the backend) as a short display string. */
+  function capacityBadgeText(capacityState) {
+    if (!capacityState) return '';
+    if (capacityState.unlimited) return 'Unlimited places';
+    return capacityState.confirmed + ' / ' + capacityState.capacity + ' places';
+  }
+
+  /** For a Curated Event or B2B Pre-scheduled Meetings WITH ranked options configured, shows "N options configured" instead of a single flat price/capacity. */
+  function optionsConfiguredBadgeText(evt) {
+    if ((evt.eventType !== CURATED_EVENT_TYPE && evt.eventType !== B2B_MEETINGS_TYPE) || !Array.isArray(evt.typeConfig) || !evt.typeConfig.length) return '';
+    return evt.typeConfig.length + (evt.typeConfig.length === 1 ? ' option configured' : ' options configured');
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (!ADMIN_TOKEN) return;
+    document.getElementById('admin-nav-events').addEventListener('click', function() { switchAdminPanel('events'); });
+    document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
+    loadOnboardingData();
+    loadEventsList();
+  });
+
+  function switchAdminPanel(panelId) {
+    document.querySelectorAll('.admin-nav-item').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('.admin-panel').forEach(function(el) { el.classList.remove('active'); });
+    document.getElementById('admin-nav-' + panelId).classList.add('active');
+    document.getElementById('admin-panel-' + panelId).classList.add('active');
+    if (panelId === 'dashboard') loadDashboardPanel();
+  }
+
+  function loadOnboardingData() {
+    google.script.run
+      .withSuccessHandler(function(data) { onboardingData = data; })
+      .getEventTypesAndRegTypes(ADMIN_TOKEN);
+
+    google.script.run
+      .withSuccessHandler(function(data) { eventTypeOptions = data; })
+      .getEventTypeOptions(ADMIN_TOKEN);
+  }
+
+  /** Rebuilds the Event Type dropdown for the modal's current context (top-level vs sub-event). */
+  function populateEventTypeDropdown(isSubEvent) {
+    var select = document.getElementById('eventTypeField');
+    var list = isSubEvent ? eventTypeOptions.subEventTypes : eventTypeOptions.topLevelTypes;
+    select.innerHTML = '<option value="">-- Select Event Type --</option>';
+    (list || []).forEach(function(type) {
+      var opt = document.createElement('option');
+      var isB2B = onboardingData[type] && onboardingData[type].isB2B;
+      opt.value = type;
+      opt.textContent = type === UMBRELLA_TYPE ? type : (type + (isB2B ? ' (B2B)' : ''));
+      select.appendChild(opt);
+    });
+  }
+
+  /* ================= MY EVENTS ================= */
+  function loadEventsList() {
+    google.script.run
+      .withSuccessHandler(renderEventsList)
+      .withFailureHandler(function(err) { document.getElementById('eventsListWrap').innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
+      .getAdminEventsTree(ADMIN_TOKEN);
+  }
+
+  function renderEventsList(events) {
+    var wrap = document.getElementById('eventsListWrap');
+    if (!events.length) {
+      wrap.innerHTML = '<div class="empty-state">No events yet. Click "+ New Event" to create your first one.</div>';
+      return;
+    }
+    wrap.innerHTML = '';
+    events.forEach(function(evt) {
+      var card = document.createElement('div');
+      card.className = 'event-card';
+
+      var header = document.createElement('div');
+      header.className = 'event-card-header';
+      var statusClass = evt.status === 'Live' ? 'live' : (evt.status === 'Closed' ? 'closed' : 'draft');
+      var isUmbrella = evt.eventType === UMBRELLA_TYPE;
+      var currency = evt.effectiveCurrency || 'USD';
+      var capBadge = capacityBadgeText(evt.capacityState);
+      var curatedOptionsBadge = optionsConfiguredBadgeText(evt);
+      header.innerHTML =
+        '<div><h3>' + escapeHtml(evt.eventName) + '</h3><div class="meta">' +
+          '<span class="tag ' + statusClass + '" style="margin-right:6px;">' + escapeHtml(evt.status) + '</span>' +
+          '<span class="tag type" style="margin-right:6px;">' + escapeHtml(evt.eventType) + '</span>' +
+          (evt.isB2B ? '<span class="tag type" style="margin-right:6px;">B2B</span>' : '') +
+          (evt.dietaryRequirements ? '<span class="tag type" style="margin-right:6px;">Dietary</span>' : '') +
+          evt.totalRegistrations + ' registration(s) · ' + evt.subEvents.length + ' sub-event(s)' +
+          (curatedOptionsBadge ? ' · ' + curatedOptionsBadge : (evt.price ? ' · ' + escapeHtml(currency) + ' ' + Number(evt.price).toFixed(2) + '/registrant' : '')) +
+          (capBadge ? ' · ' + capBadge : '') +
+          (evt.eventDate ? ' · ' + escapeHtml(evt.eventDate) : '') +
+        '</div></div>' +
+        '<div class="event-card-actions">' +
+          '<button class="btn small secondary" data-action="edit-parent">Edit</button>' +
+          (isUmbrella ? '<button class="btn small" data-action="add-sub">+ Add Sub-Event</button>' : '') +
+          (evt.eventType === EXHIBITION_TYPE ? '<button class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
+        '</div>';
+      header.querySelector('[data-action="edit-parent"]').addEventListener('click', function(e) { e.stopPropagation(); openEventModal(evt); });
+      var addSubBtn = header.querySelector('[data-action="add-sub"]');
+      if (addSubBtn) addSubBtn.addEventListener('click', function(e) { e.stopPropagation(); openEventModal(null, evt); });
+      var floorPlanBtn = header.querySelector('[data-action="floor-plan"]');
+      if (floorPlanBtn) floorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(evt.eventId); });
+
+      var subWrap = document.createElement('div');
+      subWrap.className = 'subevents-wrap';
+
+      header.addEventListener('click', function() { subWrap.classList.toggle('open'); });
+
+      if (evt.subEvents.length === 0) {
+        subWrap.innerHTML = '<p style="color:#5f6368; font-size:13px;">' +
+          (isUmbrella
+            ? 'No sub-events yet. Click "+ Add Sub-Event" to create one — each needs its own Event Type (Curated Event, Exhibition, etc.).'
+            : 'This event has no sub-events. To add sub-events, first edit this event and set its Event Type to "Umbrella Event".') +
+          '</p>';
+      } else {
+        evt.subEvents.forEach(function(sub) {
+          var row = document.createElement('div');
+          row.className = 'subevent-row';
+          var subStatusClass = sub.status === 'Live' ? 'live' : (sub.status === 'Closed' ? 'closed' : 'draft');
+          var subCapBadge = capacityBadgeText(sub.capacityState);
+          var subCuratedOptionsBadge = optionsConfiguredBadgeText(sub);
+          row.innerHTML =
+            '<div><div class="name">' + escapeHtml(sub.eventName) + '</div>' +
+              '<div class="tags">' +
+                '<span class="tag ' + subStatusClass + '">' + escapeHtml(sub.status) + '</span>' +
+                '<span class="tag type">' + escapeHtml(sub.eventType || 'No type') + '</span>' +
+              '</div>' +
+              '<div style="font-size:12px; color:#5f6368; margin-top:4px;">' +
+                (sub.eventDate ? escapeHtml(sub.eventDate) : '') + (sub.eventTime ? ' · ' + escapeHtml(sub.eventTime) : '') +
+                (sub.location ? ' · ' + escapeHtml(sub.location) : '') +
+                (subCuratedOptionsBadge ? ' · ' + subCuratedOptionsBadge : (sub.price ? ' · ' + escapeHtml(sub.effectiveCurrency || currency) + ' ' + Number(sub.price).toFixed(2) : '')) +
+                (subCapBadge ? ' · ' + subCapBadge : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="subevent-row-actions">' +
+              (sub.eventType === EXHIBITION_TYPE ? '<button class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
+              '<button class="btn small secondary" data-action="edit">Edit</button>' +
+            '</div>';
+          row.querySelector('[data-action="edit"]').addEventListener('click', function() { openEventModal(sub, evt); });
+          var subFloorPlanBtn = row.querySelector('[data-action="floor-plan"]');
+          if (subFloorPlanBtn) subFloorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(sub.eventId); });
+          subWrap.appendChild(row);
+        });
+      }
+
+      card.appendChild(header);
+      card.appendChild(subWrap);
+      wrap.appendChild(card);
+    });
+  }
+
+  function openEventModal(existingEvent, parentEvent) {
+    document.getElementById('eventModalMsg').style.display = 'none';
+    currentParentForModal = parentEvent || null;
+    var isSubEvent = !!(parentEvent || (existingEvent && existingEvent.parentEventId));
+
+    document.getElementById('eventIdField').value = existingEvent ? existingEvent.eventId : '';
+    document.getElementById('parentEventIdField').value = parentEvent ? parentEvent.eventId : (existingEvent ? existingEvent.parentEventId : '');
+    document.getElementById('eventNameField').value = existingEvent ? existingEvent.eventName : '';
+    document.getElementById('eventDescField').value = existingEvent ? existingEvent.description : '';
+    document.getElementById('eventDateField').value = existingEvent ? existingEvent.eventDate : '';
+    document.getElementById('eventTimeField').value = existingEvent ? existingEvent.eventTime : '';
+    document.getElementById('eventLocationField').value = existingEvent ? existingEvent.location : '';
+    document.getElementById('eventWebsiteField').value = existingEvent ? existingEvent.website : '';
+    document.getElementById('eventStatusField').value = existingEvent ? existingEvent.status : 'Draft';
+    document.getElementById('dietaryReqField').checked = existingEvent ? existingEvent.dietaryRequirements : false;
+    document.getElementById('detailsPageUrlField').value = existingEvent ? (existingEvent.detailsPageUrl || '') : '';
+    // Price/Places now apply to ANY row (top-level or sub-event).
+    document.getElementById('priceField').value = existingEvent ? (existingEvent.price || 0) : '';
+    document.getElementById('placesField').value = existingEvent && existingEvent.places !== null && existingEvent.places !== undefined ? existingEvent.places : '';
+    // Currency is top-level-only; default to the parent's currency for a sub-event.
+    var currencyForCurrencyField = existingEvent && !isSubEvent ? (existingEvent.currencyRaw || 'USD') : 'USD';
+    document.getElementById('currencyField').value = currencyForCurrencyField;
+
+    populateEventTypeDropdown(isSubEvent);
+    document.getElementById('eventTypeField').value = existingEvent ? existingEvent.eventType : '';
+
+    // IsB2B / Dietary / Details URL / Currency only apply to the top-level,
+    // registrable Event. Event Type (+ its TypeConfig) is required on
+    // BOTH — every sub-event under an Umbrella Event needs its own type.
+    // Price / Places apply on BOTH too (as the Curated Event fallback, or
+    // as Exhibition's flat per-booth price).
+    document.getElementById('eventTypeFields').style.display = 'block';
+    document.getElementById('eventTopLevelOnlyFields').style.display = isSubEvent ? 'none' : 'block';
+    document.getElementById('subEventHint').style.display = isSubEvent ? 'block' : 'none';
+
+    var titlePrefix = existingEvent ? 'Edit ' : 'New ';
+    var titleSuffix = isSubEvent ? 'Sub-Event' : 'Event';
+    document.getElementById('eventModalTitle').textContent = titlePrefix + titleSuffix +
+      (parentEvent ? ' (under "' + parentEvent.eventName + '")' : '');
+
+    clearConfigRows();
+    if (existingEvent && existingEvent.eventType === CURATED_EVENT_TYPE && Array.isArray(existingEvent.typeConfig)) {
+      existingEvent.typeConfig.forEach(function(opt) { addCuratedEventOptionRow(opt); });
+    } else if (existingEvent && existingEvent.eventType === B2B_MEETINGS_TYPE && Array.isArray(existingEvent.typeConfig)) {
+      existingEvent.typeConfig.forEach(function(opt) { addB2BMeetingsOptionRow(opt); });
+    }
+    document.getElementById('curatedEventMaxOptionsField').value =
+      existingEvent && existingEvent.eventType === CURATED_EVENT_TYPE && existingEvent.maxOptionsPerAttendee != null
+        ? existingEvent.maxOptionsPerAttendee : '';
+
+    // Milestones apply regardless of EventType (unlike the two blocks
+    // above), so they're repopulated unconditionally here.
+    if (existingEvent && Array.isArray(existingEvent.milestones)) {
+      existingEvent.milestones.forEach(function(m) { addMilestoneRow(m); });
+    }
+
+    onEventTypeChange();
+    document.getElementById('eventModal').style.display = 'flex';
+  }
+
+  function closeEventModal() { document.getElementById('eventModal').style.display = 'none'; }
+
+  function clearConfigRows() {
+    document.getElementById('curatedEventOptionRows').innerHTML = '';
+    document.getElementById('b2bMeetingsOptionRows').innerHTML = '';
+    document.getElementById('milestoneRows').innerHTML = '';
+  }
+
+  /** The currency shown next to "Price per Registrant" — the event's own currency if top-level, else the parent's. */
+  function updatePriceCurrencySuffix() {
+    var isSubEvent = !!currentParentForModal || document.getElementById('parentEventIdField').value;
+    var currency = isSubEvent
+      ? ((currentParentForModal && (currentParentForModal.currencyRaw || currentParentForModal.effectiveCurrency)) || 'USD')
+      : (document.getElementById('currencyField').value || 'USD');
+    var symbol = CURRENCY_SYMBOLS[currency] || currency;
+    document.getElementById('priceCurrencySuffix').textContent = ' (' + symbol + ' ' + currency + ')';
+  }
+
+  function onEventTypeChange() {
+    var type = document.getElementById('eventTypeField').value;
+    var hint = document.getElementById('eventTypeRegTypesHint');
+    if (type && onboardingData[type]) {
+      hint.textContent = 'Registration types: ' + onboardingData[type].registrationTypes.join(', ') +
+        (onboardingData[type].isB2B ? ' (B2B matching enabled)' : '');
+    } else if (type === UMBRELLA_TYPE) {
+      hint.textContent = 'Attendees will fill the common base form once, then opt into each sub-event below.';
+    } else {
+      hint.textContent = '';
+    }
+
+    var umbrellaHintEl = document.getElementById('umbrellaHint');
+    if (umbrellaHintEl) umbrellaHintEl.style.display = type === UMBRELLA_TYPE ? 'block' : 'none';
+
+    var isExhibition = type === EXHIBITION_TYPE;
+    var isCuratedEvent = type === CURATED_EVENT_TYPE;
+    var isB2BMeetings = type === B2B_MEETINGS_TYPE;
+    document.getElementById('exhibitionConfigWrap').style.display = isExhibition ? 'block' : 'none';
+    if (isExhibition) {
+      var eventId = document.getElementById('eventIdField').value;
+      document.getElementById('editFloorPlanBtn').disabled = !eventId;
+      document.getElementById('floorPlanSaveHint').style.display = eventId ? 'none' : 'block';
+    }
+
+    document.getElementById('curatedEventConfigWrap').style.display = isCuratedEvent ? 'block' : 'none';
+    // Curated Event and B2B Pre-scheduled Meetings both REQUIRE at least
+    // one option (see normalizeTypeConfig_ on the server, which enforces
+    // this even if this client-side nudge is somehow bypassed) — start
+    // the admin off with one blank row instead of an empty list, so the
+    // requirement is obvious and easy to satisfy immediately.
+    if (isCuratedEvent && !document.getElementById('curatedEventOptionRows').children.length) {
+      addCuratedEventOptionRow();
+    }
+
+    document.getElementById('b2bMeetingsConfigWrap').style.display = isB2BMeetings ? 'block' : 'none';
+    if (isB2BMeetings && !document.getElementById('b2bMeetingsOptionRows').children.length) {
+      addB2BMeetingsOptionRow();
+    }
+
+    // Price/Places apply to every EventType except "Umbrella Event" (no
+    // registration record of its own), Curated Event, and B2B
+    // Pre-scheduled Meetings — those last two are ALWAYS priced via their
+    // options list above now (no flat fallback for new/re-saved events;
+    // see the DECISION note in Code.gs for the legacy-data exception).
+    // Exhibition gets Price ONLY — a single flat price applied per booked
+    // booth — since capacity there is simply the number of "Booth"
+    // elements placed in the Floor Plan Designer, not a manually-entered
+    // Places count.
+    var showPricing = !!type && type !== UMBRELLA_TYPE && !isCuratedEvent && !isB2BMeetings;
+    document.getElementById('eventPricingFields').style.display = showPricing ? 'block' : 'none';
+    document.getElementById('placesFieldWrap').style.display = isExhibition ? 'none' : 'block';
+    document.getElementById('priceFieldLabel').innerHTML = (isExhibition ? 'Price per Booth' : 'Price per Registrant') +
+      '<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span>';
+    document.getElementById('pricingFieldsLabel').textContent = 'Pricing & Capacity';
+    document.getElementById('pricingFieldsHint').textContent = isExhibition
+      ? 'Applied once per booth when an attendee\'s booking is confirmed.'
+      : 'A single price and place count for the whole event. Leave Places blank for no limit.';
+    updatePriceCurrencySuffix();
+    syncMilestoneTypeOptions();
+  }
+
+  /** Opens the drag-and-drop Floor Plan Designer for a given (already-saved) Exhibition event/sub-event in a new tab. */
+  function launchFloorPlanDesigner(eventId) {
+    if (!eventId) return;
+    var url = PORTAL_URL + '?admin=1&token=' + encodeURIComponent(ADMIN_TOKEN) + '&page=floorplan&eventId=' + encodeURIComponent(eventId);
+    window.open(url, '_blank');
+  }
+
+  /** Same launch, but read from the currently-open modal's own Event ID field (with a "save first" guard). */
+  function openFloorPlanDesigner() {
+    var eventId = document.getElementById('eventIdField').value;
+    if (!eventId) { showModalMsg('Please save this event first, then reopen it to access the Floor Plan Designer.', true); return; }
+    launchFloorPlanDesigner(eventId);
+  }
+
+  /** Adds one Curated Event option row (Label / Price / Places, with "Unlimited" supported via a blank or literal "Unlimited" Places value). */
+  function addCuratedEventOptionRow(existing) {
+    var wrap = document.getElementById('curatedEventOptionRows');
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    var placesVal = existing && existing.places !== null && existing.places !== undefined ? existing.places : '';
+    row.innerHTML =
+      '<input type="text" class="opt-label" placeholder="Option name (e.g. City Tour)" value="' + escapeHtml(existing ? existing.label : '') + '">' +
+      '<input type="number" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;" value="' + (existing ? existing.price : '') + '">' +
+      '<input type="text" class="opt-places" placeholder="Places (blank = Unlimited)" style="max-width:150px;" value="' + escapeHtml(String(placesVal)) + '">' +
+      '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
+    if (existing && existing.id) row.dataset.optId = existing.id;
+    wrap.appendChild(row);
+  }
+
+  /**
+   * Adds one B2B Pre-scheduled Meetings option row: a Registration Type
+   * dropdown (instead of Curated Event's free-text label — sourced from
+   * the ClientOnboarding tab's RegistrationType column for EventType =
+   * "B2B Pre-scheduled Meetings", same list the onboarding hint above
+   * already reads from) / Price / Places.
+   */
+  function addB2BMeetingsOptionRow(existing) {
+    var wrap = document.getElementById('b2bMeetingsOptionRows');
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    var placesVal = existing && existing.places !== null && existing.places !== undefined ? existing.places : '';
+    var regTypes = (onboardingData[B2B_MEETINGS_TYPE] && onboardingData[B2B_MEETINGS_TYPE].registrationTypes) || [];
+    var selectHtml = '<select class="opt-regtype"><option value="">-- Select Registration Type --</option>' +
+      regTypes.map(function(rt) {
+        return '<option value="' + escapeHtml(rt) + '"' + (existing && existing.label === rt ? ' selected' : '') + '>' + escapeHtml(rt) + '</option>';
+      }).join('') + '</select>';
+    row.innerHTML =
+      selectHtml +
+      '<input type="number" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;" value="' + (existing ? existing.price : '') + '">' +
+      '<input type="text" class="opt-places" placeholder="Places (blank = Unlimited)" style="max-width:150px;" value="' + escapeHtml(String(placesVal)) + '">' +
+      '<input type="text" class="opt-desc" placeholder="Description (optional)" style="flex:2;" value="' + escapeHtml(existing ? (existing.description || '') : '') + '">' +
+      '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
+    if (existing && existing.id) row.dataset.optId = existing.id;
+    wrap.appendChild(row);
+  }
+
+  /**
+   * Reads either the Curated Event or B2B Pre-scheduled Meetings option
+   * rows back into { id, label, price, places } for saving. `price` is
+   * kept as the RAW trimmed string (not parsed here) so a genuinely blank
+   * price can still be detected and rejected by validateOptionsRequired()
+   * below, and by normalizeTypeConfig_ server-side, rather than silently
+   * becoming 0.
+   */
+  function collectTypeConfig(eventType) {
+    var containerId = eventType === CURATED_EVENT_TYPE ? 'curatedEventOptionRows'
+      : eventType === B2B_MEETINGS_TYPE ? 'b2bMeetingsOptionRows'
+      : null;
+    if (!containerId) return [];
+
+    var labelSelector = eventType === B2B_MEETINGS_TYPE ? '.opt-regtype' : '.opt-label';
+    return Array.prototype.slice.call(document.querySelectorAll('#' + containerId + ' .type-config-row')).map(function(row) {
+      var descEl = row.querySelector('.opt-desc');
+      return {
+        id: row.dataset.optId || '',
+        label: row.querySelector(labelSelector).value.trim(),
+        price: row.querySelector('.opt-price').value.trim(), // raw string; '' means "not entered"
+        places: row.querySelector('.opt-places').value.trim(), // '' = Unlimited; server re-validates via parsePlaces_
+        description: descEl ? descEl.value.trim() : ''
+      };
+    }).filter(function(o) { return o.label; });
+  }
+
+  /**
+   * Client-side mirror of normalizeTypeConfig_'s mandatory-options rule
+   * (Bug-proofing note: the server enforces this independently too — see
+   * normalizeTypeConfig_ in Code.gs — so this is a fast-fail UX nicety,
+   * not the actual security/data-integrity boundary). Returns an error
+   * string, or null if valid.
+   */
+  function validateOptionsRequired(eventType, typeConfig) {
+    if (eventType !== CURATED_EVENT_TYPE && eventType !== B2B_MEETINGS_TYPE) return null;
+    var kind = eventType === B2B_MEETINGS_TYPE ? 'B2B Pre-scheduled Meetings' : 'Curated Event';
+    if (!typeConfig.length) {
+      return 'At least one pricing option (with its own price and capacity) is required for a ' + kind + ' event.';
+    }
+    for (var i = 0; i < typeConfig.length; i++) {
+      if (typeConfig[i].price === '') {
+        return 'Please enter a price for option "' + typeConfig[i].label + '".';
+      }
+    }
+    return null;
+  }
+
+  /** True while the modal's current Event Type field is B2B Pre-scheduled Meetings — the only type "Set preferences" milestones are valid on. */
+  function isSetPreferencesAllowed() {
+    return document.getElementById('eventTypeField').value === B2B_MEETINGS_TYPE;
+  }
+
+  /**
+   * Called from onEventTypeChange whenever the admin changes the Event
+   * Type field WHILE milestone rows already exist — adds/removes the "Set
+   * preferences" option on every row's Type dropdown to match, and resets
+   * any row currently set to it back to the default if it's no longer
+   * valid (rather than silently leaving an invalid selection in place).
+   */
+  function syncMilestoneTypeOptions() {
+    var allowed = isSetPreferencesAllowed();
+    document.querySelectorAll('#milestoneRows .ms-type').forEach(function(select) {
+      var existingOption = select.querySelector('option[value="' + MILESTONE_TYPE_SET_PREFERENCES + '"]');
+      if (allowed && !existingOption) {
+        var opt = document.createElement('option');
+        opt.value = MILESTONE_TYPE_SET_PREFERENCES;
+        opt.textContent = 'Set preferences';
+        select.appendChild(opt);
+      } else if (!allowed && existingOption) {
+        if (select.value === MILESTONE_TYPE_SET_PREFERENCES) {
+          select.value = MILESTONE_TYPE_CONFIRM_INFO;
+          select.dispatchEvent(new Event('change'));
+        }
+        existingOption.remove();
+      }
+    });
+  }
+
+  /**
+   * Adds one Milestone row: Title / Description / Due Date / Type, plus a
+   * type-specific config block (accepted extensions + max size, only for
+   * FileUpload) that shows/hides on that row's own Type dropdown — applies
+   * regardless of the event's own EventType, unlike the Curated Event/B2B
+   * option rows above.
+   */
+  function addMilestoneRow(existing) {
+    var wrap = document.getElementById('milestoneRows');
+    var outer = document.createElement('div');
+    outer.className = 'milestone-row-wrap';
+    outer.style.cssText = 'border:1px solid var(--border-color); border-radius:8px; padding:8px; margin-bottom:8px;';
+    if (existing && existing.milestoneId) outer.dataset.msId = existing.milestoneId;
+
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    row.style.marginBottom = '0';
+    var milestoneType = (existing && existing.milestoneType) || MILESTONE_TYPE_CONFIRM_INFO;
+    var typeOptionsHtml =
+      '<option value="' + MILESTONE_TYPE_CONFIRM_INFO + '"' + (milestoneType === MILESTONE_TYPE_CONFIRM_INFO ? ' selected' : '') + '>Confirm/update info</option>' +
+      '<option value="' + MILESTONE_TYPE_FILE_UPLOAD + '"' + (milestoneType === MILESTONE_TYPE_FILE_UPLOAD ? ' selected' : '') + '>File upload</option>';
+    // "Set preferences" only makes sense on a B2B Pre-scheduled Meetings
+    // entity — include it here if that's already true, or if this
+    // existing row is already set to it (so reopening the modal doesn't
+    // silently drop the saved value; syncMilestoneTypeOptions below
+    // reconciles it against the CURRENT Event Type as the admin edits).
+    if (isSetPreferencesAllowed() || milestoneType === MILESTONE_TYPE_SET_PREFERENCES) {
+      typeOptionsHtml += '<option value="' + MILESTONE_TYPE_SET_PREFERENCES + '"' + (milestoneType === MILESTONE_TYPE_SET_PREFERENCES ? ' selected' : '') + '>Set preferences</option>';
+    }
+    row.innerHTML =
+      '<input type="text" class="ms-title" placeholder="Milestone title" value="' + escapeHtml(existing ? existing.title : '') + '">' +
+      '<input type="text" class="ms-desc" placeholder="Description (optional)" style="flex:2;" value="' + escapeHtml(existing ? (existing.description || '') : '') + '">' +
+      '<input type="date" class="ms-due" style="max-width:150px;" value="' + escapeHtml(existing ? (existing.dueDate || '') : '') + '">' +
+      '<select class="ms-type" style="max-width:170px;">' + typeOptionsHtml + '</select>' +
+      '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { outer.remove(); });
+
+    var config = document.createElement('div');
+    config.className = 'ms-fileupload-config';
+    config.style.cssText = 'display:none; gap:6px; margin-top:6px;';
+    var cfg = (existing && existing.config) || {};
+    config.innerHTML =
+      '<input type="text" class="ms-accepted-types" placeholder="Accepted extensions (e.g. pdf,jpg,png)" style="max-width:260px; display:inline-block; margin-right:6px;" value="' + escapeHtml(cfg.acceptedTypes || '') + '">' +
+      '<input type="number" class="ms-max-size" min="1" step="1" placeholder="Max size (MB)" style="max-width:120px; display:inline-block;" value="' + (cfg.maxSizeMB || 10) + '">';
+
+    function syncConfigVisibility() {
+      config.style.display = row.querySelector('.ms-type').value === MILESTONE_TYPE_FILE_UPLOAD ? 'block' : 'none';
+    }
+    row.querySelector('.ms-type').addEventListener('change', syncConfigVisibility);
+    syncConfigVisibility();
+
+    outer.appendChild(row);
+    outer.appendChild(config);
+    wrap.appendChild(outer);
+  }
+
+  /** Reads all Milestone rows back into an array for saving (mirrors collectTypeConfig's pattern above). */
+  function collectMilestones() {
+    return Array.prototype.slice.call(document.querySelectorAll('#milestoneRows .milestone-row-wrap')).map(function(outer) {
+      var row = outer.querySelector('.type-config-row');
+      var milestoneType = row.querySelector('.ms-type').value;
+      var config = {};
+      if (milestoneType === MILESTONE_TYPE_FILE_UPLOAD) {
+        config = {
+          acceptedTypes: outer.querySelector('.ms-accepted-types').value.trim(),
+          maxSizeMB: Number(outer.querySelector('.ms-max-size').value) || 10
+        };
+      }
+      return {
+        milestoneId: outer.dataset.msId || '',
+        title: row.querySelector('.ms-title').value.trim(),
+        description: row.querySelector('.ms-desc').value.trim(),
+        dueDate: row.querySelector('.ms-due').value,
+        milestoneType: milestoneType,
+        config: config
+      };
+    }).filter(function(m) { return m.title; });
+  }
+
+  function saveEvent() {
+    var eventType = document.getElementById('eventTypeField').value;
+    var payload = {
+      eventId: document.getElementById('eventIdField').value,
+      parentEventId: document.getElementById('parentEventIdField').value,
+      eventName: document.getElementById('eventNameField').value.trim(),
+      description: document.getElementById('eventDescField').value.trim(),
+      eventDate: document.getElementById('eventDateField').value,
+      eventTime: document.getElementById('eventTimeField').value,
+      location: document.getElementById('eventLocationField').value.trim(),
+      website: document.getElementById('eventWebsiteField').value.trim(),
+      status: document.getElementById('eventStatusField').value,
+      eventType: eventType,
+      dietaryRequirements: document.getElementById('dietaryReqField').checked,
+      detailsPageUrl: document.getElementById('detailsPageUrlField').value.trim(),
+      price: parseFloat(document.getElementById('priceField').value) || 0,
+      places: document.getElementById('placesField').value.trim(), // '' = Unlimited
+      currency: document.getElementById('currencyField').value, // top-level only; ignored for sub-events
+      typeConfig: collectTypeConfig(eventType), // options for Curated Event / B2B Pre-scheduled Meetings (now REQUIRED, >=1 — see validateOptionsRequired below); '[]' for every other type
+      // Curated Event only: caps how many options one attendee may select; '' = unlimited (default). Ignored for every other EventType.
+      maxOptionsPerAttendee: eventType === CURATED_EVENT_TYPE ? document.getElementById('curatedEventMaxOptionsField').value.trim() : '',
+      // Milestones apply to ANY EventType (top-level or sub-event alike) — see collectMilestones.
+      milestones: collectMilestones()
+    };
+
+    if (!payload.eventName) { showModalMsg('Event Name is required.', true); return; }
+    if (!payload.eventType) { showModalMsg('Please select an Event Type for this event.', true); return; }
+
+    var optionsError = validateOptionsRequired(eventType, payload.typeConfig);
+    if (optionsError) { showModalMsg(optionsError, true); return; }
+
+    if (payload.maxOptionsPerAttendee && (!/^\d+$/.test(payload.maxOptionsPerAttendee) || Number(payload.maxOptionsPerAttendee) < 1)) {
+      showModalMsg('Max options per attendee must be a whole number of 1 or more (or blank for unlimited).', true); return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function() {
+        closeEventModal();
+        loadEventsList();
+      })
+      .withFailureHandler(function(err) { showModalMsg(err.message, true); })
+      .createOrUpdateEvent(ADMIN_TOKEN, payload);
+  }
+
+  function showModalMsg(text, isError) {
+    var el = document.getElementById('eventModalMsg');
+    el.style.background = isError ? '#F9EBEA' : '#EAF2EF';
+    el.style.color = isError ? 'var(--error-color)' : 'var(--success-color)';
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  /* ================= DASHBOARD ================= */
+  function loadDashboardPanel() {
+    google.script.run
+      .withSuccessHandler(function(summary) {
+        renderExecSummary(summary);
+        populateEventPicker(summary);
+        prefetchEventDashboards(summary.events || []);
+      })
+      .getExecutiveSummary(ADMIN_TOKEN);
+  }
+
+  /**
+   * Fires getEventDashboardData in the background for every event listed
+   * in the executive summary, so selecting one in the dropdown usually
+   * finds the data already sitting in eventDashboardCache instead of
+   * waiting on a fresh round trip. Best-effort only: a failed/slow
+   * prefetch just means loadEventDashboard falls back to its normal
+   * network call.
+   */
+  function prefetchEventDashboards(events) {
+    events.forEach(function(evt) { prefetchEventDashboard(evt.eventId); });
+  }
+
+  function prefetchEventDashboard(eventId) {
+    var cached = eventDashboardCache[eventId];
+    if (cached && (cached.pending || (Date.now() - cached.fetchedAt) < EVENT_DASHBOARD_CACHE_TTL_MS)) return;
+    eventDashboardCache[eventId] = { data: null, fetchedAt: Date.now(), pending: true };
+    google.script.run
+      .withSuccessHandler(function(data) {
+        eventDashboardCache[eventId] = { data: data, fetchedAt: Date.now(), pending: false };
+      })
+      .withFailureHandler(function() {
+        delete eventDashboardCache[eventId]; // let an actual selection retry normally
+      })
+      .getEventDashboardData(ADMIN_TOKEN, eventId);
+  }
+
+  function renderExecSummary(summary) {
+    var tiles = document.getElementById('execSummaryTiles');
+    tiles.innerHTML =
+      tileHtml(summary.totalEvents, 'Events') +
+      tileHtml(summary.liveEvents, 'Live Events') +
+      tileHtml(summary.totalSubEvents, 'Agenda Items') +
+      tileHtml(summary.totalRegistrations, 'Total Registrations') +
+      tileHtml(summary.totalCompanies, 'Companies Registered');
+  }
+
+  function tileHtml(val, lbl) {
+    return '<div class="tile"><div class="val">' + val + '</div><div class="lbl">' + lbl + '</div></div>';
+  }
+
+  function populateEventPicker(summary) {
+    var select = document.getElementById('dashboardEventPicker');
+    select.innerHTML = '<option value="">-- Select an event --</option>';
+    summary.events.forEach(function(evt) {
+      var opt = document.createElement('option');
+      opt.value = evt.eventId;
+      opt.textContent = evt.eventName + ' (' + evt.status + ')';
+      select.appendChild(opt);
+    });
+  }
+
+  function loadEventDashboard() {
+    var eventId = document.getElementById('dashboardEventPicker').value;
+    var content = document.getElementById('eventDashboardContent');
+    if (!eventId) { content.innerHTML = ''; return; }
+
+    // If prefetchEventDashboards() already fetched this event in the
+    // background (fired right after the executive summary loaded — see
+    // loadDashboardPanel) and it's still fresh, skip the network
+    // round-trip entirely and render immediately.
+    var cached = eventDashboardCache[eventId];
+    if (cached && !cached.pending && cached.data && (Date.now() - cached.fetchedAt) < EVENT_DASHBOARD_CACHE_TTL_MS) {
+      renderEventDashboard(content, cached.data);
+      return;
+    }
+
+    content.innerHTML = '<p>Loading...</p>';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        eventDashboardCache[eventId] = { data: data, fetchedAt: Date.now(), pending: false };
+        renderEventDashboard(content, data);
+      })
+      .withFailureHandler(function(err) { content.innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
+      .getEventDashboardData(ADMIN_TOKEN, eventId);
+  }
+
+  function renderEventDashboard(content, data) {
+    var html = '<div class="tiles-row">' +
+      tileHtml(data.daysUntil, 'Days Until Event') +
+      tileHtml(data.totalRegistrations, 'Total Registrations') +
+      (data.isB2B ? tileHtml(data.totalCompanies, 'Companies Registered') : '') +
+      '</div>';
+
+    html += '<div class="section"><h3>Registrations by Type</h3><div id="dashBarChart"></div></div>';
+    html += '<div class="section"><h3>Last 10 Registrations</h3><div id="dashLastTable"></div></div>';
+    if (data.milestones && data.milestones.length) {
+      html += '<div class="section"><h3>Milestones</h3><div id="dashMilestones"></div></div>';
+    }
+
+    if (data.isB2B && data.preferences) {
+      html += '<div class="section"><h3>Preferences Submitted</h3>' +
+        '<div class="tiles-row">' +
+          tileHtml(data.preferences.totalAttendees, 'Total Attendees') +
+          tileHtml(data.preferences.submittedCount, 'Submitted') +
+          tileHtml(Math.max(0, data.preferences.totalAttendees - data.preferences.submittedCount), 'Pending') +
+        '</div>' +
+        '<h4 style="font-size:13px; margin-top:16px;">Top 10 Pending Submission</h4><div id="dashPendingTable"></div>' +
+        '<h4 style="font-size:13px; margin-top:16px;">Below 10% Selection Threshold</h4><div id="dashThresholdTable"></div>' +
+      '</div>';
+    }
+
+    content.innerHTML = html;
+
+    // Bar chart
+    var entries = Object.entries(data.byRegistrationType || {});
+    var chartEl = document.getElementById('dashBarChart');
+    if (!entries.length) { chartEl.innerHTML = '<p style="color:#5f6368;">No registrations yet.</p>'; }
+    else {
+      var maxCount = Math.max.apply(null, entries.map(function(e){ return e[1]; }));
+      chartEl.innerHTML = entries.map(function(e) {
+        var pct = maxCount > 0 ? Math.round((e[1] / maxCount) * 100) : 0;
+        return '<div class="bar-row"><div class="bar-label">' + escapeHtml(e[0]) + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="bar-count">' + e[1] + '</div></div>';
+      }).join('');
+    }
+
+    // Last 10 table
+    var lastEl = document.getElementById('dashLastTable');
+    if (!data.last10.length) { lastEl.innerHTML = '<p style="color:#5f6368;">No registrations yet.</p>'; }
+    else {
+      var t = '<table><thead><tr><th>Timestamp</th><th>Name</th><th>Company</th><th>Email</th><th>Type</th></tr></thead><tbody>';
+      data.last10.forEach(function(r) {
+        t += '<tr><td>' + escapeHtml(r.timestamp) + '</td><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.companyName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.registrationType) + '</td></tr>';
+      });
+      t += '</tbody></table>';
+      lastEl.innerHTML = t;
+    }
+
+    if (data.isB2B && data.preferences) {
+      var pendingEl = document.getElementById('dashPendingTable');
+      if (!data.preferences.notSubmittedTop10.length) { pendingEl.innerHTML = '<p style="color:#5f6368;">Everyone has submitted!</p>'; }
+      else {
+        var pt = '<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Type</th></tr></thead><tbody>';
+        data.preferences.notSubmittedTop10.forEach(function(r) {
+          pt += '<tr><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.companyName) + '</td><td>' + escapeHtml(r.registrationType) + '</td></tr>';
+        });
+        pt += '</tbody></table>';
+        pendingEl.innerHTML = pt;
+      }
+
+      var threshEl = document.getElementById('dashThresholdTable');
+      if (!data.preferences.underThresholdAttendees.length) { threshEl.innerHTML = '<p style="color:#5f6368;">Everyone met the threshold.</p>'; }
+      else {
+        var tt = '<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Selected</th><th>Goal</th><th>Eligible</th></tr></thead><tbody>';
+        data.preferences.underThresholdAttendees.forEach(function(r) {
+          tt += '<tr><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.companyName) + '</td>' +
+            '<td><span class="badge-warn">' + r.selectedCount + '</span></td><td>' + r.requiredThreshold + '</td><td>' + r.totalEligible + '</td></tr>';
+        });
+        tt += '</tbody></table>';
+        threshEl.innerHTML = tt;
+      }
+    }
+
+    if (data.milestones && data.milestones.length) {
+      var msEl = document.getElementById('dashMilestones');
+      msEl.innerHTML = data.milestones.map(function(m) {
+        var pendingRows = !m.pending.length
+          ? '<p style="color:#5f6368; font-size:12px; margin:6px 0 0;">Everyone has completed this.</p>'
+          : '<table><thead><tr><th>Name</th><th>Email</th><th>Company</th></tr></thead><tbody>' +
+            m.pending.map(function(p) {
+              return '<tr><td>' + escapeHtml(p.fullName) + '</td><td>' + escapeHtml(p.email) + '</td><td>' + escapeHtml(p.companyName) + '</td></tr>';
+            }).join('') + '</tbody></table>';
+        var dueLabel = m.dueDate ? ' · due ' + escapeHtml(m.dueDate) : '';
+        return '<div style="border-top:0.5px solid var(--border-color); padding:10px 0;">' +
+          '<div style="display:flex; justify-content:space-between; align-items:baseline;">' +
+            '<strong style="font-size:13px;">' + escapeHtml(m.title) + '</strong>' +
+            '<span style="font-size:12px; color:#5f6368;">' + escapeHtml(m.entityLabel) + dueLabel + '</span>' +
+          '</div>' +
+          '<div style="font-size:12px; color:#5f6368; margin:2px 0 6px;">' + m.completedCount + ' of ' + m.totalEligible + ' completed</div>' +
+          pendingRows +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>

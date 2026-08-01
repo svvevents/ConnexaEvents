@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"> -->
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: <?!= branding.primaryColor ?>;
+      --navy-color: <?!= branding.navyColor ?>;
+      --accent-color: <?!= branding.accentColor ?>;
+      --mint-color: <?!= branding.mintColor ?>;
+      --bg-color: <?!= branding.pageBgColor ?>;
+      --font-family: <?!= branding.fontFamily ?>;
+      --text-dark: var(--navy-color);
+      --text-muted: <?!= branding.mutedTextColor ?>;
+      --border-color: #dfe3ea;
+      --success-color: <?!= branding.successColor ?>;
+      --warning-color: <?!= branding.warningColor ?>;
+      --error-color: <?!= branding.errorColor ?>;
+      --category-tag-color: <?!= branding.categoryTagColor ?>;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); max-width: 900px; margin: 0 auto 40px; color: var(--text-dark); background: var(--bg-color); -webkit-font-smoothing: antialiased; }
+
+    .header { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 24px 20px 0; }
+    .header img.logo { height: 40px; width: auto; }
+    .header h1 { font-size: 21px; margin: 0; font-weight: 800; }
+    .content-wrap { padding: 0 20px; }
+    .subtitle { color: var(--text-muted); margin-top: 4px; }
+
+    .event-picker-row { margin-top: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .event-picker-row select { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; min-width: 260px; max-width: 100%; background: #fbfcfe; }
+
+    .nav-tabs { display: flex; gap: 8px; border-bottom: 2px solid #e0e0e0; margin-top: 20px; overflow-x: auto; }
+    .tab-btn { background: none; border: none; padding: 12px 18px; font-size: 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s ease; white-space: nowrap; }
+    .tab-btn:hover { color: var(--primary-color); }
+    .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .kpi-row { display: flex; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
+    .kpi-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 150px; }
+    .kpi-card .value { font-size: 30px; font-weight: 800; color: var(--primary-color); }
+    .kpi-card .label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+    .section { background: white; border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; margin-top: 20px; overflow-x: auto; }
+    .section h2 { font-size: 16px; margin: 0 0 16px; border-bottom: 2px solid #f1f3f4; padding-bottom: 8px; font-weight: 700; }
+    .section h3 { font-size: 14px; color: var(--text-dark); margin-top: 20px; margin-bottom: 12px; font-weight: 700; }
+
+    .bar-row { display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; }
+    .bar-label { width: 130px; flex-shrink: 0; }
+    .bar-track { flex: 1; background: #f1f3f4; border-radius: 6px; height: 20px; overflow: hidden; margin: 0 10px; }
+    .bar-fill { background: var(--primary-color); height: 100%; border-radius: 6px; }
+    .bar-count { width: 30px; text-align: right; font-weight: 700; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; min-width: 480px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
+    th { color: var(--text-muted); font-weight: 700; font-size: 12px; text-transform: uppercase; background: var(--bg-color); }
+
+    .badge-warn { background: #FBF4E6; color: var(--warning-color); font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
+
+    .refresh-row { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; flex-wrap: wrap; gap: 10px; }
+    .refresh-row button { background: var(--primary-color); color: white; border: none; padding: 9px 18px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
+    .refresh-row button:hover { background: var(--navy-color); }
+    .last-updated { font-size: 12px; color: var(--text-muted); }
+    .empty-state { color: var(--text-muted); font-size: 14px; }
+
+    @media (max-width: 600px) {
+      .header { padding: 20px 16px 0; }
+      .content-wrap { padding: 0 16px; }
+      .kpi-row { gap: 10px; }
+      .kpi-card { min-width: 130px; padding: 14px 16px; }
+      .kpi-card .value { font-size: 24px; }
+    }
+  </style>
+
+</head>
+<body>
+
+  <div class="header">
+    <? if (branding.logoUrl) { ?>
+      <img class="logo" src="<?= branding.logoUrl ?>" alt="Company logo">
+    <? } ?>
+    <div><h1>Event Dashboard</h1></div>
+  </div>
+
+  <div class="content-wrap">
+    <p class="subtitle">Live overview of event registrations and preference submissions.</p>
+
+    <div class="event-picker-row">
+      <label for="eventPicker" style="font-weight:bold; font-size:13px;">Viewing:</label>
+      <select id="eventPicker" onchange="loadDashboard()">
+        <option value="">All Events (Combined)</option>
+      </select>
+    </div>
+
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-registration', this)">Registration Summary</button>
+      <button class="tab-btn" id="prefTabBtn" onclick="switchTab('tab-preferences', this)">Preferences Summary</button>
+    </div>
+
+    <div id="tab-registration" class="tab-content active">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="value" id="kpi-total">-</div><div class="label">Total Registrations</div></div>
+        <div class="kpi-card"><div class="value" id="kpi-companies">-</div><div class="label">Companies Represented</div></div>
+      </div>
+      <div class="section"><h2>Registrations by Type</h2><div id="reg-type-chart"><p class="empty-state">Loading...</p></div></div>
+      <div class="section"><h2>Last 10 Registrations</h2><div id="last10-table"><p class="empty-state">Loading...</p></div></div>
+    </div>
+
+    <div id="tab-preferences" class="tab-content">
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="value" id="kpi-total-attendees">-</div><div class="label">Total Registered Attendees</div></div>
+        <div class="kpi-card"><div class="value" id="kpi-submitted-pref">-</div><div class="label">Preferences Submitted</div></div>
+        <div class="kpi-card"><div class="value" id="kpi-pending-pref">-</div><div class="label">Preferences Pending</div></div>
+      </div>
+      <div class="section">
+        <h2>Preference Submission Details</h2>
+        <h3>Top 10 Attendees Pending Preference Submission</h3>
+        <div id="pending-table"><p class="empty-state">Loading...</p></div>
+        <h3>Attendees Below 10% Preference Selection Threshold</h3>
+        <div id="threshold-table"><p class="empty-state">Loading...</p></div>
+      </div>
+    </div>
+
+    <div class="refresh-row">
+      <button onclick="loadDashboard()">Refresh</button>
+      <span class="last-updated" id="last-updated"></span>
+    </div>
+  </div>
+
+  <script>
+    var selectedEventIsB2B = true;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      google.script.run.withSuccessHandler(function(options) {
+        var picker = document.getElementById('eventPicker');
+        options.forEach(function(o) {
+          var opt = document.createElement('option');
+          opt.value = o.eventId; opt.textContent = o.label; opt.dataset.isb2b = o.isB2B ? '1' : '0';
+          picker.appendChild(opt);
+        });
+        loadDashboard();
+      }).getDashboardEventOptions();
+    });
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function loadDashboard() {
+      var picker = document.getElementById('eventPicker');
+      var eventId = picker.value;
+      var selectedOption = picker.options[picker.selectedIndex];
+      selectedEventIsB2B = eventId === '' ? true : selectedOption.dataset.isb2b === '1';
+      document.getElementById('prefTabBtn').style.display = selectedEventIsB2B ? '' : 'none';
+
+      google.script.run
+        .withSuccessHandler(renderRegistrationData)
+        .withFailureHandler(function(err) {
+          document.getElementById('reg-type-chart').innerHTML = '<p class="empty-state">Error loading registration data: ' + err.message + '</p>';
+        })
+        .getDashboardData(eventId);
+
+      if (selectedEventIsB2B) {
+        google.script.run
+          .withSuccessHandler(renderPreferencesData)
+          .withFailureHandler(function(err) {
+            document.getElementById('pending-table').innerHTML = '<p class="empty-state">Error loading preferences summary: ' + err.message + '</p>';
+          })
+          .getPreferencesDashboardData(eventId);
+      }
+    }
+
+    function renderRegistrationData(data) {
+      document.getElementById('kpi-total').textContent = data.totalRegistrations;
+      document.getElementById('kpi-companies').textContent = data.totalCompanies;
+
+      var chartEl = document.getElementById('reg-type-chart');
+      var entries = Object.entries(data.byRegistrationType || {});
+      if (entries.length === 0) {
+        chartEl.innerHTML = '<p class="empty-state">No registrations yet.</p>';
+      } else {
+        var maxCount = Math.max.apply(null, entries.map(function(e){ return e[1]; }));
+        chartEl.innerHTML = entries.map(function(e) {
+          var type = e[0], count = e[1];
+          var pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+          return '<div class="bar-row"><div class="bar-label">' + escapeHtml(type) + '</div>' +
+            '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="bar-count">' + count + '</div></div>';
+        }).join('');
+      }
+
+      var tableEl = document.getElementById('last10-table');
+      if (!data.last10 || data.last10.length === 0) {
+        tableEl.innerHTML = '<p class="empty-state">No registrations yet.</p>';
+      } else {
+        var html = '<table><thead><tr><th>Timestamp</th><th>Name</th><th>Company</th><th>Email</th><th>Registration Type</th></tr></thead><tbody>';
+        data.last10.forEach(function(r) {
+          html += '<tr><td>' + escapeHtml(r.timestamp) + '</td><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.companyName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.registrationType) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+      }
+      document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleString();
+    }
+
+    function renderPreferencesData(data) {
+      var pendingCount = data.totalAttendees - data.submittedCount;
+      document.getElementById('kpi-total-attendees').textContent = data.totalAttendees;
+      document.getElementById('kpi-submitted-pref').textContent = data.submittedCount;
+      document.getElementById('kpi-pending-pref').textContent = pendingCount >= 0 ? pendingCount : 0;
+
+      var pendingEl = document.getElementById('pending-table');
+      if (!data.notSubmittedTop10 || data.notSubmittedTop10.length === 0) {
+        pendingEl.innerHTML = '<p class="empty-state">All registered attendees have submitted their preferences!</p>';
+      } else {
+        var html = '<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Registration Type</th></tr></thead><tbody>';
+        data.notSubmittedTop10.forEach(function(r) {
+          html += '<tr><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.companyName) + '</td><td>' + escapeHtml(r.registrationType) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        pendingEl.innerHTML = html;
+      }
+
+      var threshEl = document.getElementById('threshold-table');
+      if (!data.underThresholdAttendees || data.underThresholdAttendees.length === 0) {
+        threshEl.innerHTML = '<p class="empty-state">All attendees who submitted preferences met the 10% selection threshold.</p>';
+      } else {
+        var html2 = '<table><thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Selected</th><th>10% Goal</th><th>Eligible Target Total</th></tr></thead><tbody>';
+        data.underThresholdAttendees.forEach(function(r) {
+          html2 += '<tr><td>' + escapeHtml(r.fullName) + '</td><td>' + escapeHtml(r.email) + '</td><td>' + escapeHtml(r.companyName) + '</td>' +
+            '<td><span class="badge-warn">' + r.selectedCount + '</span></td><td>' + r.requiredThreshold + '</td><td>' + r.totalEligible + '</td></tr>';
+        });
+        html2 += '</tbody></table>';
+        threshEl.innerHTML = html2;
+      }
+    }
+
+    function escapeHtml(str) {
+      var div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    setInterval(loadDashboard, 60000);
+  </script>
+</body>
+</html>
