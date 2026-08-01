@@ -1169,7 +1169,7 @@ function getMilestonesForAttendee(email, eventId) {
     // option, so a sub-event can have several rows here.
     const myRegsBySubEvent = {};
     getSubEventRegsRaw_().forEach(r => {
-      if (r.eventId !== eventId || r.email !== em) return;
+      if (r.eventId !== eventId || r.email !== em || r.status === 'Withdrawn') return;
       (myRegsBySubEvent[r.subEventId] || (myRegsBySubEvent[r.subEventId] = [])).push(r);
     });
 
@@ -2051,7 +2051,7 @@ function getMilestoneCompletionSummary_(event) {
     // milestones.
     const subEventAttendeesById = {};
     getSubEventRegsRaw_().forEach(r => {
-      if (r.eventId !== eventId) return;
+      if (r.eventId !== eventId || r.status === 'Withdrawn') return;
       const byEmail = subEventAttendeesById[r.subEventId] || (subEventAttendeesById[r.subEventId] = {});
       byEmail[r.email] = { fullName: r.fullName, email: r.email, companyName: r.companyName };
     });
@@ -3403,7 +3403,7 @@ function getMyDetailsForAttendee(entityId, email) {
 
   let subEventExtraFields = null;
   if (entity.parentEventId) {
-    const subReg = getSubEventRegsRaw_().find(r => r.subEventId === entityId && r.email === email);
+    const subReg = getSubEventRegsRaw_().find(r => r.subEventId === entityId && r.email === email && r.status !== 'Withdrawn');
     if (subReg) subEventExtraFields = subReg.extraFields;
   }
 
@@ -3475,7 +3475,7 @@ function getUpdateRegistrationData(eventId, email) {
   let availableSubEvents = [];
 
   if (event.isUmbrella) {
-    const myAllocations = getSubEventRegsRaw_().filter(r => r.eventId === eventId && r.email === email);
+    const myAllocations = getSubEventRegsRaw_().filter(r => r.eventId === eventId && r.email === email && r.status !== 'Withdrawn');
     const joinedIds = new Set(myAllocations.map(r => r.subEventId));
     const allChildren = getUmbrellaChildren(eventId);
 
@@ -3524,7 +3524,7 @@ function addSubEventSelectionsForAttendee(eventId, email, selections) {
   if (!check.alreadyRegistered) throw new Error('You must be registered for this event before you can join additional sessions.');
   const reg = check.registration;
 
-  const alreadyJoined = new Set(getSubEventRegsRaw_().filter(r => r.eventId === eventId && r.email === email).map(r => r.subEventId));
+  const alreadyJoined = new Set(getSubEventRegsRaw_().filter(r => r.eventId === eventId && r.email === email && r.status !== 'Withdrawn').map(r => r.subEventId));
   const newSelections = (Array.isArray(selections) ? selections : []).filter(sel => sel && sel.subEventId && !alreadyJoined.has(String(sel.subEventId)));
   if (!newSelections.length) throw new Error('Please select at least one new session to join.');
 
@@ -3547,6 +3547,54 @@ function addSubEventSelectionsForAttendee(eventId, email, selections) {
   });
 
   return { status: 'ok', allocations: allocations };
+}
+
+/**
+ * Lets an already-registered attendee withdraw from a previously-joined
+ * sub-event ("Leave session" in the My Events unified workspace) — the
+ * missing counterpart to addSubEventSelectionsForAttendee. Marks every
+ * SubEventRegistrations row for this subEventId + email as Withdrawn
+ * rather than deleting it, so the Confirmed/Waitlisted history stays
+ * auditable; getConfirmedSubEventCountMap_ only counts 'Confirmed' rows,
+ * so this immediately frees the capacity slot for someone else. A
+ * Curated Event attendee who selected multiple options for the same
+ * sub-event has one row per option — all of them are withdrawn together,
+ * since "leave this session" means leaving all of it, not one option.
+ * Does NOT auto-promote the next waitlisted attendee — no such mechanism
+ * exists anywhere else in this codebase either; that's a deliberate
+ * follow-up, not an oversight here.
+ */
+function withdrawSubEventRegistration(eventId, subEventId, email) {
+  email = (email || '').trim().toLowerCase();
+  const sheet = getSubEventRegSheet_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim().toLowerCase());
+    const eventIdx = headers.indexOf('eventid');
+    const subEventIdx = headers.indexOf('subeventid');
+    const emailIdx = headers.indexOf('email');
+    const statusIdx = headers.indexOf('status');
+
+    let matched = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][eventIdx]) === String(eventId) &&
+          String(data[i][subEventIdx]) === String(subEventId) &&
+          String(data[i][emailIdx]).trim().toLowerCase() === email) {
+        sheet.getRange(i + 1, statusIdx + 1).setValue('Withdrawn');
+        matched++;
+      }
+    }
+    if (!matched) throw new Error('No registration found for this session.');
+
+    _rawDataCache_.subEventRegs = null;
+    _rawDataCache_.confirmedSubEventCounts = null; // derived from subEventRegs — same staleness risk
+    return { status: 'ok' };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* =========================================================================

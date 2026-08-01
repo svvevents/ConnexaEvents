@@ -99,7 +99,7 @@
     .mobile-bottom-nav-inner { display: flex; justify-content: space-around; }
     .mobile-nav-item {
       display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 10px;
-      color: #8b96a8; cursor: pointer; border-radius: 10px; font-size: 11px; font-weight: 600; flex: 1;
+      color: #b9c2d0; cursor: pointer; border-radius: 10px; font-size: 11px; font-weight: 600; flex: 1;
     }
     .mobile-nav-item svg { width: 20px; height: 20px; }
     .mobile-nav-item.active { color: #fff; }
@@ -114,6 +114,7 @@
     .event-tile:hover { box-shadow: 0 8px 20px rgba(13,27,42,0.10); transform: translateY(-2px); }
     .event-tile.expanded { border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(28,114,147,0.18); }
     .event-tile.register-tile { cursor: default; }
+    .event-tile.my-event-tile { cursor: default; }
     .event-tile h3 {
       margin: 0 0 8px; font-size: 17px; font-weight: 700; padding-right: 70px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -166,6 +167,17 @@
     .event-detail-expand .expand-close { font-size: 22px; color: var(--text-muted); cursor: pointer; line-height: 1; }
     .event-detail-expand .expand-body-inner { padding: 20px; }
     .event-detail-expand .expand-iframe { width: 100%; height: 520px; border: none; display: block; }
+
+    /* ---------- MY EVENTS: unified workspace tabs ---------- */
+    .ws-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .ws-tab {
+      font-family: inherit; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 700;
+      color: var(--text-muted); padding: 8px 14px; border-radius: 8px;
+    }
+    .ws-tab.active { background: var(--bg-color); color: var(--text-dark); }
+    .ws-tabpage { display: none; }
+    .ws-tabpage.active { display: block; }
+    .session-leave-btn { cursor: pointer; }
 
     /* ---------- MY PROFILE ---------- */
     .profile-section {
@@ -425,6 +437,21 @@
     .drawer-panel { position:fixed; top:0; right:0; bottom:0; width:66vw; max-width:1100px; background:#fff; box-shadow:-6px 0 24px rgba(0,0,0,0.18); display:flex; flex-direction:column; transform:translateX(100%); transition:transform 0.25s ease; }
     .drawer-overlay.open .drawer-panel { transform:translateX(0); }
     .drawer-body { padding:20px; overflow-y:auto; flex:1; }
+
+    /* ---------- B2B MEETING PREFERENCES (search/sort/table) ---------- */
+    .pref-toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .pref-toolbar input, .pref-toolbar select {
+      padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px;
+      font-family: inherit; background: #fbfcfe; color: var(--text-dark);
+    }
+    .pref-toolbar input:focus, .pref-toolbar select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(28,114,147,0.12); }
+    .pref-toolbar input { flex: 1; min-width: 220px; }
+    .pref-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .pref-table thead tr { background: var(--bg-color); text-align: left; }
+    .pref-table th { padding: 10px 12px; font-weight: 700; color: var(--text-dark); }
+    .pref-table td { padding: 10px 12px; border-bottom: 1px solid #f1f3f4; }
+    .pref-table tbody tr:hover { background: var(--bg-color); }
+    .btn-more-details { background: none; border: none; color: var(--primary-color); text-decoration: underline; cursor: pointer; font-family: inherit; font-size: 13px; }
 
     /* ---------- MOBILE RESPONSIVE ---------- */
     @media (max-width: 860px) {
@@ -1067,29 +1094,22 @@
 
       registered.forEach(function(evt) {
         var div = document.createElement('div');
-        div.className = 'event-tile';
+        div.className = 'event-tile my-event-tile';
         div.innerHTML =
           '<span class="reg-status yes">✓ Registered</span>' +
           '<h3>' + escapeHtml(evt.eventName) + '</h3>' +
           '<p>' + escapeHtml((evt.description || '').slice(0, 110)) + (evt.description && evt.description.length > 110 ? '…' : '') + '</p>' +
           '<div class="meta">' +
-            (evt.eventDate ? '<span>📅 ' + escapeHtml(evt.eventDate) + '</span>' : '') +
-            (evt.location ? '<span>📍 ' + escapeHtml(evt.location) + '</span>' : '') +
+            '<span>📅 ' + escapeHtml(evt.eventDate || 'Date TBA') + '</span>' +
+            '<span>📍 ' + escapeHtml(evt.location || 'Location TBA') + '</span>' +
           '</div>' +
           (evt.isB2B ? '<div style="margin-top:10px;"><span class="badge">B2B Matching</span></div>' : '') +
-          '<div class="tile-actions" style="display:flex; gap:8px; flex-wrap:wrap;">' +
-            '<button type="button" class="btn-secondary my-tile-update-reg-btn">Update Registration</button>' +
-            '<button type="button" class="btn-secondary my-tile-more-info-btn">More Information</button>' +
+          '<div class="tile-actions">' +
+            '<button type="button" class="btn-register-tile my-tile-open-btn">Open Event</button>' +
           '</div>';
-        div.querySelector('.my-tile-update-reg-btn').addEventListener('click', function(e) {
-          e.stopPropagation();
-          toggleMyEventExpand(evt, div, 'register');
+        div.querySelector('.my-tile-open-btn').addEventListener('click', function() {
+          toggleMyEventExpand(evt, div);
         });
-        div.querySelector('.my-tile-more-info-btn').addEventListener('click', function(e) {
-          e.stopPropagation();
-          toggleMyEventExpand(evt, div, 'info');
-        });
-        div.addEventListener('click', function() { toggleMyEventExpand(evt, div, 'details'); });
         grid.appendChild(div);
       });
 
@@ -1102,18 +1122,16 @@
      * the clicked tile — same accordion mechanic as
      * toggleRegisterExpand/collapseRegisterExpand below, reused here so
      * there's one interaction pattern across the whole shell rather than
-     * two. Three modes share the one panel (mirroring
-     * toggleRegisterExpand's eventId:mode key exactly): clicking the tile
-     * body ('details') shows sub-event cards + milestones, "Update
-     * Registration" ('register') shows the read-only registration summary
-     * plus any sub-events still available to join, "More Information"
-     * ('info') reuses the exact same content as the per-entity Event
-     * Details drawer. Clicking the same one again collapses it; clicking a
-     * different mode (or a different tile) switches content in place.
+     * two. Unlike the old three-mode version (a hidden whole-card click
+     * plus two separate buttons, each showing a different, non-overlapping
+     * slice of the same event), there is now exactly one entry point — the
+     * card's "Open Event" button — and exactly one panel: a small tab strip
+     * with an Overview tab (always) and a Sessions tab (only for an
+     * Umbrella event). Clicking the same tile again collapses it; clicking
+     * a different tile switches content in place.
      */
-    function toggleMyEventExpand(evt, tileEl, mode) {
-      mode = mode || 'details';
-      var key = evt.eventId + ':' + mode;
+    function toggleMyEventExpand(evt, tileEl) {
+      var key = evt.eventId;
       var expandEl = document.getElementById('myEventsExpand');
 
       if (expandedMyEventKey === key) {
@@ -1125,25 +1143,44 @@
       document.querySelectorAll('#myEventsGrid .event-tile').forEach(function(t) { t.classList.remove('expanded'); });
       tileEl.classList.add('expanded');
 
-      var titles = { details: evt.eventName, register: 'Update Registration — ' + evt.eventName, info: 'More Information — ' + evt.eventName };
       expandEl.innerHTML =
-        '<div class="expand-header"><h3>' + escapeHtml(titles[mode]) + '</h3><span class="expand-close">&times;</span></div>' +
+        '<div class="expand-header"><h3>' + escapeHtml(evt.eventName) + '</h3><span class="expand-close">&times;</span></div>' +
         '<div id="myEventExpandBody" class="expand-body-inner"><p>Loading…</p></div>';
       expandEl.querySelector('.expand-close').addEventListener('click', collapseMyEventExpand);
       expandEl.style.display = 'block';
       expandEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+      loadMyEventWorkspace(evt);
+    }
+
+    /**
+     * Fetches both data sources the unified workspace needs — milestones +
+     * per-joined-sub-event status from getMilestonesForAttendee, and the
+     * read-only registration summary + still-available-to-join sessions
+     * from getUpdateRegistrationData — and renders once both are back.
+     * Re-called (rather than patching the DOM in place) after any action
+     * that can change what the panel should show, e.g. leaving a session
+     * or joining a new one, since either can move a sub-event between the
+     * "joined" and "available" lists.
+     */
+    function loadMyEventWorkspace(evt) {
       var body = document.getElementById('myEventExpandBody');
-      if (mode === 'info') {
-        renderEventDetailsDrawerContent(evt.eventId, body);
-      } else if (mode === 'register') {
-        renderUpdateRegistrationExpand(evt, body);
-      } else {
-        google.script.run
-          .withSuccessHandler(function(data) { renderMyEventPanel(evt, data, body); })
-          .withFailureHandler(function(err) { body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-          .getMilestonesForAttendee(portalState.email, evt.eventId);
+      var milestoneData = null, updRegData = null, pending = 2, failed = false;
+
+      function checkDone() {
+        if (failed || pending > 0) return;
+        renderMyEventWorkspace(evt, milestoneData, updRegData, body);
       }
+
+      google.script.run
+        .withSuccessHandler(function(data) { milestoneData = data; pending--; checkDone(); })
+        .withFailureHandler(function(err) { failed = true; body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
+        .getMilestonesForAttendee(portalState.email, evt.eventId);
+
+      google.script.run
+        .withSuccessHandler(function(data) { updRegData = data; pending--; checkDone(); })
+        .withFailureHandler(function(err) { failed = true; body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
+        .getUpdateRegistrationData(evt.eventId, portalState.email);
     }
 
     function collapseMyEventExpand() {
@@ -1154,33 +1191,54 @@
       document.querySelectorAll('#myEventsGrid .event-tile').forEach(function(t) { t.classList.remove('expanded'); });
     }
 
-    /* ---- "Update Registration" tile panel (join additional sub-events) ---- */
+    /* ---- Unified "My Events" workspace: Overview + (Umbrella only) Sessions ---- */
 
     /**
-     * Renders the "Update Registration" inline panel for an already-
-     * registered attendee: their existing registration (read-only), the
-     * sessions they've already joined (read-only), and — for an Umbrella
-     * event — any sessions still available to join, using the exact same
-     * per-type panel renderers (renderCuratedOptionsPanel/
-     * renderExhibitionPanel/renderSubEventExtraFields) the initial
-     * registration flow uses, just driven by data.availableSubEvents
-     * instead of regCart.umbrellaChildren. Resets attendeeOptIns/
-     * attendeeRankState on open (the same reset collapseRegisterExpand
-     * already does) so this panel and the main registration flow never
-     * bleed into each other.
+     * Builds the tab strip and both tab pages once both data sources have
+     * loaded (see loadMyEventWorkspace). The Sessions tab only exists for
+     * an Umbrella event — a standalone event has no separate sub-events to
+     * manage, so its own registration/milestones live directly on Overview.
      */
-    function renderUpdateRegistrationExpand(evt, body) {
-      attendeeOptIns = {};
-      attendeeRankState = {};
-      body.innerHTML = '<p>Loading…</p>';
-      google.script.run
-        .withSuccessHandler(function(data) { paintUpdateRegistrationExpand(evt, data, body); })
-        .withFailureHandler(function(err) { body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .getUpdateRegistrationData(evt.eventId, portalState.email);
+    function renderMyEventWorkspace(evt, milestoneData, updRegData, body) {
+      var isUmbrella = milestoneData.isUmbrella;
+      var joinedCount = isUmbrella ? (milestoneData.subEvents || []).length : 0;
+
+      var html = '<div class="ws-tabs">' +
+        '<button type="button" class="ws-tab active" data-ws-tab="ws-overview">Overview</button>' +
+        (isUmbrella ? '<button type="button" class="ws-tab" data-ws-tab="ws-sessions">Sessions (' + joinedCount + ')</button>' : '') +
+      '</div>';
+
+      html += '<div class="ws-tabpage active" id="ws-overview">' + renderWorkspaceOverview(evt, milestoneData, updRegData) + '</div>';
+      if (isUmbrella) {
+        html += '<div class="ws-tabpage" id="ws-sessions">' + renderWorkspaceSessions(updRegData) + '</div>';
+      }
+
+      body.innerHTML = html;
+
+      body.querySelectorAll('.ws-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          body.querySelectorAll('.ws-tab').forEach(function(t) { t.classList.remove('active'); });
+          body.querySelectorAll('.ws-tabpage').forEach(function(p) { p.classList.remove('active'); });
+          tab.classList.add('active');
+          document.getElementById(tab.dataset.wsTab).classList.add('active');
+        });
+      });
+
+      wireEntityActionButtons(body, milestoneData);
+      wireMilestoneActions(body, milestoneData, evt);
+      wireWorkspaceSessionActions(body, evt, updRegData);
     }
 
-    function paintUpdateRegistrationExpand(evt, data, body) {
-      var reg = data.registration;
+    /**
+     * Read-only "Your Registration" summary — same fields the old "Update
+     * Registration" panel showed, now with an explicit locked-field note on
+     * the ones that can never be edited after signup (Company Name,
+     * Membership Type, Business Type — see saveMyDetails/updateMyDetailsForAttendee,
+     * which only ever write Website/Company Description) instead of a
+     * plain readonly input with no visual explanation for why typing into
+     * it does nothing.
+     */
+    function renderRegistrationSummaryHtml(reg) {
       var html = '<div class="profile-section"><h3>Your Registration</h3>' +
         '<div class="form-row">' +
           '<div class="form-group"><label>Full Name</label><input type="text" value="' + escapeHtml(reg.fullName || '') + '" readonly></div>' +
@@ -1194,60 +1252,110 @@
           escapeHtml(reg.dietaryRequirements.join(', ') + (reg.dietaryOther ? ' (' + reg.dietaryOther + ')' : '')) + '" readonly></div>';
       }
       html += '<div class="form-row">' +
-          '<div class="form-group"><label>Company Name</label><input type="text" value="' + escapeHtml(reg.companyName || '') + '" readonly></div>' +
+          '<div class="form-group"><label>🔒 Company Name</label><input type="text" value="' + escapeHtml(reg.companyName || '') + '" readonly>' +
+            '<div class="field-lock-note">Locked after registration</div></div>' +
           (reg.website ? '<div class="form-group"><label>Website</label><input type="text" value="' + escapeHtml(reg.website) + '" readonly></div>' : '') +
         '</div>';
       if (reg.membershipType || reg.membershipCategory) {
         html += '<div class="form-row">' +
-            '<div class="form-group"><label>Membership Type</label><input type="text" value="' + escapeHtml(reg.membershipType || '') + '" readonly></div>' +
-            '<div class="form-group"><label>Business Type</label><input type="text" value="' + escapeHtml(reg.membershipCategory || '') + '" readonly></div>' +
+            '<div class="form-group"><label>🔒 Membership Type</label><input type="text" value="' + escapeHtml(reg.membershipType || '') + '" readonly>' +
+              '<div class="field-lock-note">Locked after registration — contact the organizer to change it</div></div>' +
+            '<div class="form-group"><label>🔒 Business Type</label><input type="text" value="' + escapeHtml(reg.membershipCategory || '') + '" readonly>' +
+              '<div class="field-lock-note">Locked after registration</div></div>' +
           '</div>';
       }
       html += '</div>';
+      return html;
+    }
 
-      if (data.isUmbrella && data.joinedSubEvents.length) {
-        html += '<div class="profile-section"><h3>Sessions you\'ve joined</h3>' +
-          data.joinedSubEvents.map(function(sub) {
-            var statusBadge = sub.registrationStatus === 'Waitlisted'
-              ? '<span class="reg-status no">Waitlisted</span>'
-              : '<span class="reg-status yes">✓ Registered</span>';
-            var metaBits = [];
-            if (sub.eventDate) metaBits.push(sub.eventDate);
-            if (sub.eventTime) metaBits.push(sub.eventTime);
-            if (sub.location) metaBits.push(sub.location);
-            return '<div class="subevent-card">' +
-              '<div class="subevent-card-head">' +
-                '<div>' +
-                  '<div class="subevent-card-name">' + escapeHtml(sub.eventName) + '</div>' +
-                  (metaBits.length ? '<div class="subevent-card-meta">' + escapeHtml(metaBits.join(' · ')) + '</div>' : '') +
-                  '<span class="subevent-card-type">' + escapeHtml(sub.eventType || 'Session') + '</span>' +
-                '</div>' +
-                statusBadge +
-              '</div>' +
-            '</div>';
-          }).join('') +
-        '</div>';
-      }
+    /**
+     * Overview tab: description + date/location, the attendee's own
+     * read-only registration summary, and — only for a standalone
+     * (non-Umbrella) event, which has no separate sub-events — its own
+     * milestones + action row directly here. An Umbrella event's action
+     * row is just the plain "Event Details" button (it has no
+     * registration/milestones of its own; those all live per sub-event,
+     * shown on the Sessions tab instead).
+     */
+    function renderWorkspaceOverview(evt, milestoneData, updRegData) {
+      var html = '';
+      if (milestoneData.description) html += '<p style="color:var(--text-muted); line-height:1.6; margin-top:0;">' + escapeHtml(milestoneData.description) + '</p>';
+      html += '<p class="meta" style="margin:0 0 16px;">📅 ' + escapeHtml(milestoneData.eventDate || 'Date TBA') + '&nbsp;&nbsp;·&nbsp;&nbsp;📍 ' + escapeHtml(milestoneData.location || 'Location TBA') + '</p>';
 
-      if (data.isUmbrella && data.availableSubEvents.length) {
-        html += '<div class="profile-section"><h3>Join more sessions</h3>' +
-          '<p class="subevent-select-hint">Select any additional sessions you\'d like to join.</p>' +
-          '<div id="updRegAvailableCards"></div>' +
-          '<button type="button" class="btn-submit" id="updRegSubmitBtn">Join Selected Sessions</button>' +
-          '<div class="ms-action-msg" id="updRegMsg" style="display:none; font-size:13px; margin-top:8px;"></div>' +
-        '</div>';
-      } else if (!data.isUmbrella) {
-        html += '<p style="color:#3c4043;">You\'re already registered for this event — there are no additional sessions to join.</p>';
+      html += renderRegistrationSummaryHtml(updRegData.registration);
+
+      if (milestoneData.isUmbrella) {
+        html += '<div style="margin:16px 0 0;">' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, null, []) + '</div>';
       } else {
-        html += '<p style="color:#3c4043;">You\'ve joined every available session for this event.</p>';
+        html += '<div style="margin:16px 0;">' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, evt.eventType, milestoneData.milestones) + '</div>';
+        html += renderMilestonesListHtml(milestoneData.milestones || [], evt.eventId, evt.eventName);
+      }
+      return html;
+    }
+
+    /**
+     * Sessions tab (Umbrella only): joined sub-events — each with a real
+     * Leave control, the missing capability the old three-panel design
+     * never had — plus any sub-events still available to join. Replaces
+     * the old panel's "Sessions you've joined" (read-only) + separate
+     * "Join more sessions" split with one merged list, so an attendee
+     * doesn't have to reconcile two different sections for the full
+     * picture of what they're in.
+     */
+    function renderWorkspaceSessions(updRegData) {
+      var joined = updRegData.joinedSubEvents || [];
+      var available = updRegData.availableSubEvents || [];
+      var html = '';
+
+      if (joined.length) {
+        html += joined.map(function(sub) { return renderMyEventSubEventCard(sub, true); }).join('');
+      } else {
+        html += '<div class="empty-tiles">No sessions joined yet.</div>';
       }
 
-      body.innerHTML = html;
-
-      if (data.isUmbrella && data.availableSubEvents.length) {
-        renderUpdateRegAvailableCards(body.querySelector('#updRegAvailableCards'), data.availableSubEvents);
-        body.querySelector('#updRegSubmitBtn').addEventListener('click', function() { submitUpdateRegistrationSelections(evt, data.availableSubEvents, body); });
+      if (available.length) {
+        html += '<div class="subevent-select-section" style="margin-top:22px; padding-top:16px; border-top:1px solid #eee;">' +
+          '<h4 style="font-size:14px; margin:0 0 4px;">Join more sessions</h4>' +
+          '<p class="subevent-select-hint">Select any additional sessions you\'d like to join.</p>' +
+          '<div id="wsAvailableCards"></div>' +
+          '<button type="button" class="btn-submit" id="wsJoinSubmitBtn">Join Selected Sessions</button>' +
+          '<div class="ms-action-msg" id="wsJoinMsg" style="display:none; font-size:13px; margin-top:8px;"></div>' +
+        '</div>';
       }
+
+      return html;
+    }
+
+    /**
+     * Wires the Sessions tab's two live actions: "Leave session" (calls
+     * the new withdrawSubEventRegistration, then reloads the whole
+     * workspace so the session moves back into "available to join") and
+     * the "Join Selected Sessions" flow reused from the old Update
+     * Registration panel (renderUpdateRegAvailableCards is unchanged;
+     * only where it's mounted and what happens on success are new). A
+     * no-op if the Sessions tab isn't in this render (standalone event).
+     */
+    function wireWorkspaceSessionActions(body, evt, updRegData) {
+      body.querySelectorAll('.session-leave-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          if (!confirm('Leave "' + btn.dataset.sessionName + '"? You can join it again later if it still has room.')) return;
+          var originalText = btn.textContent;
+          btn.textContent = 'Leaving…';
+          google.script.run
+            .withSuccessHandler(function() { loadMyEventWorkspace(evt); })
+            .withFailureHandler(function(err) { alert(err.message); btn.textContent = originalText; })
+            .withdrawSubEventRegistration(evt.eventId, btn.dataset.leaveSession, portalState.email);
+        });
+      });
+
+      var availableWrap = body.querySelector('#wsAvailableCards');
+      if (!availableWrap) return;
+      attendeeOptIns = {};
+      attendeeRankState = {};
+      renderUpdateRegAvailableCards(availableWrap, updRegData.availableSubEvents);
+      body.querySelector('#wsJoinSubmitBtn').addEventListener('click', function() {
+        submitWorkspaceJoinSelections(evt, updRegData.availableSubEvents, body);
+      });
     }
 
     /**
@@ -1257,7 +1365,7 @@
      * regCart.umbrellaChildren/#subEventCards, so it can't collide with
      * that flow's DOM even if both happen to exist at once (different
      * shell panels). Still shares the module-global attendeeOptIns/
-     * attendeeRankState — reset on open by renderUpdateRegistrationExpand,
+     * attendeeRankState — reset on open by wireWorkspaceSessionActions,
      * same as the main flow resets them on its own open/close.
      */
     function renderUpdateRegAvailableCards(wrap, availableSubEvents) {
@@ -1322,13 +1430,13 @@
      * subEventSelections would (see readCurrentAttendeeForm's isUmbrella
      * branch) but scoped to the sub-events checked in THIS panel, then
      * calls addSubEventSelectionsForAttendee. On success, re-fetches this
-     * same panel so newly-joined sessions move from "available" to
-     * "joined" — their milestones/action row then show up normally the
-     * next time the tile's default (details) view is opened.
+     * Sessions tab so newly-joined sessions move from "available" to
+     * "joined" — their milestones/action row then show up normally in
+     * their new spot.
      */
-    function submitUpdateRegistrationSelections(evt, availableSubEvents, body) {
-      var btn = document.getElementById('updRegSubmitBtn');
-      var msgEl = document.getElementById('updRegMsg');
+    function submitWorkspaceJoinSelections(evt, availableSubEvents, body) {
+      var btn = document.getElementById('wsJoinSubmitBtn');
+      var msgEl = document.getElementById('wsJoinMsg');
       var selections = [];
 
       for (var childId in attendeeOptIns) {
@@ -1354,7 +1462,7 @@
         .withSuccessHandler(function() {
           attendeeOptIns = {};
           attendeeRankState = {};
-          renderUpdateRegistrationExpand(evt, body);
+          loadMyEventWorkspace(evt);
         })
         .withFailureHandler(function(err) {
           btn.disabled = false;
@@ -1364,51 +1472,22 @@
     }
 
     /**
-     * Renders the default ('details' mode) "My Events" expand panel body:
-     * event header, then either sub-event cards with their own action row
-     * + milestones (Umbrella) or the action row + milestone list directly
-     * at event level (standalone) — the "mixture of both" from the My
-     * Events redesign discussion.
-     */
-    function renderMyEventPanel(evt, data, body) {
-      var html = '';
-      if (data.description) html += '<p style="color:#3c4043; line-height:1.6;">' + escapeHtml(data.description) + '</p>';
-      html += '<div class="meta" style="margin:6px 0 4px;">' +
-        (data.eventDate ? '📅 ' + escapeHtml(data.eventDate) : '') +
-        (data.location ? '&nbsp;&nbsp;·&nbsp;&nbsp;📍 ' + escapeHtml(data.location) : '') +
-      '</div>';
-
-      if (data.isUmbrella) {
-        // The umbrella container itself has no registration/company
-        // details/milestones of its own — those all live per sub-event —
-        // so it only gets the plain Event Details action, not the full row.
-        html += '<div style="margin:10px 0 16px;">' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, null, []) + '</div>';
-        html += (!data.subEvents || !data.subEvents.length)
-          ? '<div class="empty-tiles">No sub-events joined yet.</div>'
-          : data.subEvents.map(function(sub) { return renderMyEventSubEventCard(sub); }).join('');
-      } else {
-        // "If an event does not have sub-events, show these buttons at
-        // event level" — same full action row as a sub-event gets.
-        html += '<div style="margin:10px 0 16px;">' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, evt.eventType, data.milestones) + '</div>';
-        html += renderMilestonesListHtml(data.milestones || [], evt.eventId, evt.eventName);
-      }
-
-      body.innerHTML = html;
-      wireEntityActionButtons(body, data);
-      wireMilestoneActions(body, data, evt);
-    }
-
-    /**
      * The per-entity action-button row shown next to a sub-event's name
      * (or at event level when there are no sub-events): My Details and
      * Event Details are universal; Preferences only for a B2B
-     * Pre-scheduled Meetings entity; My Uploads only when that entity has
-     * a FileUpload milestone. Passing eventType=null / milestones=[]
-     * (the umbrella container itself) yields just the Event Details
-     * button. Wired by wireEntityActionButtons after insertion.
+     * Pre-scheduled Meetings entity, and only when that entity does NOT
+     * already have a SetPreferences milestone — the milestone action
+     * ("Set your preferences" in the Action Items list) opens the exact
+     * same drawer but also carries live Pending/Completed status, so
+     * showing both here and there was a redundant, visually-identical
+     * duplicate button doing the same thing; My Uploads only when that
+     * entity has a FileUpload milestone. Passing eventType=null /
+     * milestones=[] (the umbrella container itself) yields just the Event
+     * Details button. Wired by wireEntityActionButtons after insertion.
      */
     function renderEntityActionButtonsHtml(entityId, entityName, eventType, milestones) {
       var hasFileUpload = (milestones || []).some(function(m) { return m.milestoneType === 'FileUpload'; });
+      var hasSetPreferencesMilestone = (milestones || []).some(function(m) { return m.milestoneType === 'SetPreferences'; });
       var html = '<div class="entity-action-row" data-entity-id="' + escapeHtml(entityId) + '" data-entity-name="' + escapeHtml(entityName) + '" ' +
         'style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">';
       if (eventType !== null) {
@@ -1421,8 +1500,10 @@
         // when retiring the old sidebar — otherwise it becomes completely
         // unreachable now that the sidebar's "View my Itinerary" tab is
         // gone.
-        html += '<button type="button" class="btn-secondary ea-preferences-btn">Preferences</button>' +
-          '<button type="button" class="btn-secondary ea-itinerary-btn">My Itinerary</button>';
+        if (!hasSetPreferencesMilestone) {
+          html += '<button type="button" class="btn-secondary ea-preferences-btn">Preferences</button>';
+        }
+        html += '<button type="button" class="btn-secondary ea-itinerary-btn">My Itinerary</button>';
       }
       if (hasFileUpload) {
         html += '<button type="button" class="btn-secondary ea-uploads-btn">My Uploads</button>';
@@ -1447,7 +1528,8 @@
       });
     }
 
-    function renderMyEventSubEventCard(sub) {
+    /** showLeave (Sessions tab only — the "details" personalization used to omit any way to leave) adds a "Leave session" control, wired by wireWorkspaceSessionActions. */
+    function renderMyEventSubEventCard(sub, showLeave) {
       var metaBits = [];
       if (sub.eventDate) metaBits.push(sub.eventDate);
       if (sub.eventTime) metaBits.push(sub.eventTime);
@@ -1466,6 +1548,7 @@
           '<div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">' +
             statusBadge +
             renderEntityActionButtonsHtml(sub.eventId, sub.eventName, sub.eventType, sub.milestones) +
+            (showLeave ? '<span class="reg-cart-remove session-leave-btn" data-leave-session="' + escapeHtml(sub.eventId) + '" data-session-name="' + escapeHtml(sub.eventName) + '">Leave session</span>' : '') +
           '</div>' +
         '</div>' +
         (sub.description ? '<div class="agenda-desc" style="margin-top:6px;">' + escapeHtml(sub.description) + '</div>' : '') +
@@ -2939,28 +3022,28 @@
     function renderPreferencesDrawerContent(body) {
       body.innerHTML =
         '<h2 id="prefWelcomeHeading">Meeting Scheduling Preferences</h2>' +
-        '<p id="prefWelcomeText" style="color:#3c4043; font-size:14px;"></p>' +
+        '<p id="prefWelcomeText" style="color:var(--text-muted); font-size:14px;"></p>' +
         '<div id="prefSubmitMessage" style="display:none; padding:12px; border-radius:4px; margin-bottom:16px;"></div>' +
         '<div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0; gap:12px; flex-wrap:wrap;">' +
           '<span id="prefCounterBadge" style="background:rgba(28,114,147,0.10); color:var(--primary-color); font-weight:bold; padding:6px 12px; border-radius:16px; font-size:14px;">0 meetings selected</span>' +
           '<button class="btn-submit" id="prefSubmitBtn">Save Preferences</button>' +
         '</div>' +
-        '<div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">' +
-          '<input type="text" id="prefSearchInput" placeholder="Search Company Name or Membership Category..." style="flex:1; min-width:200px; padding:8px; border:1px solid #ccc; border-radius:4px;">' +
-          '<select id="prefSortSelect" style="padding:8px; border:1px solid #ccc; border-radius:4px;">' +
+        '<div class="pref-toolbar">' +
+          '<input type="text" id="prefSearchInput" placeholder="Search Company Name or Membership Category...">' +
+          '<select id="prefSortSelect">' +
             '<option value="company_asc">Sort: Company Name (A-Z)</option>' +
             '<option value="company_desc">Sort: Company Name (Z-A)</option>' +
             '<option value="category_asc">Sort: Membership Category (A-Z)</option>' +
             '<option value="category_desc">Sort: Membership Category (Z-A)</option>' +
           '</select>' +
         '</div>' +
-        '<table style="width:100%; border-collapse:collapse; font-size:14px;">' +
-          '<thead><tr style="background:#f1f3f4; text-align:left;">' +
-            '<th style="padding:10px; width:40px;"><input type="checkbox" id="prefSelectAll"></th>' +
-            '<th style="padding:10px;">Company Name</th>' +
-            '<th style="padding:10px;">Membership Category</th>' +
-            '<th style="padding:10px;">Contact Person</th>' +
-            '<th style="padding:10px;">Action</th>' +
+        '<table class="pref-table">' +
+          '<thead><tr>' +
+            '<th style="width:40px;"><input type="checkbox" id="prefSelectAll"></th>' +
+            '<th>Company Name</th>' +
+            '<th>Membership Category</th>' +
+            '<th>Contact Person</th>' +
+            '<th>Action</th>' +
           '</tr></thead>' +
           '<tbody id="prefTableBody"></tbody>' +
         '</table>';
@@ -3012,12 +3095,15 @@
 
       html += '<div class="profile-section"><h3>Company Details</h3>' +
         '<div class="form-row">' +
-          '<div class="form-group"><label>Company Name</label><input type="text" value="' + escapeHtml(data.companyName || '') + '" readonly></div>' +
+          '<div class="form-group"><label>🔒 Company Name</label><input type="text" value="' + escapeHtml(data.companyName || '') + '" readonly>' +
+            '<div class="field-lock-note">Locked after registration</div></div>' +
           '<div class="form-group"><label>Website</label><input type="text" id="myDetailsWebsite" value="' + escapeHtml(data.website || '') + '"></div>' +
         '</div>' +
         '<div class="form-row">' +
-          '<div class="form-group"><label>Membership Type</label><input type="text" value="' + escapeHtml(data.membershipType || '') + '" readonly></div>' +
-          '<div class="form-group"><label>Business Type</label><input type="text" value="' + escapeHtml(data.membershipCategory || '') + '" readonly></div>' +
+          '<div class="form-group"><label>🔒 Membership Type</label><input type="text" value="' + escapeHtml(data.membershipType || '') + '" readonly>' +
+            '<div class="field-lock-note">Locked after registration — contact the organizer to change it</div></div>' +
+          '<div class="form-group"><label>🔒 Business Type</label><input type="text" value="' + escapeHtml(data.membershipCategory || '') + '" readonly>' +
+            '<div class="field-lock-note">Locked after registration</div></div>' +
         '</div>' +
         '<div class="form-group"><label>Company Description</label><textarea id="myDetailsCompanyDescription" rows="3">' + escapeHtml(data.companyDescription || '') + '</textarea></div>' +
         '<button type="button" class="btn-submit" id="myDetailsSaveBtn">Save changes</button>' +
@@ -3147,20 +3233,19 @@
       var tbody = document.getElementById('prefTableBody');
       tbody.innerHTML = '';
       if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:12px; color:#5f6368;">No matching companies found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:12px; color:var(--text-muted);">No matching companies found.</td></tr>';
         return;
       }
       list.forEach(function(item) {
         var itemKey = item.targetEmail || item.companyName;
         var isChecked = prefAppState.selectedSet.has(itemKey) ? 'checked' : '';
         var tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #eee';
         tr.innerHTML =
-          '<td style="padding:10px;"><input type="checkbox" value="' + escapeHtml(itemKey) + '" ' + isChecked + ' class="pref-cb"></td>' +
-          '<td style="padding:10px;"><strong>' + escapeHtml(item.companyName) + '</strong></td>' +
-          '<td style="padding:10px;">' + escapeHtml(item.membershipCategory) + '</td>' +
-          '<td style="padding:10px;">' + escapeHtml(item.fullName) + '</td>' +
-          '<td style="padding:10px;"><button class="btn-more-details" style="background:none; border:none; color:var(--primary-color); text-decoration:underline; cursor:pointer;">More Details</button></td>';
+          '<td><input type="checkbox" value="' + escapeHtml(itemKey) + '" ' + isChecked + ' class="pref-cb"></td>' +
+          '<td><strong>' + escapeHtml(item.companyName) + '</strong></td>' +
+          '<td>' + escapeHtml(item.membershipCategory) + '</td>' +
+          '<td>' + escapeHtml(item.fullName) + '</td>' +
+          '<td><button class="btn-more-details">More Details</button></td>';
         tr.querySelector('.pref-cb').addEventListener('change', function() { onPortalCheckboxChange(this); });
         tr.querySelector('.btn-more-details').addEventListener('click', function() { showPrefDetails(item); });
         tbody.appendChild(tr);
@@ -3252,9 +3337,9 @@
     function renderItineraryDrawerContent(body) {
       body.innerHTML =
         '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">' +
-          '<p style="color:#5f6368; margin:0; font-size:14px;" id="itinSubheading">Scheduled meetings ordered by start time.</p>' +
+          '<p style="color:var(--text-muted); margin:0; font-size:14px;" id="itinSubheading">Scheduled meetings ordered by start time.</p>' +
           '<div style="display:flex; gap:10px;">' +
-            '<button class="btn-submit" style="background:#34a853;" id="btnExportItinerary">Export to Excel</button>' +
+            '<button class="btn-secondary" id="btnExportItinerary">Export to Excel</button>' +
             '<button class="btn-submit" id="btnEmailItineraryModal">Email Itinerary</button>' +
           '</div>' +
         '</div>' +
