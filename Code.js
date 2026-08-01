@@ -1186,6 +1186,7 @@ function getMilestonesForAttendee(email, eventId) {
           eventTime: e.eventTime,
           location: e.location,
           eventType: e.eventType,
+          detailsPageUrl: e.detailsPageUrl,
           registrationStatus: regs.some(r => r.status === 'Confirmed') ? 'Confirmed' : 'Waitlisted',
           milestones: getMilestonesForEntity_(e.eventId, em)
         };
