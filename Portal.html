@@ -119,7 +119,10 @@
        won't have many events registered at once, so there's no crowding
        concern that would justify hiding the workspace behind a click). */
     .my-events-list { display: flex; flex-direction: column; gap: 20px; }
-    .my-event-card { background: white; border: 1px solid var(--border-color); border-radius: 14px; padding: 22px 24px; box-shadow: 0 2px 12px rgba(13,27,42,0.08); }
+    .my-event-card {
+      background: white; border: 1px solid var(--border-color); border-left: 4px solid var(--primary-color);
+      border-radius: 14px; padding: 22px 24px 22px 21px; box-shadow: 0 4px 16px rgba(13,27,42,0.12);
+    }
     .my-event-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
     .my-event-card-header h3 { margin: 0; font-size: 20px; font-weight: 800; color: var(--text-dark); }
     .my-event-card-header .card-reg-status { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 12px; background: rgba(34,211,197,0.15); color: var(--success-color); white-space: nowrap; }
@@ -188,9 +191,11 @@
     .ws-tabpage.active { display: block; }
     .session-leave-btn { cursor: pointer; }
     .sec-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary-color); margin: 16px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
-    .milestone-row-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    .milestone-row-main > div:first-child { flex: 1; min-width: 0; }
-    .milestone-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+    .milestone-row-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .milestone-row-main > div:first-child { flex: 1; min-width: 200px; }
+    .milestone-row-side { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .btn-primary-sm { background: var(--primary-color); color: white; border: none; padding: 8px 16px; font-size: 12px; font-weight: 700; border-radius: 8px; cursor: pointer; font-family: inherit; transition: background .15s ease; }
+    .btn-primary-sm:hover { background: var(--navy-color); }
 
     /* ---------- MY PROFILE ---------- */
     .profile-section {
@@ -1528,12 +1533,12 @@
         actionHtml =
           '<div class="milestone-action" data-milestone-id="' + escapeHtml(m.milestoneId) + '" data-type="FileUpload" ' +
                'data-entity-id="' + escapeHtml(entityId) + '" data-entity-name="' + escapeHtml(entityName) + '">' +
-            '<button type="button" class="btn-secondary ms-manage-uploads-btn">Manage uploads</button>' +
+            '<button type="button" class="btn-primary-sm ms-manage-uploads-btn">Manage uploads</button>' +
           '</div>';
       } else if (m.status !== 'Completed' && m.milestoneType === 'ConfirmInfo') {
         actionHtml =
           '<div class="milestone-action" data-milestone-id="' + escapeHtml(m.milestoneId) + '" data-type="ConfirmInfo">' +
-            '<button type="button" class="btn-secondary ms-confirm-open-btn">Review and confirm</button>' +
+            '<button type="button" class="btn-primary-sm ms-confirm-open-btn">Review and confirm</button>' +
           '</div>';
       } else if (m.milestoneType === 'SetPreferences') {
         // Unlike ConfirmInfo, this action stays visible even once
@@ -1542,7 +1547,7 @@
         actionHtml =
           '<div class="milestone-action" data-milestone-id="' + escapeHtml(m.milestoneId) + '" data-type="SetPreferences" ' +
                'data-entity-id="' + escapeHtml(entityId) + '" data-entity-name="' + escapeHtml(entityName) + '">' +
-            '<button type="button" class="btn-secondary ms-setprefs-btn">' + (m.status === 'Completed' ? 'Review your preferences' : 'Set your preferences') + '</button>' +
+            '<button type="button" class="btn-primary-sm ms-setprefs-btn">' + (m.status === 'Completed' ? 'Review your preferences' : 'Set your preferences') + '</button>' +
           '</div>';
       }
 
