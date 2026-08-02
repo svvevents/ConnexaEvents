@@ -206,7 +206,7 @@
 
         <div class="fp-canvas-wrap">
           <div class="fp-canvas" id="fpCanvas"></div>
-          <p class="fp-canvas-caption">800 × 600 canvas · snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove · click an element to select it, then Copy/Paste (or Ctrl+C / Ctrl+V) to duplicate it with its current size.</p>
+          <p class="fp-canvas-caption" id="fpCanvasCaption"></p>
         </div>
       </div>
 
@@ -226,6 +226,12 @@
   var CANVAS_WIDTH = 800;
   var CANVAS_HEIGHT = 600;
   var GRID_SIZE = 20;
+
+  // The canvas' own W x H is now per-event (Small/Medium/Large — see
+  // getFloorPlanCanvasSize_ in Code.gs), so the caption's leading
+  // "W × H canvas" text is built from CANVAS_WIDTH/CANVAS_HEIGHT once
+  // loaded, rather than hardcoded — this suffix is the fixed part.
+  var FP_CANVAS_CAPTION_SUFFIX = 'snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove · click an element to select it, then Copy/Paste (or Ctrl+C / Ctrl+V) to duplicate it with its current size.';
 
   // Toolbar element presets. "booth" is the generic, flat-priced Asset;
   // the rest are Decorations (static, non-bookable). Custom Asset Types
@@ -341,6 +347,7 @@
         canvas.style.width = CANVAS_WIDTH + 'px';
         canvas.style.height = CANVAS_HEIGHT + 'px';
         canvas.innerHTML = '';
+        document.getElementById('fpCanvasCaption').textContent = CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + ' canvas · ' + FP_CANVAS_CAPTION_SUFFIX;
         elements = [];
         elementsById = {};
         selectedElementId = null;

@@ -121,7 +121,8 @@
                               EventDate | EventTime | Location | Website | Status |
                               EventType | IsB2B | DietaryRequirements |
                               CreatedDate | CreatedBy | DetailsPageUrl | Price |
-                              TypeConfig | Currency | Places
+                              TypeConfig | Currency | Places |
+                              MaxOptionsPerAttendee | FloorPlanSize
                               (IsB2B/DietaryRequirements/DetailsPageUrl are only
                                ever populated for rows where ParentEventID is
                                blank — i.e. the top-level Event. Currency is ALSO
@@ -148,7 +149,15 @@
                                FloorPlanElements sheet instead (see the
                                admin Floor Plan Designer). It's populated
                                on whichever row — top-level or sub-event —
-                               actually carries that EventType.)
+                               actually carries that EventType.
+                               FloorPlanSize is Exhibition-only: one of
+                               "small"/"medium"/"large" (see FLOORPLAN_SIZES/
+                               getFloorPlanCanvasSize_), picking the fixed
+                               canvas dimensions that event's Floor Plan
+                               Designer and attendee-facing map render at.
+                               Blank/unrecognized defaults to "small" — the
+                               original 800x600 dimensions from before this
+                               field existed.)
    3. ClientOnboarding       EventType | RegistrationType | IsB2B
                               (one row per Event Type + Registration Type pair,
                                pre-populated by you when onboarding the client.
@@ -281,12 +290,32 @@ const LEGACY_EVENT_TYPE_ALIASES = {
 const DEFAULT_CURRENCY = 'USD';
 const PLACES_UNLIMITED_LABEL = 'Unlimited';
 
-// Admin Exhibition floor-plan builder — fixed canvas size and snap-to-grid
-// step, shared between server-side validation and the AdminFloorPlan.html
-// client so they never drift apart.
-const FLOORPLAN_CANVAS_WIDTH = 800;
-const FLOORPLAN_CANVAS_HEIGHT = 600;
+// Admin Exhibition floor-plan builder — snap-to-grid step (shared between
+// server-side validation and the AdminFloorPlan.html client so they never
+// drift apart) and the 3 fixed canvas sizes an Exhibition can pick from
+// (see FloorPlanSize on the Events sheet / getFloorPlanCanvasSize_).
+// "small" keeps the ORIGINAL dimensions from before per-event sizing
+// existed, so every event saved before this feature shipped keeps
+// rendering at exactly the same scale (see normalizeFloorPlanSize_'s
+// default for unset/legacy rows).
 const FLOORPLAN_GRID_SIZE = 20;
+const FLOORPLAN_SIZES = {
+  small:  { width: 800,  height: 600 },
+  medium: { width: 1400, height: 900 },
+  large:  { width: 2000, height: 1300 }
+};
+const DEFAULT_FLOORPLAN_SIZE = 'small';
+
+/** Normalizes a raw FloorPlanSize cell value to one of FLOORPLAN_SIZES' keys, defaulting to DEFAULT_FLOORPLAN_SIZE for blank/unrecognized values. */
+function normalizeFloorPlanSize_(raw) {
+  const key = String(raw || '').trim().toLowerCase();
+  return FLOORPLAN_SIZES[key] ? key : DEFAULT_FLOORPLAN_SIZE;
+}
+
+/** Resolves an Exhibition entity's own canvas { width, height } — see FLOORPLAN_SIZES. */
+function getFloorPlanCanvasSize_(entity) {
+  return FLOORPLAN_SIZES[normalizeFloorPlanSize_(entity && entity.floorPlanSize)];
+}
 
 // Fixed checklist shown on the Profile page and registration form. Not
 // currently sheet-driven — edit this list directly if you need to add or
@@ -691,7 +720,7 @@ function ensureHeadersFresh_(sheet, expectedHeaders, cacheKey) {
 function eventsHeaders_() {
   return ['EventID', 'ParentEventID', 'EventName', 'Description', 'EventDate', 'EventTime',
     'Location', 'Website', 'Status', 'EventType', 'IsB2B', 'DietaryRequirements', 'CreatedDate', 'CreatedBy',
-    'DetailsPageUrl', 'Price', 'TypeConfig', 'Currency', 'Places', 'MaxOptionsPerAttendee'];
+    'DetailsPageUrl', 'Price', 'TypeConfig', 'Currency', 'Places', 'MaxOptionsPerAttendee', 'FloorPlanSize'];
 }
 
 /**
@@ -755,7 +784,9 @@ function rowToEventObj_(headers, row) {
     // Own raw Places cell, already parsed: null = unlimited, else integer.
     places: parsePlaces_(obj.Places),
     // Curated Event only: max options one attendee may select. null = unlimited (default), else a positive integer. Reuses parsePlaces_'s blank/"Unlimited" -> null semantics (see MaxOptionsPerAttendee note on createOrUpdateEvent).
-    maxOptionsPerAttendee: parsePlaces_(obj.MaxOptionsPerAttendee)
+    maxOptionsPerAttendee: parsePlaces_(obj.MaxOptionsPerAttendee),
+    // Exhibition only: which of the 3 fixed FLOORPLAN_SIZES this entity's floor plan canvas uses. Defaults to "small" (the original, pre-this-feature dimensions) for every other EventType and for any row saved before this field existed.
+    floorPlanSize: normalizeFloorPlanSize_(obj.FloorPlanSize)
   };
 }
 
@@ -1116,12 +1147,13 @@ function getEntityLiveState(entityId) {
   if (!entity) throw new Error('Event not found.');
   if (entity.eventType === EVENT_TYPE_EXHIBITION) {
     const state = getExhibitionCompleteState_(entity);
+    const canvasSize = getFloorPlanCanvasSize_(entity);
     return {
       eventType: EVENT_TYPE_EXHIBITION,
       tables: state.tables,
       decor: state.decor,
-      canvasWidth: FLOORPLAN_CANVAS_WIDTH,
-      canvasHeight: FLOORPLAN_CANVAS_HEIGHT
+      canvasWidth: canvasSize.width,
+      canvasHeight: canvasSize.height
     };
   }
   if (entity.eventType === EVENT_TYPE_CURATED_EVENT || entity.eventType === EVENT_TYPE_B2B_MEETINGS) {
@@ -1173,10 +1205,11 @@ function getUmbrellaChildren(eventId) {
       };
       if (e.eventType === EVENT_TYPE_EXHIBITION) {
         const state = getExhibitionCompleteState_(e);
+        const canvasSize = getFloorPlanCanvasSize_(e);
         base.tables = state.tables;
         base.decor = state.decor;
-        base.canvasWidth = FLOORPLAN_CANVAS_WIDTH;
-        base.canvasHeight = FLOORPLAN_CANVAS_HEIGHT;
+        base.canvasWidth = canvasSize.width;
+        base.canvasHeight = canvasSize.height;
         base.price = getEventPrice_(e); // flat, per-booth — see EVENTTYPE-SPECIFIC REQUIREMENTS
       } else if ((e.eventType === EVENT_TYPE_CURATED_EVENT || e.eventType === EVENT_TYPE_B2B_MEETINGS) && getCuratedEventOptionsLiveState_(e)) {
         base.options = getCuratedEventOptionsLiveState_(e);
@@ -1948,6 +1981,9 @@ function createOrUpdateEvent(token, payload) {
   const parsedMaxOpts = eventType === EVENT_TYPE_CURATED_EVENT ? parsePlaces_(maxOptsRaw) : null;
   const maxOptsToStore = parsedMaxOpts === null ? '' : String(parsedMaxOpts);
 
+  // Only meaningful for Exhibition; stored blank for every other type regardless of what the client sent (see normalizeFloorPlanSize_'s default when read back).
+  const floorPlanSizeToStore = eventType === EVENT_TYPE_EXHIBITION ? normalizeFloorPlanSize_(payload.floorPlanSize) : '';
+
   const sheet = getEventsSheet_();
   const col = getEventsColumnIndex_(sheet); // header-name -> real column number (see doc comment above)
   const lock = LockService.getScriptLock();
@@ -1987,6 +2023,7 @@ function createOrUpdateEvent(token, payload) {
           sheet.getRange(rowNum, col.Price).setValue(priceValue);
           sheet.getRange(rowNum, col.Places).setValue(placesToStore);
           sheet.getRange(rowNum, col.MaxOptionsPerAttendee).setValue(maxOptsToStore);
+          sheet.getRange(rowNum, col.FloorPlanSize).setValue(floorPlanSizeToStore);
           if (isTopLevel) {
             sheet.getRange(rowNum, col.IsB2B).setValue(isB2B);
             sheet.getRange(rowNum, col.DietaryRequirements).setValue(!!payload.dietaryRequirements);
@@ -2027,7 +2064,8 @@ function createOrUpdateEvent(token, payload) {
         TypeConfig: typeConfigJson,
         Currency: isTopLevel ? String(payload.currency || '').trim().toUpperCase() : '',
         Places: placesToStore,
-        MaxOptionsPerAttendee: maxOptsToStore
+        MaxOptionsPerAttendee: maxOptsToStore,
+        FloorPlanSize: floorPlanSizeToStore
       };
       const lastCol = sheet.getLastColumn();
       const row = new Array(lastCol).fill('');
@@ -2273,10 +2311,11 @@ function getSubEventAllocationSummary(token, subEventId) {
 
   if (entity.eventType === EVENT_TYPE_EXHIBITION) {
     const state = getExhibitionCompleteState_(entity);
+    const canvasSize = getFloorPlanCanvasSize_(entity);
     result.tables = state.tables;
     result.decor = state.decor;
-    result.canvasWidth = FLOORPLAN_CANVAS_WIDTH;
-    result.canvasHeight = FLOORPLAN_CANVAS_HEIGHT;
+    result.canvasWidth = canvasSize.width;
+    result.canvasHeight = canvasSize.height;
     result.price = getEventPrice_(entity);
     result.currency = getEventCurrency_(entity);
   } else if ((entity.eventType === EVENT_TYPE_CURATED_EVENT || entity.eventType === EVENT_TYPE_B2B_MEETINGS) && getCuratedEventOptionsLiveState_(entity)) {
@@ -2379,10 +2418,12 @@ function snapToFloorPlanGrid_(n) {
 /**
  * Validates and normalizes ONE raw element payload from the client into a
  * safe, grid-snapped, canvas-bounded record. Never trusts client-supplied
- * geometry as-is — re-snaps to the 20px grid and clamps to the 800x600
- * canvas server-side, since a client could send anything.
+ * geometry as-is — re-snaps to the 20px grid and clamps to the entity's
+ * OWN canvas size (canvasWidth/canvasHeight — see getFloorPlanCanvasSize_;
+ * Exhibitions can now pick Small/Medium/Large) server-side, since a client
+ * could send anything.
  */
-function normalizeFloorPlanElement_(raw, idx) {
+function normalizeFloorPlanElement_(raw, idx, canvasWidth, canvasHeight) {
   if (!raw || typeof raw !== 'object') throw new Error('Element #' + (idx + 1) + ' is invalid.');
 
   const type = String(raw.type || '').trim();
@@ -2392,13 +2433,13 @@ function normalizeFloorPlanElement_(raw, idx) {
 
   let width = snapToFloorPlanGrid_(Number(raw.width));
   let height = snapToFloorPlanGrid_(Number(raw.height));
-  width = Math.max(FLOORPLAN_GRID_SIZE, Math.min(width, FLOORPLAN_CANVAS_WIDTH));
-  height = Math.max(FLOORPLAN_GRID_SIZE, Math.min(height, FLOORPLAN_CANVAS_HEIGHT));
+  width = Math.max(FLOORPLAN_GRID_SIZE, Math.min(width, canvasWidth));
+  height = Math.max(FLOORPLAN_GRID_SIZE, Math.min(height, canvasHeight));
 
   let x = snapToFloorPlanGrid_(Number(raw.x));
   let y = snapToFloorPlanGrid_(Number(raw.y));
-  x = Math.max(0, Math.min(x, FLOORPLAN_CANVAS_WIDTH - width));
-  y = Math.max(0, Math.min(y, FLOORPLAN_CANVAS_HEIGHT - height));
+  x = Math.max(0, Math.min(x, canvasWidth - width));
+  y = Math.max(0, Math.min(y, canvasHeight - height));
 
   return {
     elementId: String(raw.elementId || '').trim() || ('EL-' + new Date().getTime() + '-' + idx + '-' + Math.floor(Math.random() * 1000)),
@@ -2430,7 +2471,8 @@ function saveFloorPlanLayout(token, eventId, elements) {
   }
   if (!Array.isArray(elements)) throw new Error('No floor plan elements provided.');
 
-  const normalized = elements.map(function(el, idx) { return normalizeFloorPlanElement_(el, idx); });
+  const canvasSize = getFloorPlanCanvasSize_(event);
+  const normalized = elements.map(function(el, idx) { return normalizeFloorPlanElement_(el, idx, canvasSize.width, canvasSize.height); });
 
   const seenIds = {};
   normalized.forEach(function(el) {
@@ -2503,13 +2545,14 @@ function getFloorPlanLayout(token, eventId) {
     .map(function(r) {
       return { elementId: r.elementId, x: r.x, y: r.y, width: r.width, height: r.height, type: r.type, label: r.label, cssClass: r.cssClass, assetTypeId: r.assetTypeId || '' };
     });
+  const canvasSize = getFloorPlanCanvasSize_(event);
 
   return {
     eventId: event.eventId,
     eventName: event.eventName,
     eventType: event.eventType,
-    canvasWidth: FLOORPLAN_CANVAS_WIDTH,
-    canvasHeight: FLOORPLAN_CANVAS_HEIGHT,
+    canvasWidth: canvasSize.width,
+    canvasHeight: canvasSize.height,
     gridSize: FLOORPLAN_GRID_SIZE,
     elements: elements,
     // Asset Types (from this event's own TypeConfig — see
@@ -3459,10 +3502,11 @@ function getRegistrationFormDefinition(eventId, email) {
   // above are used instead (the flat event-level fallback).
   if (event.eventType === EVENT_TYPE_EXHIBITION) {
     const state = getExhibitionCompleteState_(event);
+    const canvasSize = getFloorPlanCanvasSize_(event);
     result.exhibitionTables = state.tables;
     result.exhibitionDecor = state.decor;
-    result.canvasWidth = FLOORPLAN_CANVAS_WIDTH;
-    result.canvasHeight = FLOORPLAN_CANVAS_HEIGHT;
+    result.canvasWidth = canvasSize.width;
+    result.canvasHeight = canvasSize.height;
   } else if (event.eventType === EVENT_TYPE_CURATED_EVENT || event.eventType === EVENT_TYPE_B2B_MEETINGS) {
     const options = getCuratedEventOptionsLiveState_(event);
     if (options) {

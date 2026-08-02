@@ -330,9 +330,12 @@
     .floorplan-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
     /* The map is rendered at the SAME relative x/y/width/height the admin
-       placed each element at (out of an 800x600 canvas), expressed as
-       percentages so it scales responsively instead of the builder's
-       fixed 800px canvas. */
+       placed each element at (out of the event's own canvas — Small/
+       Medium/Large, see FLOORPLAN_SIZES in Code.gs), expressed as
+       percentages so it scales responsively instead of a fixed pixel
+       canvas. aspect-ratio and the grid dot background-size below are
+       just defaults for the "small" 800x600 canvas — renderExhibitionPanel
+       overrides both inline per-event via toPct's canvasWidth/canvasHeight. */
     .floorplan-map-wrap { border: 1px solid var(--border-color); border-radius: 10px; background: #eef1f5; padding: 12px; margin-bottom: 6px; }
     .floorplan-map {
       position: relative; width: 100%; aspect-ratio: 800 / 600;
@@ -1346,7 +1349,7 @@
             if (child.eventType === 'Exhibition') {
               var exhWrap = document.createElement('div');
               cardBody.appendChild(exhWrap);
-              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency);
+              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
             } else if (hasRankedOptions) {
               var optWrap = document.createElement('div');
               cardBody.appendChild(optWrap);
@@ -2142,7 +2145,7 @@
       } else if (formDef.eventType === 'Exhibition') {
         html = '<div class="subevent-select-section" id="standaloneTypePanel"></div>';
         container.insertAdjacentHTML('beforeend', html);
-        renderExhibitionPanel(document.getElementById('standaloneTypePanel'), formDef.exhibitionTables || [], formDef.exhibitionDecor || [], STANDALONE_KEY, '', formDef.currency);
+        renderExhibitionPanel(document.getElementById('standaloneTypePanel'), formDef.exhibitionTables || [], formDef.exhibitionDecor || [], STANDALONE_KEY, '', formDef.currency, formDef.canvasWidth, formDef.canvasHeight);
       } else if ((formDef.eventType === 'Curated Event' || formDef.eventType === 'B2B Pre-scheduled Meetings') && formDef.curatedEventOptions && formDef.curatedEventOptions.length) {
         html = '<div class="subevent-select-section" id="standaloneTypePanel"></div>';
         container.insertAdjacentHTML('beforeend', html);
@@ -2214,7 +2217,7 @@
             if (child.eventType === 'Exhibition') {
               var exhWrap = document.createElement('div');
               body.appendChild(exhWrap);
-              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency);
+              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
             } else if (hasRankedOptions) {
               var optWrap = document.createElement('div');
               body.appendChild(optWrap);
@@ -2334,13 +2337,24 @@
      * Renders the ACTUAL floor plan the admin laid out in the Floor Plan
      * Designer (AdminFloorPlan.html) — booths and decor (amenities/
      * landmarks) are positioned at the same relative x/y/width/height out
-     * of an 800x600 canvas, expressed as percentages so it scales
-     * responsively. Only "booth" elements (`tables`) are clickable/
-     * rankable; `decor` elements are static visual context.
+     * of the event's OWN canvas (Small/Medium/Large — see FLOORPLAN_SIZES
+     * in Code.gs), expressed as percentages so it scales responsively.
+     * Only "booth" elements (`tables`) are clickable/rankable; `decor`
+     * elements are static visual context. canvasWidth/canvasHeight default
+     * to the original "small" 800x600 dimensions if omitted, so a caller
+     * that hasn't been updated to pass them still renders correctly.
      */
-    function renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency) {
+    function renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight) {
+      canvasWidth = canvasWidth || 800;
+      canvasHeight = canvasHeight || 600;
       if (!attendeeRankState[groupKey]) attendeeRankState[groupKey] = [];
       var ranked = attendeeRankState[groupKey];
+
+      // aspect-ratio + grid dot spacing both depend on the event's own
+      // canvas size — the CSS rule's 800x600/2.5%/3.3333% are just
+      // defaults for "small", overridden inline here per event.
+      var mapStyle = 'aspect-ratio:' + canvasWidth + '/' + canvasHeight +
+        '; background-size:' + (GRID_SIZE_PX / canvasWidth * 100) + '% ' + (GRID_SIZE_PX / canvasHeight * 100) + '%;';
 
       var html = '<p class="floorplan-hint">Tap up to 3 preferred booths in order of preference. The highest-ranked' +
         ' available booth will be allocated automatically when you submit.</p>' +
@@ -2349,10 +2363,10 @@
           '<span><i style="background:var(--primary-color);"></i>Your pick (numbered by preference)</span>' +
           '<span><i style="background-image:repeating-linear-gradient(45deg, #eceff1, #eceff1 3px, #dde1e6 3px, #dde1e6 6px);border:1px solid #9aa5b1;"></i>Booked</span>' +
         '</div>' +
-        '<div class="floorplan-map-wrap"><div class="floorplan-map">';
+        '<div class="floorplan-map-wrap"><div class="floorplan-map" style="' + mapStyle + '">';
 
       (decor || []).forEach(function(el) {
-        html += '<div class="floorplan-el decor' + (el.cssClass ? ' ' + el.cssClass : '') + '" style="' + toPct(el) + '">' +
+        html += '<div class="floorplan-el decor' + (el.cssClass ? ' ' + el.cssClass : '') + '" style="' + toPct(el, canvasWidth, canvasHeight) + '">' +
           escapeHtml(el.label) + '</div>';
       });
 
@@ -2360,7 +2374,7 @@
         var rankIdx = ranked.indexOf(tbl.elementId);
         var booked = tbl.status !== 'Available';
         html +=
-          '<div class="floorplan-el booth' + (rankIdx !== -1 ? ' ranked' : '') + (booked ? ' booked' : '') + '" data-el="' + escapeHtml(tbl.elementId) + '" style="' + toPct(tbl) + '">' +
+          '<div class="floorplan-el booth' + (rankIdx !== -1 ? ' ranked' : '') + (booked ? ' booked' : '') + '" data-el="' + escapeHtml(tbl.elementId) + '" style="' + toPct(tbl, canvasWidth, canvasHeight) + '">' +
             (rankIdx !== -1 ? '<span class="rank-badge" title="Tap the booth again to remove it, or use Your Preferences below to reorder">' + rankGlyph(rankIdx + 1) + '</span>' : '') +
             escapeHtml(tbl.label) +
             (tbl.price ? '<span class="tbl-price">' + formatMoney(tbl.price, tbl.currency || currency) + '</span>' : '') +
@@ -2395,7 +2409,7 @@
       container.querySelectorAll('.floorplan-el.booth:not(.booked)').forEach(function(tile) {
         tile.addEventListener('click', function() {
           toggleRankChoice(groupKey, tile.dataset.el);
-          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency);
+          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
           renderOrderSummary();
         });
       });
@@ -2406,25 +2420,31 @@
           var swapWith = idx + Number(btn.dataset.dir);
           if (idx === -1 || swapWith < 0 || swapWith >= ranked.length) return;
           var tmp = ranked[idx]; ranked[idx] = ranked[swapWith]; ranked[swapWith] = tmp;
-          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency);
+          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
           renderOrderSummary();
         });
       });
       container.querySelectorAll('.fp-rank-remove').forEach(function(btn) {
         btn.addEventListener('click', function() {
           toggleRankChoice(groupKey, btn.dataset.el);
-          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency);
+          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
           renderOrderSummary();
         });
       });
     }
 
-    /** Converts a floor plan element's absolute 800x600-canvas x/y/width/height into CSS percentage positioning. */
-    function toPct(el) {
-      var left = (el.x / 800 * 100);
-      var top = (el.y / 600 * 100);
-      var width = (el.width / 800 * 100);
-      var height = (el.height / 600 * 100);
+    // Mirrors FLOORPLAN_GRID_SIZE in Code.gs — the grid snap step is fixed
+    // regardless of which of the 3 canvas sizes an Exhibition picks.
+    var GRID_SIZE_PX = 20;
+
+    /** Converts a floor plan element's absolute x/y/width/height (out of the event's own canvasWidth/canvasHeight — default 800x600) into CSS percentage positioning. */
+    function toPct(el, canvasWidth, canvasHeight) {
+      canvasWidth = canvasWidth || 800;
+      canvasHeight = canvasHeight || 600;
+      var left = (el.x / canvasWidth * 100);
+      var top = (el.y / canvasHeight * 100);
+      var width = (el.width / canvasWidth * 100);
+      var height = (el.height / canvasHeight * 100);
       return 'left:' + left + '%; top:' + top + '%; width:' + width + '%; height:' + height + '%;';
     }
 

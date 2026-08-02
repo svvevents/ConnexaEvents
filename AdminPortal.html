@@ -278,6 +278,25 @@
             Booths, amenities, and landmarks are laid out visually in the Floor Plan Designer — attendees rank up to 3
             preferred booths and the top available one is allocated automatically. Set a flat Price per booth below.
           </p>
+          <div class="form-row" style="margin-bottom:10px;">
+            <div class="form-group">
+              <label>Roughly how many assets/seats will this need?</label>
+              <input type="number" id="exhibitionAssetCountField" min="0" step="1" placeholder="e.g. 300" oninput="suggestFloorPlanSize()">
+            </div>
+            <div class="form-group">
+              <label>Floor Plan Canvas Size</label>
+              <select id="exhibitionFloorPlanSizeField">
+                <option value="small">Small — up to ~40 (800 × 600)</option>
+                <option value="medium">Medium — up to ~150 (1400 × 900)</option>
+                <option value="large">Large — 150+ (2000 × 1300)</option>
+              </select>
+            </div>
+          </div>
+          <p class="type-config-hint" style="margin-top:-4px;">
+            The asset count is just a helper — it suggests a Canvas Size above, which you can still change yourself.
+            A larger canvas gives more room for many small elements (e.g. theatre-style assigned seating); it can be
+            changed later, but existing elements are re-clamped to fit if you shrink it.
+          </p>
           <button type="button" class="btn secondary" id="editFloorPlanBtn" onclick="openFloorPlanDesigner()" disabled>🗺️ Open Floor Plan Designer</button>
           <p class="type-config-hint" id="floorPlanSaveHint" style="margin-top:8px;">Save this event first to unlock the Floor Plan Designer.</p>
         </div>
@@ -648,6 +667,10 @@
     // Price/Places now apply to ANY row (top-level or sub-event).
     document.getElementById('priceField').value = existingEvent ? (existingEvent.price || 0) : '';
     document.getElementById('placesField').value = existingEvent && existingEvent.places !== null && existingEvent.places !== undefined ? existingEvent.places : '';
+    // Exhibition only; the asset-count field is just a one-time helper for
+    // suggesting a size and isn't itself persisted, so it's always blank on open.
+    document.getElementById('exhibitionAssetCountField').value = '';
+    document.getElementById('exhibitionFloorPlanSizeField').value = existingEvent && existingEvent.floorPlanSize ? existingEvent.floorPlanSize : 'small';
     // Currency is top-level-only; default to the parent's currency for a sub-event.
     var currencyForCurrencyField = existingEvent && !isSubEvent ? (existingEvent.currencyRaw || 'USD') : 'USD';
     document.getElementById('currencyField').value = currencyForCurrencyField;
@@ -708,6 +731,13 @@
       : (document.getElementById('currencyField').value || 'USD');
     var symbol = CURRENCY_SYMBOLS[currency] || currency;
     document.getElementById('priceCurrencySuffix').textContent = ' (' + symbol + ' ' + currency + ')';
+  }
+
+  /** Suggests a Floor Plan Canvas Size from the "how many assets" helper field — the admin can still change the Canvas Size dropdown afterward. */
+  function suggestFloorPlanSize() {
+    var count = Number(document.getElementById('exhibitionAssetCountField').value) || 0;
+    var suggested = count > 150 ? 'large' : count > 40 ? 'medium' : 'small';
+    document.getElementById('exhibitionFloorPlanSizeField').value = suggested;
   }
 
   function onEventTypeChange() {
@@ -1046,6 +1076,8 @@
       typeConfig: collectTypeConfig(eventType), // options for Curated Event / B2B Pre-scheduled Meetings (now REQUIRED, >=1); Asset Types for Exhibition (OPTIONAL) — see validateOptionsRequired below; '[]' for every other type
       // Curated Event only: caps how many options one attendee may select; '' = unlimited (default). Ignored for every other EventType.
       maxOptionsPerAttendee: eventType === CURATED_EVENT_TYPE ? document.getElementById('curatedEventMaxOptionsField').value.trim() : '',
+      // Exhibition only: which of the 3 fixed Floor Plan canvas sizes this event uses (see FLOORPLAN_SIZES in Code.gs). Ignored for every other EventType.
+      floorPlanSize: eventType === EXHIBITION_TYPE ? document.getElementById('exhibitionFloorPlanSizeField').value : '',
       // Milestones apply to ANY EventType (top-level or sub-event alike) — see collectMilestones.
       milestones: collectMilestones()
     };
