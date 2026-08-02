@@ -96,10 +96,11 @@
     .checkbox-row input { width: auto; accent-color: var(--primary-color); }
 
     /* Per-option TypeConfig editors: Exhibition's floor-plan tables live in
-       the separate Floor Plan Designer now, but Curated Event's ranked
-       options (label/price/places, with "Unlimited" support) are edited
-       right here, alongside the flat Price/Places fallback used when no
-       options are configured (#eventPricingFields). */
+       the separate Floor Plan Designer, but its OPTIONAL Asset Type price
+       tiers (label/price) are edited right here, same as Curated Event's
+       ranked options (label/price/places, with "Unlimited" support) —
+       alongside the flat Price/Places fallback used when no options (or no
+       Asset Types) are configured (#eventPricingFields). */
     .type-config-wrap { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #fbfcfe; }
     .type-config-wrap > label.section-label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
     .type-config-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
@@ -126,6 +127,23 @@
     .event-picker { margin-bottom: 20px; }
     .event-picker select { padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; min-width: 260px; max-width: 100%; background: #fbfcfe; }
     .badge-warn { background: #FBF4E6; color: var(--warning-color); font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
+
+    /* Sub-tabs inside a per-event dashboard (e.g. Overview / Budget) —
+       ported from Dashboard.html's identical .nav-tabs/.tab-btn pattern. */
+    .nav-tabs { display: flex; gap: 8px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; overflow-x: auto; }
+    .tab-btn { background: none; border: none; padding: 12px 18px; font-size: 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s ease; white-space: nowrap; }
+    .tab-btn:hover { color: var(--primary-color); }
+    .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Budget tab */
+    .filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .filter-row select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; background: #fbfcfe; }
+    .variance-neg { color: var(--error-color); font-weight: 700; }
+    .variance-pos { color: var(--success-color); font-weight: 700; }
+    .section-header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f3f4; padding-bottom: 8px; margin-bottom: 14px; }
+    .section-header-row h3 { margin: 0; border: none; padding: 0; font-size: 15px; font-weight: 700; }
 
     /* ---------- MOBILE RESPONSIVE ---------- */
     @media (max-width: 860px) {
@@ -272,6 +290,18 @@
           <p class="type-config-hint" id="floorPlanSaveHint" style="margin-top:8px;">Save this event first to unlock the Floor Plan Designer.</p>
         </div>
 
+        <div id="exhibitionAssetTypesWrap" class="type-config-wrap" style="display:none;">
+          <label class="section-label">Asset Types</label>
+          <p class="type-config-hint">
+            Optionally define priced tiers of bookable Asset (e.g. "Premium Booth", "Standard Table") — each with its
+            own Label and Price. Once defined, these appear as options in the Floor Plan Designer's "Assets" menu;
+            placing one on the floor plan prices that booth at its tier instead of the flat Price per Booth below.
+            Leave empty to keep every booth priced at the flat rate.
+          </p>
+          <div id="exhibitionAssetTypeRows"></div>
+          <button type="button" class="add-row-btn" onclick="addExhibitionAssetTypeRow()">+ Add Asset Type</button>
+        </div>
+
         <div id="curatedEventConfigWrap" class="type-config-wrap" style="display:none;">
           <label class="section-label">Curated Event Options *</label>
           <p class="type-config-hint">
@@ -363,6 +393,60 @@
       </div>
 
       <button class="btn" style="width:100%;" onclick="saveEvent()">Save Event</button>
+    </div>
+  </div>
+
+  <!-- Budget Line Modal (Budget tab, per-event dashboard) -->
+  <div id="budgetLineModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeBudgetLineModal()">&times;</span>
+      <h3 id="budgetLineModalTitle" style="margin-top:0;">Add Budget Line</h3>
+      <div id="budgetLineModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+
+      <input type="hidden" id="budgetLineIdField">
+      <input type="hidden" id="budgetLineEventIdField">
+
+      <div class="form-group">
+        <label>Type *</label>
+        <div class="checkbox-row" style="gap:16px;">
+          <label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+            <input type="radio" name="budgetLineType" value="cost" checked onchange="onBudgetLineTypeChange()"> Cost
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+            <input type="radio" name="budgetLineType" value="income" onchange="onBudgetLineTypeChange()"> Income (target)
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Category *</label>
+        <select id="budgetLineCategoryField"></select>
+      </div>
+      <div class="form-group">
+        <label>Label *</label>
+        <input type="text" id="budgetLineLabelField" placeholder="e.g. Venue deposit">
+      </div>
+      <div class="form-group">
+        <label>Sub-Event</label>
+        <select id="budgetLineSubEventField">
+          <option value="">(whole event)</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Planned Amount *</label>
+          <input type="number" step="0.01" min="0" id="budgetLinePlannedField">
+        </div>
+        <div class="form-group" id="budgetLineActualGroup">
+          <label>Actual Amount</label>
+          <input type="number" step="0.01" min="0" id="budgetLineActualField">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="budgetLineNotesField" rows="2"></textarea>
+      </div>
+
+      <button class="btn" style="width:100%;" onclick="saveBudgetLineClient()">Save Line</button>
     </div>
   </div>
 
@@ -587,6 +671,8 @@
       existingEvent.typeConfig.forEach(function(opt) { addCuratedEventOptionRow(opt); });
     } else if (existingEvent && existingEvent.eventType === B2B_MEETINGS_TYPE && Array.isArray(existingEvent.typeConfig)) {
       existingEvent.typeConfig.forEach(function(opt) { addB2BMeetingsOptionRow(opt); });
+    } else if (existingEvent && existingEvent.eventType === EXHIBITION_TYPE && Array.isArray(existingEvent.typeConfig)) {
+      existingEvent.typeConfig.forEach(function(opt) { addExhibitionAssetTypeRow(opt); });
     }
     document.getElementById('curatedEventMaxOptionsField').value =
       existingEvent && existingEvent.eventType === CURATED_EVENT_TYPE && existingEvent.maxOptionsPerAttendee != null
@@ -607,6 +693,7 @@
   function clearConfigRows() {
     document.getElementById('curatedEventOptionRows').innerHTML = '';
     document.getElementById('b2bMeetingsOptionRows').innerHTML = '';
+    document.getElementById('exhibitionAssetTypeRows').innerHTML = '';
     document.getElementById('milestoneRows').innerHTML = '';
   }
 
@@ -639,6 +726,7 @@
     var isCuratedEvent = type === CURATED_EVENT_TYPE;
     var isB2BMeetings = type === B2B_MEETINGS_TYPE;
     document.getElementById('exhibitionConfigWrap').style.display = isExhibition ? 'block' : 'none';
+    document.getElementById('exhibitionAssetTypesWrap').style.display = isExhibition ? 'block' : 'none';
     if (isExhibition) {
       var eventId = document.getElementById('eventIdField').value;
       document.getElementById('editFloorPlanBtn').disabled = !eventId;
@@ -676,7 +764,7 @@
       '<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span>';
     document.getElementById('pricingFieldsLabel').textContent = 'Pricing & Capacity';
     document.getElementById('pricingFieldsHint').textContent = isExhibition
-      ? 'Applied once per booth when an attendee\'s booking is confirmed.'
+      ? 'Fallback price for any booth with no Asset Type (see Asset Types above). Applied once per booth when an attendee\'s booking is confirmed.'
       : 'A single price and place count for the whole event. Leave Places blank for no limit.';
     updatePriceCurrencySuffix();
     syncMilestoneTypeOptions();
@@ -706,6 +794,20 @@
       '<input type="text" class="opt-label" placeholder="Option name (e.g. City Tour)" value="' + escapeHtml(existing ? existing.label : '') + '">' +
       '<input type="number" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;" value="' + (existing ? existing.price : '') + '">' +
       '<input type="text" class="opt-places" placeholder="Places (blank = Unlimited)" style="max-width:150px;" value="' + escapeHtml(String(placesVal)) + '">' +
+      '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
+    if (existing && existing.id) row.dataset.optId = existing.id;
+    wrap.appendChild(row);
+  }
+
+  /** Adds one Exhibition Asset Type row (Label / Price only — capacity comes from however many of that type are placed in the Floor Plan Designer, not a Places count). */
+  function addExhibitionAssetTypeRow(existing) {
+    var wrap = document.getElementById('exhibitionAssetTypeRows');
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    row.innerHTML =
+      '<input type="text" class="opt-label" placeholder="Asset Type name (e.g. Premium Booth)" value="' + escapeHtml(existing ? existing.label : '') + '">' +
+      '<input type="number" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;" value="' + (existing ? existing.price : '') + '">' +
       '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
     row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
     if (existing && existing.id) row.dataset.optId = existing.id;
@@ -749,6 +851,16 @@
    * becoming 0.
    */
   function collectTypeConfig(eventType) {
+    if (eventType === EXHIBITION_TYPE) {
+      return Array.prototype.slice.call(document.querySelectorAll('#exhibitionAssetTypeRows .type-config-row')).map(function(row) {
+        return {
+          id: row.dataset.optId || '',
+          label: row.querySelector('.opt-label').value.trim(),
+          price: row.querySelector('.opt-price').value.trim() // raw string; '' means "not entered"
+        };
+      }).filter(function(o) { return o.label; });
+    }
+
     var containerId = eventType === CURATED_EVENT_TYPE ? 'curatedEventOptionRows'
       : eventType === B2B_MEETINGS_TYPE ? 'b2bMeetingsOptionRows'
       : null;
@@ -775,6 +887,18 @@
    * string, or null if valid.
    */
   function validateOptionsRequired(eventType, typeConfig) {
+    if (eventType === EXHIBITION_TYPE) {
+      // Asset Types are OPTIONAL for Exhibition (unlike Curated Event/B2B
+      // below) — an empty list just means every booth uses the flat Price.
+      // Any row that IS present still needs a price, though.
+      for (var j = 0; j < typeConfig.length; j++) {
+        if (typeConfig[j].price === '') {
+          return 'Please enter a price for Asset Type "' + typeConfig[j].label + '".';
+        }
+      }
+      return null;
+    }
+
     if (eventType !== CURATED_EVENT_TYPE && eventType !== B2B_MEETINGS_TYPE) return null;
     var kind = eventType === B2B_MEETINGS_TYPE ? 'B2B Pre-scheduled Meetings' : 'Curated Event';
     if (!typeConfig.length) {
@@ -916,7 +1040,7 @@
       price: parseFloat(document.getElementById('priceField').value) || 0,
       places: document.getElementById('placesField').value.trim(), // '' = Unlimited
       currency: document.getElementById('currencyField').value, // top-level only; ignored for sub-events
-      typeConfig: collectTypeConfig(eventType), // options for Curated Event / B2B Pre-scheduled Meetings (now REQUIRED, >=1 — see validateOptionsRequired below); '[]' for every other type
+      typeConfig: collectTypeConfig(eventType), // options for Curated Event / B2B Pre-scheduled Meetings (now REQUIRED, >=1); Asset Types for Exhibition (OPTIONAL) — see validateOptionsRequired below; '[]' for every other type
       // Curated Event only: caps how many options one attendee may select; '' = unlimited (default). Ignored for every other EventType.
       maxOptionsPerAttendee: eventType === CURATED_EVENT_TYPE ? document.getElementById('curatedEventMaxOptionsField').value.trim() : '',
       // Milestones apply to ANY EventType (top-level or sub-event alike) — see collectMilestones.
@@ -1023,7 +1147,7 @@
     // round-trip entirely and render immediately.
     var cached = eventDashboardCache[eventId];
     if (cached && !cached.pending && cached.data && (Date.now() - cached.fetchedAt) < EVENT_DASHBOARD_CACHE_TTL_MS) {
-      renderEventDashboard(content, cached.data);
+      renderEventDashboard(content, cached.data, eventId);
       return;
     }
 
@@ -1032,13 +1156,13 @@
     google.script.run
       .withSuccessHandler(function(data) {
         eventDashboardCache[eventId] = { data: data, fetchedAt: Date.now(), pending: false };
-        renderEventDashboard(content, data);
+        renderEventDashboard(content, data, eventId);
       })
       .withFailureHandler(function(err) { content.innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
       .getEventDashboardData(ADMIN_TOKEN, eventId);
   }
 
-  function renderEventDashboard(content, data) {
+  function renderEventDashboard(content, data, eventId) {
     var html = '<div class="tiles-row">' +
       tileHtml(data.daysUntil, 'Days Until Event') +
       tileHtml(data.totalRegistrations, 'Total Registrations') +
@@ -1063,7 +1187,13 @@
       '</div>';
     }
 
-    content.innerHTML = html;
+    content.innerHTML =
+      '<div class="nav-tabs">' +
+        '<button class="tab-btn active" onclick="switchTab(\'tab-overview\', this)">Overview</button>' +
+        '<button class="tab-btn" onclick="switchDashboardTab(\'tab-budget\', this, \'' + eventId + '\')">Budget</button>' +
+      '</div>' +
+      '<div id="tab-overview" class="tab-content active">' + html + '</div>' +
+      '<div id="tab-budget" class="tab-content"><p style="color:var(--text-muted);">Loading...</p></div>';
 
     // Bar chart
     var entries = Object.entries(data.byRegistrationType || {});
@@ -1136,6 +1266,259 @@
         '</div>';
       }).join('');
     }
+  }
+
+  /* ================= BUDGET TAB ================= */
+  // { eventId: { summary, categories } } — populates the Add/Edit Line
+  // modal's dropdowns without a second round trip.
+  var budgetSummaryCache = {};
+  var budgetFilterState = { lineType: 'all', subEventId: 'all' };
+
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+    document.getElementById(tabId).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  /**
+   * Wraps switchTab with a lazy first-load of the Budget tab's data — tied
+   * to the tab-budget DOM element itself (not a module-level flag) so a
+   * freshly re-rendered dashboard (a new element instance) always re-fetches
+   * on its own first click, even if a previous event's dashboard had
+   * already loaded its Budget tab earlier in the session.
+   */
+  function switchDashboardTab(tabId, btn, eventId) {
+    switchTab(tabId, btn);
+    if (tabId === 'tab-budget') {
+      var el = document.getElementById('tab-budget');
+      if (el.getAttribute('data-loaded') !== '1') {
+        el.setAttribute('data-loaded', '1');
+        loadBudgetTab(eventId);
+      }
+    }
+  }
+
+  function fmtMoney(amount, currency) {
+    var n = Number(amount) || 0;
+    return (currency || 'USD') + ' ' + n.toFixed(2);
+  }
+
+  function loadBudgetTab(eventId) {
+    var el = document.getElementById('tab-budget');
+    el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+    budgetFilterState = { lineType: 'all', subEventId: 'all' };
+
+    google.script.run
+      .withSuccessHandler(function(summary) {
+        google.script.run
+          .withSuccessHandler(function(categories) {
+            budgetSummaryCache[eventId] = { summary: summary, categories: categories };
+            renderBudgetTab(eventId);
+          })
+          .withFailureHandler(function(err) { el.innerHTML = '<p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
+          .getBudgetCategories(ADMIN_TOKEN);
+      })
+      .withFailureHandler(function(err) { el.innerHTML = '<p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
+      .getBudgetSummary(ADMIN_TOKEN, eventId);
+  }
+
+  function renderBudgetTab(eventId) {
+    var cache = budgetSummaryCache[eventId];
+    if (!cache) return;
+    var summary = cache.summary;
+    var el = document.getElementById('tab-budget');
+
+    var html = '<div class="tiles-row">' +
+      tileHtml(fmtMoney(summary.plannedIncome, summary.currency), 'Planned Income') +
+      tileHtml(fmtMoney(summary.actualIncome, summary.currency), 'Actual Income') +
+      tileHtml(fmtMoney(summary.plannedCost, summary.currency), 'Planned Cost') +
+      tileHtml(fmtMoney(summary.actualCost, summary.currency), 'Actual Cost') +
+      tileHtml(fmtMoney(summary.net, summary.currency), 'Net (Actual)') +
+    '</div>';
+
+    html += '<div class="section">';
+    html += '<div class="section-header-row"><h3>Budget Lines</h3><button class="btn small" onclick="openBudgetLineModal(\'' + eventId + '\')">+ Add Line</button></div>';
+    html += '<div class="filter-row">' +
+      '<select id="budgetFilterType" onchange="onBudgetFilterChange(\'' + eventId + '\')">' +
+        '<option value="all">All Types</option><option value="cost">Cost</option><option value="income">Income</option>' +
+      '</select>' +
+      '<select id="budgetFilterSubEvent" onchange="onBudgetFilterChange(\'' + eventId + '\')">' +
+        '<option value="all">All Sub-Events</option>' +
+        summary.subEvents.map(function(s) { return '<option value="' + escapeHtml(s.subEventId) + '">' + escapeHtml(s.subEventName) + '</option>'; }).join('') +
+      '</select>' +
+    '</div>';
+    html += '<div id="budgetLinesTableWrap"></div>';
+    html += '</div>';
+
+    html += '<div class="section"><h3>Income Orders</h3><div id="budgetOrdersTableWrap"></div></div>';
+
+    el.innerHTML = html;
+    renderBudgetLinesTable(eventId);
+    renderBudgetOrdersTable(eventId);
+  }
+
+  function onBudgetFilterChange(eventId) {
+    budgetFilterState.lineType = document.getElementById('budgetFilterType').value;
+    budgetFilterState.subEventId = document.getElementById('budgetFilterSubEvent').value;
+    renderBudgetLinesTable(eventId);
+    renderBudgetOrdersTable(eventId);
+  }
+
+  function renderBudgetLinesTable(eventId) {
+    var summary = budgetSummaryCache[eventId].summary;
+    var wrap = document.getElementById('budgetLinesTableWrap');
+    var lines = summary.lines.filter(function(l) {
+      if (budgetFilterState.lineType !== 'all' && l.lineType !== budgetFilterState.lineType) return false;
+      if (budgetFilterState.subEventId !== 'all' && l.subEventId !== budgetFilterState.subEventId) return false;
+      return true;
+    });
+
+    if (!lines.length) { wrap.innerHTML = '<p style="color:var(--text-muted);">No budget lines yet — click "+ Add Line" to add planned income or costs.</p>'; return; }
+
+    var t = '<table><thead><tr><th>Type</th><th>Category</th><th>Label</th><th>Sub-Event</th><th>Planned</th><th>Actual</th><th>Variance</th><th>Actions</th></tr></thead><tbody>';
+    lines.forEach(function(l) {
+      var variance = l.actual - l.planned;
+      var varianceClass = variance < 0 ? 'variance-neg' : (variance > 0 ? 'variance-pos' : '');
+      t += '<tr>' +
+        '<td>' + (l.lineType === 'income' ? 'Income' : 'Cost') + '</td>' +
+        '<td>' + escapeHtml(l.category) + '</td>' +
+        '<td>' + escapeHtml(l.label) + '</td>' +
+        '<td>' + escapeHtml(l.subEventName || '—') + '</td>' +
+        '<td>' + fmtMoney(l.planned, l.currency) + '</td>' +
+        '<td>' + fmtMoney(l.actual, l.currency) + '</td>' +
+        '<td class="' + varianceClass + '">' + fmtMoney(variance, l.currency) + '</td>' +
+        '<td><a href="#" onclick="event.preventDefault(); openBudgetLineModal(\'' + eventId + '\', \'' + l.lineId + '\')">Edit</a> &middot; ' +
+          '<a href="#" onclick="event.preventDefault(); deleteBudgetLineClient(\'' + eventId + '\', \'' + l.lineId + '\')">Delete</a></td>' +
+      '</tr>';
+    });
+    t += '</tbody></table>';
+    wrap.innerHTML = t;
+  }
+
+  function renderBudgetOrdersTable(eventId) {
+    var summary = budgetSummaryCache[eventId].summary;
+    var wrap = document.getElementById('budgetOrdersTableWrap');
+    var orders = summary.orders.filter(function(o) {
+      if (budgetFilterState.subEventId !== 'all' && o.subEventId !== budgetFilterState.subEventId) return false;
+      return true;
+    });
+
+    if (!orders.length) { wrap.innerHTML = '<p style="color:var(--text-muted);">No income orders yet — these are created automatically from paid registrations.</p>'; return; }
+
+    var t = '<table><thead><tr><th>Name</th><th>Company</th><th>Description</th><th>Sub-Event</th><th>Amount</th><th>Status</th><th>Paid Date</th><th>Actions</th></tr></thead><tbody>';
+    orders.forEach(function(o) {
+      var isPaid = o.paymentStatus === 'paid';
+      t += '<tr>' +
+        '<td>' + escapeHtml(o.fullName) + '<br><span style="color:var(--text-muted); font-size:11px;">' + escapeHtml(o.email) + '</span></td>' +
+        '<td>' + escapeHtml(o.companyName) + '</td>' +
+        '<td>' + escapeHtml(o.description) + '</td>' +
+        '<td>' + escapeHtml(o.subEventName || '—') + '</td>' +
+        '<td>' + fmtMoney(o.amount, o.currency) + '</td>' +
+        '<td><span class="tag ' + (isPaid ? 'live' : 'draft') + '">' + (isPaid ? 'Paid' : 'Not Paid') + '</span></td>' +
+        '<td>' + escapeHtml(o.paidDate || '—') + '</td>' +
+        '<td><a href="#" onclick="event.preventDefault(); markOrderPaidClient(\'' + eventId + '\', \'' + o.orderId + '\', \'' + (isPaid ? 'not_paid' : 'paid') + '\')">' +
+          (isPaid ? 'Mark Unpaid' : 'Mark Paid') + '</a></td>' +
+      '</tr>';
+    });
+    t += '</tbody></table>';
+    wrap.innerHTML = t;
+  }
+
+  function markOrderPaidClient(eventId, orderId, newStatus) {
+    google.script.run
+      .withSuccessHandler(function() { loadBudgetTab(eventId); })
+      .withFailureHandler(function(err) { alert(err.message); })
+      .updateOrderPaymentStatus(ADMIN_TOKEN, orderId, newStatus);
+  }
+
+  function deleteBudgetLineClient(eventId, lineId) {
+    if (!confirm('Delete this budget line?')) return;
+    google.script.run
+      .withSuccessHandler(function() { loadBudgetTab(eventId); })
+      .withFailureHandler(function(err) { alert(err.message); })
+      .deleteBudgetLine(ADMIN_TOKEN, eventId, lineId);
+  }
+
+  function openBudgetLineModal(eventId, lineId) {
+    var cache = budgetSummaryCache[eventId];
+    document.getElementById('budgetLineModalMsg').style.display = 'none';
+    document.getElementById('budgetLineEventIdField').value = eventId;
+    document.getElementById('budgetLineIdField').value = lineId || '';
+
+    var existing = lineId ? cache.summary.lines.find(function(l) { return l.lineId === lineId; }) : null;
+
+    document.getElementById('budgetLineModalTitle').textContent = existing ? 'Edit Budget Line' : 'Add Budget Line';
+    var lineType = existing ? existing.lineType : 'cost';
+    document.querySelectorAll('input[name="budgetLineType"]').forEach(function(r) { r.checked = (r.value === lineType); });
+    document.getElementById('budgetLineLabelField').value = existing ? existing.label : '';
+    document.getElementById('budgetLinePlannedField').value = existing ? existing.planned : '';
+    document.getElementById('budgetLineActualField').value = existing ? existing.actual : '';
+    document.getElementById('budgetLineNotesField').value = existing ? (existing.notes || '') : '';
+
+    populateBudgetSubEventOptions(eventId, existing ? existing.subEventId : '');
+    populateBudgetCategoryOptions(lineType, existing ? existing.category : '');
+    onBudgetLineTypeChange();
+
+    document.getElementById('budgetLineModal').style.display = 'flex';
+  }
+
+  function closeBudgetLineModal() { document.getElementById('budgetLineModal').style.display = 'none'; }
+
+  function populateBudgetSubEventOptions(eventId, selectedSubEventId) {
+    var select = document.getElementById('budgetLineSubEventField');
+    var subEvents = budgetSummaryCache[eventId].summary.subEvents;
+    select.innerHTML = '<option value="">(whole event)</option>' +
+      subEvents.map(function(s) { return '<option value="' + escapeHtml(s.subEventId) + '">' + escapeHtml(s.subEventName) + '</option>'; }).join('');
+    select.value = selectedSubEventId || '';
+  }
+
+  function populateBudgetCategoryOptions(lineType, selectedCategory) {
+    var select = document.getElementById('budgetLineCategoryField');
+    var eventId = document.getElementById('budgetLineEventIdField').value;
+    var categories = budgetSummaryCache[eventId].categories.filter(function(c) { return c.lineType === lineType; });
+    select.innerHTML = categories.map(function(c) { return '<option value="' + escapeHtml(c.categoryName) + '">' + escapeHtml(c.categoryName) + '</option>'; }).join('');
+    if (selectedCategory) select.value = selectedCategory;
+  }
+
+  function onBudgetLineTypeChange() {
+    var lineType = document.querySelector('input[name="budgetLineType"]:checked').value;
+    populateBudgetCategoryOptions(lineType, document.getElementById('budgetLineCategoryField').value);
+    // Actual amount is only ever manually entered for cost lines — income
+    // actual always comes live from paid Orders (see getBudgetSummary
+    // server-side note).
+    var actualGroup = document.getElementById('budgetLineActualGroup');
+    actualGroup.style.display = lineType === 'income' ? 'none' : 'block';
+  }
+
+  function saveBudgetLineClient() {
+    var eventId = document.getElementById('budgetLineEventIdField').value;
+    var label = document.getElementById('budgetLineLabelField').value.trim();
+    if (!label) { showBudgetLineModalMsg('Please enter a label.', true); return; }
+
+    var payload = {
+      lineId: document.getElementById('budgetLineIdField').value,
+      lineType: document.querySelector('input[name="budgetLineType"]:checked').value,
+      category: document.getElementById('budgetLineCategoryField').value,
+      label: label,
+      subEventId: document.getElementById('budgetLineSubEventField').value,
+      plannedAmount: parseFloat(document.getElementById('budgetLinePlannedField').value) || 0,
+      actualAmount: parseFloat(document.getElementById('budgetLineActualField').value) || 0,
+      notes: document.getElementById('budgetLineNotesField').value.trim()
+    };
+
+    google.script.run
+      .withSuccessHandler(function() { closeBudgetLineModal(); loadBudgetTab(eventId); })
+      .withFailureHandler(function(err) { showBudgetLineModalMsg(err.message, true); })
+      .saveBudgetLine(ADMIN_TOKEN, eventId, payload);
+  }
+
+  function showBudgetLineModalMsg(text, isError) {
+    var el = document.getElementById('budgetLineModalMsg');
+    el.style.background = isError ? '#F9EBEA' : '#EAF2EF';
+    el.style.color = isError ? 'var(--error-color)' : 'var(--success-color)';
+    el.textContent = text;
+    el.style.display = 'block';
   }
 
   function escapeHtml(str) {

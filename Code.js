@@ -67,9 +67,12 @@
      allocated atomically (LockService), same mechanism as Curated
      Event's ranked options (see allocateChoice_, shared by all three
      option-based types).
-     Every bookable booth shares the Exhibition's single event-level
-     Price (applied per booked booth) — booths themselves carry no
-     individual price, only geometry/label/type.
+     Each bookable booth is optionally tagged with an Asset Type (a
+     TypeConfig entry — see normalizeTypeConfig_/normalizeExhibitionAssetTypes_
+     — e.g. "Premium Booth" vs. "Standard Booth", each with its own Price)
+     via FloorPlanElements.AssetTypeId; a booth with no Asset Type falls
+     back to the Exhibition's single flat event-level Price, same as
+     before this feature existed.
    - Any other EventType (not Curated Event, B2B Pre-scheduled Meetings,
      or Exhibition): sub-events are still descriptive agenda items, but
      under an Umbrella Event they are individually opt-in (recorded in
@@ -136,9 +139,13 @@
                                Unlimited, else a non-negative integer) —
                                falling back to the flat Price/Places
                                columns above when the array is empty.
-                               "Exhibition" no longer uses TypeConfig at
-                               all — its booths/amenities/landmarks live in
-                               the FloorPlanElements sheet instead (see the
+                               "Exhibition" uses it for an OPTIONAL array
+                               of Asset Types — each {id,label,price} —
+                               that bookable floor plan elements may
+                               reference (FloorPlanElements.AssetTypeId)
+                               for tiered pricing; its booths/amenities/
+                               landmarks THEMSELVES still live in the
+                               FloorPlanElements sheet instead (see the
                                admin Floor Plan Designer). It's populated
                                on whichever row — top-level or sub-event —
                                actually carries that EventType.)
@@ -219,6 +226,21 @@ const SUBEVENT_REG_SHEET_NAME     = 'SubEventRegistrations';
 const FLOORPLAN_SHEET_NAME        = 'FloorPlanElements';
 const MILESTONES_SHEET_NAME       = 'Milestones';
 const MILESTONE_COMPLETIONS_SHEET_NAME = 'MilestoneCompletions';
+const ORDERS_SHEET_NAME           = 'Orders';
+const BUDGET_LINES_SHEET_NAME     = 'BudgetLines';
+const BUDGET_CATEGORIES_SHEET_NAME = 'BudgetCategories';
+
+// Default Budget category seed rows (see getBudgetCategoriesSheet_) — admins
+// can add/edit/remove categories directly in the BudgetCategories sheet
+// afterwards, same trust model as RegistrationFormFields.
+const BUDGET_DEFAULT_CATEGORIES = {
+  cost:   ['Venue', 'Catering', 'Marketing', 'Speakers/Talent', 'AV/Production', 'Staffing', 'Other'],
+  income: ['Ticket Sales', 'Sponsorship', 'Grants/Subsidies', 'Other']
+};
+const BUDGET_LINE_TYPE_COST   = 'cost';
+const BUDGET_LINE_TYPE_INCOME = 'income';
+const ORDER_STATUS_PAID       = 'paid';
+const ORDER_STATUS_NOT_PAID   = 'not_paid';
 
 // Milestone types (admin-defined tasks attached to an Event or sub-event —
 // see MILESTONE ARCHITECTURE below). Extensible: adding a new type means
@@ -340,7 +362,10 @@ const _rawDataCache_ = {
   profiles: null,   // { headers: [...], rows: [...] } — see getProfilesRaw_
   preferences: null, // { headers: [...], idx: {...}, rows: [...] } — see getPreferencesRaw_
   milestones: null,  // array of milestone def objects — see getMilestonesRaw_
-  milestoneCompletions: null // array of completion objects — see getMilestoneCompletionsRaw_
+  milestoneCompletions: null, // array of completion objects — see getMilestoneCompletionsRaw_
+  orders: null,            // array of order objects — see getOrdersRaw_
+  budgetLines: null,       // array of budget line objects — see getBudgetLinesRaw_
+  budgetCategories: null   // array of {lineType, categoryName, sortOrder} — see getBudgetCategoriesRaw_
 };
 
 /**
@@ -391,6 +416,17 @@ function putCrossRequestCache_(key, value) {
 
 function invalidateCrossRequestCache_(key) {
   try { CacheService.getScriptCache().remove(key); } catch (e) { /* no-op */ }
+}
+
+/**
+ * Mints a short, sufficiently-unique row ID in the same "<PREFIX>-<epoch>-
+ * <rand3>" shape already used ad hoc for MilestoneID (see
+ * saveMilestonesForEntity_). Centralized here since Budget introduces
+ * several new ID'd entities (RegistrationID, OrderID, LineID) that all want
+ * the same format.
+ */
+function mintId_(prefix) {
+  return prefix + '-' + Date.now() + '-' + Math.floor(100 + Math.random() * 900);
 }
 
 // ---- ROUTING & INITIAL RENDER ------------------------------------
@@ -897,13 +933,20 @@ function formatMoney_(amount, currency) {
    "entity" is the event itself, i.e. subEventId === eventId).
    ========================================================================= */
 
+// RegistrationID is a trailing, additive column (see registrationsHeaders_
+// note above — same reasoning: Orders needs a stable FK back to whichever
+// row generated it).
+function subEventRegHeaders_() {
+  return ['Timestamp', 'EventID', 'SubEventID', 'Email', 'FullName', 'EventType', 'OptionId', 'OptionLabel', 'Status', 'Rank', 'ExtraFields', 'CompanyName', 'RegistrationID'];
+}
+
 function getSubEventRegSheet_() {
   const ss = getSpreadsheet_();
   let s = ss.getSheetByName(SUBEVENT_REG_SHEET_NAME) || ss.insertSheet(SUBEVENT_REG_SHEET_NAME);
   if (s.getLastRow() === 0) {
-    s.appendRow(['Timestamp', 'EventID', 'SubEventID', 'Email', 'FullName', 'EventType', 'OptionId', 'OptionLabel', 'Status', 'Rank', 'ExtraFields', 'CompanyName']);
+    s.appendRow(subEventRegHeaders_());
   } else {
-    ensureHeadersFresh_(s, ['Timestamp', 'EventID', 'SubEventID', 'Email', 'FullName', 'EventType', 'OptionId', 'OptionLabel', 'Status', 'Rank', 'ExtraFields', 'CompanyName'], 'headers_checked_subeventreg');
+    ensureHeadersFresh_(s, subEventRegHeaders_(), 'headers_checked_subeventreg');
   }
   return s;
 }
@@ -928,7 +971,8 @@ function getSubEventRegsRaw_() {
       status: String(row[8] || ''),
       rank: row[9] === '' ? null : Number(row[9]),
       extraFields: (function() { try { return JSON.parse(row[10] || '{}') || {}; } catch (e) { return {}; } })(),
-      companyName: String(row[11] || '')
+      companyName: String(row[11] || ''),
+      registrationId: String(row[12] || '')
     });
   }
   _rawDataCache_.subEventRegs = out;
@@ -948,10 +992,12 @@ function getSubEventRegsRaw_() {
  * the cost of one filter/partition instead of two.
  *
  * Only elements with Type "booth" are bookable — each can only be booked
- * once. All bookable booths share the Exhibition's single event-level
- * Price (see getEventPrice_/getEventCurrency_) rather than a per-booth
- * price, consistent with how "Curated Event" now prices as a flat,
- * event-level amount rather than per-option.
+ * once. A booth tagged with an AssetTypeId (see FloorPlanElements schema
+ * note above) prices at that Asset Type's own Price (from the Exhibition's
+ * TypeConfig — see normalizeExhibitionAssetTypes_); any other booth falls
+ * back to the Exhibition's single flat event-level Price (see
+ * getEventPrice_/getEventCurrency_), exactly as every booth priced before
+ * Asset Types existed.
  *
  * Returns { tables: [...], decor: [...] }.
  */
@@ -961,8 +1007,10 @@ function getExhibitionCompleteState_(entity) {
   const bookingByBooth = {};
   regs.forEach(r => { bookingByBooth[r.optionId] = r; });
 
-  const price = getEventPrice_(entity);
+  const flatPrice = getEventPrice_(entity);
   const currency = getEventCurrency_(entity);
+  const assetTypesById = {};
+  (entity.typeConfig || []).forEach(function(a) { assetTypesById[a.id] = a; });
 
   const tables = [];
   const decor = [];
@@ -970,12 +1018,15 @@ function getExhibitionCompleteState_(entity) {
   allElements.forEach(el => {
     if (el.type === 'booth') {
       const booking = bookingByBooth[el.elementId];
+      const assetType = el.assetTypeId ? assetTypesById[el.assetTypeId] : null;
       tables.push({
         elementId: el.elementId,
         label: el.label,
         x: el.x, y: el.y, width: el.width, height: el.height,
         cssClass: el.cssClass,
-        price: price,
+        assetTypeId: el.assetTypeId || '',
+        assetTypeLabel: assetType ? assetType.label : '',
+        price: assetType ? assetType.price : flatPrice,
         currency: currency,
         status: booking ? 'Booked' : 'Available',
         companyName: booking ? (booking.companyName || '') : '',
@@ -1410,10 +1461,13 @@ function allocateChoice_(topEventId, entity, rankedIds, email, fullName, display
     const optionId = allocated ? allocated.id : (fallback.id || String(rankedIds[0]));
     const optionLabel = allocated ? allocated.label : (fallback.label || '');
     const optionPrice = winner.price || 0;
+    const optionCurrency = getEventCurrency_(entity);
+    const registrationId = mintId_('SER');
 
     getSubEventRegSheet_().appendRow([
       new Date(), topEventId, entity.eventId, email, fullName, entity.eventType,
-      optionId, optionLabel, status, allocated ? allocatedRank : 1, JSON.stringify(extraFields || {}), displayLabel || ''
+      optionId, optionLabel, status, allocated ? allocatedRank : 1, JSON.stringify(extraFields || {}), displayLabel || '',
+      registrationId
     ]);
     // Invalidate: a batch registration can call allocateChoice_ multiple
     // times in a row (one per attendee) within the SAME execution. Without
@@ -1425,7 +1479,14 @@ function allocateChoice_(topEventId, entity, rankedIds, email, fullName, display
     _rawDataCache_.subEventRegs = null;
     _rawDataCache_.confirmedSubEventCounts = null; // derived from subEventRegs — same staleness risk
 
-    return { subEventId: entity.eventId, subEventName: entity.eventName, eventType: entity.eventType, status: status, optionId: optionId, optionLabel: optionLabel, optionPrice: optionPrice, optionCurrency: getEventCurrency_(entity), rank: allocated ? allocatedRank : null };
+    // Budget: only a CONFIRMED allocation is a real payable item — a
+    // Waitlisted attendee hasn't actually claimed a paid slot yet.
+    if (status === 'Confirmed') {
+      recordOrder_(topEventId, entity.eventId, registrationId, email, fullName, displayLabel || '',
+        optionPrice, optionCurrency, entity.eventName + (optionLabel ? ' — ' + optionLabel : ''));
+    }
+
+    return { subEventId: entity.eventId, subEventName: entity.eventName, eventType: entity.eventType, status: status, optionId: optionId, optionLabel: optionLabel, optionPrice: optionPrice, optionCurrency: optionCurrency, rank: allocated ? allocatedRank : null };
   } finally {
     lock.releaseLock();
   }
@@ -1466,13 +1527,22 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
       const status = (opt && !isFull) ? 'Confirmed' : 'Waitlisted';
       const optionLabel = opt ? opt.label : '';
       const optionPrice = opt ? (opt.price || 0) : 0;
+      const optionCurrency = getEventCurrency_(entity);
+      const registrationId = mintId_('SER');
 
       getSubEventRegSheet_().appendRow([
         new Date(), topEventId, entity.eventId, email, fullName, entity.eventType,
-        id, optionLabel, status, '', JSON.stringify(extraFields || {}), displayLabel || ''
+        id, optionLabel, status, '', JSON.stringify(extraFields || {}), displayLabel || '',
+        registrationId
       ]);
 
-      return { subEventId: entity.eventId, subEventName: entity.eventName, eventType: entity.eventType, status: status, optionId: id, optionLabel: optionLabel, optionPrice: optionPrice, optionCurrency: getEventCurrency_(entity), rank: null };
+      // Budget: only a CONFIRMED selection is a real payable item.
+      if (status === 'Confirmed') {
+        recordOrder_(topEventId, entity.eventId, registrationId, email, fullName, displayLabel || '',
+          optionPrice, optionCurrency, entity.eventName + (optionLabel ? ' — ' + optionLabel : ''));
+      }
+
+      return { subEventId: entity.eventId, subEventName: entity.eventName, eventType: entity.eventType, status: status, optionId: id, optionLabel: optionLabel, optionPrice: optionPrice, optionCurrency: optionCurrency, rank: null };
     });
 
     // Invalidate: see allocateChoice_'s identical note — a batch
@@ -1504,13 +1574,21 @@ function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraF
     if (!capacityState.unlimited && capacityState.isFull) {
       throw new Error('"' + subEvent.eventName + '" is full (' + capacityState.label + ').');
     }
-    getSubEventRegSheet_().appendRow([new Date(), topEventId, subEvent.eventId, email, fullName, subEvent.eventType || '', '', '', 'Confirmed', '', JSON.stringify(extraFields || {})]);
+    const optionPrice = getEventPrice_(subEvent);
+    const optionCurrency = getEventCurrency_(subEvent);
+    const registrationId = mintId_('SER');
+    getSubEventRegSheet_().appendRow([new Date(), topEventId, subEvent.eventId, email, fullName, subEvent.eventType || '', '', '', 'Confirmed', '', JSON.stringify(extraFields || {}), '', registrationId]);
     _rawDataCache_.subEventRegs = null; // invalidate — see allocateChoice_ for why this matters within a batch loop
     _rawDataCache_.confirmedSubEventCounts = null; // derived from subEventRegs — same staleness risk
+
+    // Budget: a non-zero-price plain opt-in is a payable item.
+    recordOrder_(topEventId, subEvent.eventId, registrationId, email, fullName, '',
+      optionPrice, optionCurrency, subEvent.eventName);
+
     return {
       subEventId: subEvent.eventId, subEventName: subEvent.eventName, eventType: subEvent.eventType,
       status: 'Confirmed', optionId: '', optionLabel: '', rank: null,
-      optionPrice: getEventPrice_(subEvent), optionCurrency: getEventCurrency_(subEvent)
+      optionPrice: optionPrice, optionCurrency: optionCurrency
     };
   } finally {
     lock.releaseLock();
@@ -1635,8 +1713,16 @@ function getEventTypeOptions_() {
  *    means "no options configured" — the event falls back to its own
  *    flat Price/Places columns (see getCuratedEventOptionsLiveState_,
  *    which returns null in that case to signal the fallback).
- *  - "Exhibition": always '[]' — booths/amenities/landmarks live in the
- *    FloorPlanElements sheet (admin Floor Plan Designer) instead.
+ *  - "Exhibition": an OPTIONAL array of Asset Types — each { id, label,
+ *    price } — used to tier-price bookable floor plan elements (a
+ *    "Premium Booth" vs. a "Standard Booth", etc.). The booths/amenities/
+ *    landmarks THEMSELVES still live in the FloorPlanElements sheet
+ *    (admin Floor Plan Designer), not here — each bookable element merely
+ *    references one of these Asset Type ids (FloorPlanElements.AssetTypeId)
+ *    to pick up its price. An empty array is valid and means "no Asset
+ *    Types configured" — every booth then falls back to the event's own
+ *    flat Price (see getExhibitionCompleteState_), same fallback shape
+ *    Curated Event uses when it has no options configured.
  *  - Everything else: always '[]'.
  */
 /**
@@ -1667,6 +1753,8 @@ function getEventTypeOptions_() {
  * the admin will need to add at least one option to save it.
  */
 function normalizeTypeConfig_(eventType, rawConfig) {
+  if (eventType === EVENT_TYPE_EXHIBITION) return normalizeExhibitionAssetTypes_(rawConfig);
+
   const usesOptions = eventType === EVENT_TYPE_CURATED_EVENT || eventType === EVENT_TYPE_B2B_MEETINGS;
   if (!usesOptions) return '[]';
 
@@ -1708,6 +1796,42 @@ function normalizeTypeConfig_(eventType, rawConfig) {
   const seen = new Set();
   out.forEach(o => {
     if (seen.has(o.id)) throw new Error('Duplicate option ID: ' + o.id);
+    seen.add(o.id);
+  });
+
+  return JSON.stringify(out);
+}
+
+/**
+ * Exhibition's TypeConfig: an OPTIONAL array of Asset Types — each
+ * { id, label, price } — that bookable floor plan elements (booths) can
+ * reference by id (FloorPlanElements.AssetTypeId) to pick up a tiered
+ * price instead of the event's single flat Price. Unlike Curated
+ * Event/B2B options, this is NOT required — an Exhibition with no Asset
+ * Types configured just prices every booth at the flat event-level Price,
+ * exactly as before this feature existed (see getExhibitionCompleteState_).
+ */
+function normalizeExhibitionAssetTypes_(rawConfig) {
+  const list = Array.isArray(rawConfig) ? rawConfig : [];
+
+  const out = list.map((o, idx) => {
+    const label = String((o && o.label) || '').trim();
+    if (!label) throw new Error('Every Asset Type needs a label.');
+    const priceRaw = o && o.price;
+    if (priceRaw === '' || priceRaw === null || priceRaw === undefined || isNaN(Number(priceRaw))) {
+      throw new Error('Please enter a price for Asset Type "' + label + '".');
+    }
+    const price = Math.max(0, Number(priceRaw));
+    return {
+      id: String((o && o.id) || '').trim() || ('asset' + (idx + 1)),
+      label: label,
+      price: price
+    };
+  });
+
+  const seen = new Set();
+  out.forEach(o => {
+    if (seen.has(o.id)) throw new Error('Duplicate Asset Type ID: ' + o.id);
     seen.add(o.id);
   });
 
@@ -2175,13 +2299,17 @@ function getSubEventAllocationSummary(token, subEventId) {
    read from or write to TypeConfig, Registrations, or SubEventRegistrations,
    and does not affect registration/pricing/allocation logic in any way.
    Sheet: FloorPlanElements  ElementID | EventID | X | Y | Width | Height |
-                             Type | Label | CSSClass | UpdatedDate
+                             Type | Label | CSSClass | AssetTypeId |
+                             UpdatedDate
+   (AssetTypeId is blank for decor and for plain/legacy booths — it only
+   links a "booth" element to one of the Exhibition's own TypeConfig Asset
+   Types, for tiered pricing — see getExhibitionCompleteState_.)
    ========================================================================= */
 
 function getFloorPlanSheet_() {
   const ss = getSpreadsheet_();
   let s = ss.getSheetByName(FLOORPLAN_SHEET_NAME) || ss.insertSheet(FLOORPLAN_SHEET_NAME);
-  const headers = ['ElementID', 'EventID', 'X', 'Y', 'Width', 'Height', 'Type', 'Label', 'CSSClass', 'UpdatedDate'];
+  const headers = ['ElementID', 'EventID', 'X', 'Y', 'Width', 'Height', 'Type', 'Label', 'CSSClass', 'AssetTypeId', 'UpdatedDate'];
   if (s.getLastRow() === 0) {
     s.appendRow(headers);
   } else {
@@ -2219,7 +2347,8 @@ function getFloorPlanElementsRaw_() {
     height: headers.indexOf('height'),
     type: headers.indexOf('type'),
     label: headers.indexOf('label'),
-    cssClass: headers.indexOf('cssclass')
+    cssClass: headers.indexOf('cssclass'),
+    assetTypeId: headers.indexOf('assettypeid')
   };
   const out = [];
   for (let i = 1; i < data.length; i++) {
@@ -2233,7 +2362,8 @@ function getFloorPlanElementsRaw_() {
       height: Number(row[idx.height]) || 0,
       type: String(row[idx.type] || ''),
       label: String(row[idx.label] || ''),
-      cssClass: String(row[idx.cssClass] || '')
+      cssClass: String(row[idx.cssClass] || ''),
+      assetTypeId: idx.assetTypeId !== -1 ? String(row[idx.assetTypeId] || '') : ''
     });
   }
   _rawDataCache_.floorPlan = out;
@@ -2274,7 +2404,8 @@ function normalizeFloorPlanElement_(raw, idx) {
     elementId: String(raw.elementId || '').trim() || ('EL-' + new Date().getTime() + '-' + idx + '-' + Math.floor(Math.random() * 1000)),
     x: x, y: y, width: width, height: height,
     type: type, label: label,
-    cssClass: String(raw.cssClass || '').trim()
+    cssClass: String(raw.cssClass || '').trim(),
+    assetTypeId: String(raw.assetTypeId || '').trim()
   };
 }
 
@@ -2285,7 +2416,9 @@ function normalizeFloorPlanElement_(raw, idx) {
  * Called as: google.script.run.saveFloorPlanLayout(token, eventId, elements)
  *
  * elements: [{ elementId (blank = new), x, y, width, height, type, label,
- *              cssClass }, ...]
+ *              cssClass, assetTypeId (optional — links a "booth" to one of
+ *              the Exhibition's own TypeConfig Asset Types for tiered
+ *              pricing; blank = flat event-level price) }, ...]
  * Returns { status: 'ok', savedCount }.
  */
 function saveFloorPlanLayout(token, eventId, elements) {
@@ -2314,6 +2447,13 @@ function saveFloorPlanLayout(token, eventId, elements) {
     const existingRows = existingRowCount > 0 ? sheet.getRange(2, 1, existingRowCount, lastCol).getValues() : [];
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
     const eventIdCol = headers.indexOf('EventID');
+    // Name-indexed, not positional — a header appended by migrateSheetHeaders_
+    // (e.g. AssetTypeId on an older sheet) lands at whatever column is
+    // currently last, which may not match a hardcoded literal order. See
+    // getEventsColumnIndex_'s doc comment for the exact failure mode this
+    // avoids.
+    const colIdx = {};
+    headers.forEach(function(h, i) { colIdx[h] = i; });
 
     // Bulk replace: keep every row belonging to OTHER events untouched,
     // drop this event's old rows entirely, and append the freshly
@@ -2321,7 +2461,19 @@ function saveFloorPlanLayout(token, eventId, elements) {
     const keptRows = existingRows.filter(function(row) { return String(row[eventIdCol]) !== String(eventId); });
     const timestamp = new Date();
     const newRows = normalized.map(function(el) {
-      return [el.elementId, eventId, el.x, el.y, el.width, el.height, el.type, el.label, el.cssClass, timestamp];
+      const row = new Array(lastCol).fill('');
+      row[colIdx['ElementID']] = el.elementId;
+      row[colIdx['EventID']] = eventId;
+      row[colIdx['X']] = el.x;
+      row[colIdx['Y']] = el.y;
+      row[colIdx['Width']] = el.width;
+      row[colIdx['Height']] = el.height;
+      row[colIdx['Type']] = el.type;
+      row[colIdx['Label']] = el.label;
+      row[colIdx['CSSClass']] = el.cssClass;
+      if (colIdx['AssetTypeId'] !== undefined) row[colIdx['AssetTypeId']] = el.assetTypeId;
+      row[colIdx['UpdatedDate']] = timestamp;
+      return row;
     });
     const finalRows = keptRows.concat(newRows);
 
@@ -2349,7 +2501,7 @@ function getFloorPlanLayout(token, eventId) {
   const elements = getFloorPlanElementsRaw_()
     .filter(function(r) { return r.eventId === String(eventId); })
     .map(function(r) {
-      return { elementId: r.elementId, x: r.x, y: r.y, width: r.width, height: r.height, type: r.type, label: r.label, cssClass: r.cssClass };
+      return { elementId: r.elementId, x: r.x, y: r.y, width: r.width, height: r.height, type: r.type, label: r.label, cssClass: r.cssClass, assetTypeId: r.assetTypeId || '' };
     });
 
   return {
@@ -2359,7 +2511,14 @@ function getFloorPlanLayout(token, eventId) {
     canvasWidth: FLOORPLAN_CANVAS_WIDTH,
     canvasHeight: FLOORPLAN_CANVAS_HEIGHT,
     gridSize: FLOORPLAN_GRID_SIZE,
-    elements: elements
+    elements: elements,
+    // Asset Types (from this event's own TypeConfig — see
+    // normalizeExhibitionAssetTypes_) plus the flat fallback price/currency,
+    // so the designer can offer them as tiered "+ Asset" options alongside
+    // the generic flat-priced Booth.
+    assetTypes: event.typeConfig || [],
+    flatPrice: getEventPrice_(event),
+    currency: getEventCurrency_(event)
   };
 }
 
@@ -2593,6 +2752,389 @@ function recordMilestoneCompletion_(eventId, milestoneId, email, submissionData)
   }
 }
 
+/* =========================================================================
+   BUDGET FEATURE — Orders (auto income), BudgetLines (manual cost lines +
+   optional income targets), BudgetCategories (admin-editable category
+   list). One Budget per TOP-LEVEL event, even when it has sub-events —
+   Orders.EventID and BudgetLines.EventID are always the top-level event's
+   ID; SubEventID (when set) attributes an individual line/order to one of
+   that event's sub-events for breakdown purposes only.
+
+   Income is NEVER hand-entered: every non-zero-price registration/sub-
+   event opt-in/allocation automatically creates a 'not_paid' Order via
+   recordOrder_ (called from the existing registration/allocation write
+   paths — see submitEventRegistration, submitEventRegistrationBatch,
+   allocateChoice_, allocateCuratedEventSelections_,
+   recordPlainSubEventOptIn_). An admin flips an Order to 'paid' as money
+   comes in (updateOrderPaymentStatus_). Actual income is ALWAYS a live sum
+   over Orders (see getBudgetSummary_) — never a cached running total, so
+   it can never drift out of sync with the underlying Orders rows.
+
+   Costs are entered manually as BudgetLines (LineType='cost'). An
+   income-type BudgetLine (LineType='income') is a planned TARGET only —
+   its ActualAmount is always forced to 0 server-side; the real actual for
+   income always comes from Orders, never duplicated here.
+   ========================================================================= */
+
+function ordersHeaders_() {
+  return ['OrderID', 'EventID', 'SubEventID', 'RegistrationID', 'Email', 'FullName', 'CompanyName',
+    'Category', 'Description', 'Amount', 'Currency', 'PaymentStatus', 'PaymentMethod',
+    'OrderDate', 'PaidDate', 'RecordedBy', 'Notes'];
+}
+
+function getOrdersSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(ORDERS_SHEET_NAME) || ss.insertSheet(ORDERS_SHEET_NAME);
+  if (s.getLastRow() === 0) {
+    s.appendRow(ordersHeaders_());
+  } else {
+    ensureHeadersFresh_(s, ordersHeaders_(), 'headers_checked_orders');
+  }
+  return s;
+}
+
+const ORDERS_CACHE_KEY_ = 'orders_v1';
+
+function getOrdersRaw_() {
+  if (_rawDataCache_.orders) return _rawDataCache_.orders;
+  const cached = getCrossRequestCache_(ORDERS_CACHE_KEY_);
+  if (cached) { _rawDataCache_.orders = cached; return cached; }
+
+  const sheet = getOrdersSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      out.push({
+        orderId: String(row[0] || ''),
+        eventId: String(row[1] || ''),
+        subEventId: String(row[2] || ''),
+        registrationId: String(row[3] || ''),
+        email: String(row[4] || ''),
+        fullName: String(row[5] || ''),
+        companyName: String(row[6] || ''),
+        category: String(row[7] || ''),
+        description: String(row[8] || ''),
+        amount: Number(row[9]) || 0,
+        currency: String(row[10] || ''),
+        paymentStatus: String(row[11] || ORDER_STATUS_NOT_PAID),
+        paymentMethod: String(row[12] || ''),
+        orderDate: row[13] instanceof Date ? row[13].toLocaleString() : String(row[13] || ''),
+        paidDate: row[14] instanceof Date ? row[14].toLocaleString() : String(row[14] || ''),
+        recordedBy: String(row[15] || ''),
+        notes: String(row[16] || '')
+      });
+    }
+  }
+  _rawDataCache_.orders = out;
+  putCrossRequestCache_(ORDERS_CACHE_KEY_, out);
+  return out;
+}
+
+/**
+ * INTERNAL — never exposed via google.script.run. Auto-creates a
+ * 'not_paid' Order whenever a registration/allocation with a non-zero
+ * price completes; free (price <= 0) items create no Order. Always called
+ * from inside the SAME LockService section that just wrote the triggering
+ * Registrations/SubEventRegistrations row — this only appends (never
+ * reads-then-writes a shared value), so it needs no lock of its own.
+ */
+function recordOrder_(eventId, subEventId, registrationId, email, fullName, companyName, amount, currency, description) {
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return;
+
+  getOrdersSheet_().appendRow([
+    mintId_('ORD'), eventId, subEventId || '', registrationId || '', email || '', fullName || '', companyName || '',
+    'Ticket Sales', description || '', amt, currency || DEFAULT_CURRENCY, ORDER_STATUS_NOT_PAID, '',
+    new Date(), '', '', ''
+  ]);
+  _rawDataCache_.orders = null;
+  invalidateCrossRequestCache_(ORDERS_CACHE_KEY_);
+}
+
+function budgetLinesHeaders_() {
+  return ['LineID', 'EventID', 'SubEventID', 'LineType', 'Category', 'Label',
+    'PlannedAmount', 'ActualAmount', 'Currency', 'Notes', 'CreatedDate', 'CreatedBy', 'SortOrder'];
+}
+
+function getBudgetLinesSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(BUDGET_LINES_SHEET_NAME) || ss.insertSheet(BUDGET_LINES_SHEET_NAME);
+  if (s.getLastRow() === 0) {
+    s.appendRow(budgetLinesHeaders_());
+  } else {
+    ensureHeadersFresh_(s, budgetLinesHeaders_(), 'headers_checked_budgetlines');
+  }
+  return s;
+}
+
+const BUDGET_LINES_CACHE_KEY_ = 'budgetlines_v1';
+
+function getBudgetLinesRaw_() {
+  if (_rawDataCache_.budgetLines) return _rawDataCache_.budgetLines;
+  const cached = getCrossRequestCache_(BUDGET_LINES_CACHE_KEY_);
+  if (cached) { _rawDataCache_.budgetLines = cached; return cached; }
+
+  const sheet = getBudgetLinesSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      out.push({
+        lineId: String(row[0] || ''),
+        eventId: String(row[1] || ''),
+        subEventId: String(row[2] || ''),
+        lineType: String(row[3] || BUDGET_LINE_TYPE_COST),
+        category: String(row[4] || ''),
+        label: String(row[5] || ''),
+        plannedAmount: Number(row[6]) || 0,
+        actualAmount: Number(row[7]) || 0,
+        currency: String(row[8] || ''),
+        notes: String(row[9] || ''),
+        createdDate: row[10] instanceof Date ? row[10].toLocaleString() : String(row[10] || ''),
+        createdBy: String(row[11] || ''),
+        sortOrder: Number(row[12]) || 0
+      });
+    }
+    out.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  _rawDataCache_.budgetLines = out;
+  putCrossRequestCache_(BUDGET_LINES_CACHE_KEY_, out);
+  return out;
+}
+
+function budgetCategoriesHeaders_() {
+  return ['LineType', 'CategoryName', 'SortOrder'];
+}
+
+function getBudgetCategoriesSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(BUDGET_CATEGORIES_SHEET_NAME) || ss.insertSheet(BUDGET_CATEGORIES_SHEET_NAME);
+  if (s.getLastRow() === 0) {
+    s.appendRow(budgetCategoriesHeaders_());
+    // Seed sensible defaults — organizers can edit/add/remove rows directly
+    // in the sheet afterwards, same trust model as RegistrationFormFields.
+    const seedRows = [];
+    BUDGET_DEFAULT_CATEGORIES.cost.forEach((name, idx) => seedRows.push([BUDGET_LINE_TYPE_COST, name, idx]));
+    BUDGET_DEFAULT_CATEGORIES.income.forEach((name, idx) => seedRows.push([BUDGET_LINE_TYPE_INCOME, name, idx]));
+    s.getRange(2, 1, seedRows.length, 3).setValues(seedRows);
+  } else {
+    ensureHeadersFresh_(s, budgetCategoriesHeaders_(), 'headers_checked_budgetcategories');
+  }
+  return s;
+}
+
+const BUDGET_CATEGORIES_CACHE_KEY_ = 'budgetcategories_v1';
+
+function getBudgetCategoriesRaw_() {
+  if (_rawDataCache_.budgetCategories) return _rawDataCache_.budgetCategories;
+  const cached = getCrossRequestCache_(BUDGET_CATEGORIES_CACHE_KEY_);
+  if (cached) { _rawDataCache_.budgetCategories = cached; return cached; }
+
+  const sheet = getBudgetCategoriesSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const lineType = String(row[0] || '').trim();
+      const categoryName = String(row[1] || '').trim();
+      if (!lineType || !categoryName) continue;
+      out.push({ lineType: lineType, categoryName: categoryName, sortOrder: Number(row[2]) || 0 });
+    }
+    out.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  _rawDataCache_.budgetCategories = out;
+  putCrossRequestCache_(BUDGET_CATEGORIES_CACHE_KEY_, out);
+  return out;
+}
+
+/**
+ * Resolves a submitted category against the admin-editable list for that
+ * LineType, falling back to 'Other' if it's blank, unrecognized, or was
+ * later removed from the BudgetCategories sheet — keeps a stale client or
+ * an edited category list from ever hard-failing a save.
+ */
+function resolveBudgetCategory_(lineType, rawCategory) {
+  const valid = getBudgetCategoriesRaw_().filter(c => c.lineType === lineType).map(c => c.categoryName);
+  const category = String(rawCategory || '').trim();
+  return valid.indexOf(category) !== -1 ? category : 'Other';
+}
+
+/* ---- ADMIN: Budget tab (AdminPortal.html) ---- */
+
+function getBudgetCategories(token) {
+  requireAdmin_(token);
+  return getBudgetCategoriesRaw_();
+}
+
+/**
+ * Full Budget summary for one TOP-LEVEL event: KPI totals plus the line-
+ * and order-level detail the Budget tab renders. Actual income is always
+ * computed live from paid Orders — never a stored running total — so it
+ * can never drift out of sync with the underlying rows.
+ */
+function getBudgetSummary(token, eventId) {
+  requireAdmin_(token);
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+
+  const subEventNameById = {};
+  getAllEvents_().filter(e => e.parentEventId === eventId).forEach(e => { subEventNameById[e.eventId] = e.eventName; });
+
+  const orders = getOrdersRaw_().filter(o => o.eventId === eventId);
+  const lines = getBudgetLinesRaw_().filter(l => l.eventId === eventId);
+
+  const actualIncome = orders.filter(o => o.paymentStatus === ORDER_STATUS_PAID).reduce((sum, o) => sum + o.amount, 0);
+  const plannedIncome = lines.filter(l => l.lineType === BUDGET_LINE_TYPE_INCOME).reduce((sum, l) => sum + l.plannedAmount, 0);
+  const plannedCost = lines.filter(l => l.lineType === BUDGET_LINE_TYPE_COST).reduce((sum, l) => sum + l.plannedAmount, 0);
+  const actualCost = lines.filter(l => l.lineType === BUDGET_LINE_TYPE_COST).reduce((sum, l) => sum + l.actualAmount, 0);
+
+  return {
+    currency: getEventCurrency_(event),
+    plannedIncome: plannedIncome,
+    actualIncome: actualIncome,
+    plannedCost: plannedCost,
+    actualCost: actualCost,
+    net: actualIncome - actualCost,
+    subEvents: Object.keys(subEventNameById).map(id => ({ subEventId: id, subEventName: subEventNameById[id] })),
+    lines: lines.map(l => ({
+      lineId: l.lineId,
+      lineType: l.lineType,
+      category: l.category,
+      label: l.label,
+      subEventId: l.subEventId,
+      subEventName: l.subEventId ? (subEventNameById[l.subEventId] || '') : '',
+      planned: l.plannedAmount,
+      actual: l.lineType === BUDGET_LINE_TYPE_INCOME ? 0 : l.actualAmount,
+      currency: l.currency || getEventCurrency_(event),
+      notes: l.notes
+    })),
+    orders: orders.map(o => ({
+      orderId: o.orderId,
+      email: o.email,
+      fullName: o.fullName,
+      companyName: o.companyName,
+      category: o.category,
+      description: o.description,
+      amount: o.amount,
+      currency: o.currency,
+      paymentStatus: o.paymentStatus,
+      paidDate: o.paidDate,
+      orderDate: o.orderDate,
+      subEventId: o.subEventId,
+      subEventName: o.subEventId ? (subEventNameById[o.subEventId] || '') : ''
+    }))
+  };
+}
+
+/**
+ * Creates or updates one BudgetLine — find-by-LineID-or-append, a per-row
+ * upsert (unlike saveMilestonesForEntity_'s whole-list bulk-replace),
+ * since lines are edited one at a time via the Add/Edit Line modal.
+ * Income-type lines never carry a manually-entered ActualAmount — it's
+ * always forced to 0 (see file header note on Orders vs BudgetLines).
+ */
+function saveBudgetLine(token, eventId, line) {
+  const adminEmail = requireAdmin_(token);
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+
+  const lineType = (line && line.lineType) === BUDGET_LINE_TYPE_INCOME ? BUDGET_LINE_TYPE_INCOME : BUDGET_LINE_TYPE_COST;
+  const label = String((line && line.label) || '').trim();
+  if (!label) throw new Error('Every budget line needs a label.');
+  const category = resolveBudgetCategory_(lineType, line && line.category);
+
+  const subEventId = String((line && line.subEventId) || '').trim();
+  if (subEventId) {
+    const subEvent = getEventById_(subEventId);
+    if (!subEvent || subEvent.parentEventId !== eventId) throw new Error('That sub-event does not belong to this event.');
+  }
+
+  const plannedAmount = Math.max(0, Number(line && line.plannedAmount) || 0);
+  const actualAmount = lineType === BUDGET_LINE_TYPE_INCOME ? 0 : Math.max(0, Number(line && line.actualAmount) || 0);
+  const notes = String((line && line.notes) || '').trim();
+  const currency = getEventCurrency_(event);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getBudgetLinesSheet_();
+    const existingLineId = String((line && line.lineId) || '').trim();
+    const data = sheet.getLastRow() > 1 ? sheet.getDataRange().getValues() : [];
+
+    if (existingLineId) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0]) === existingLineId) {
+          sheet.getRange(i + 1, 1, 1, 13).setValues([[
+            existingLineId, eventId, subEventId, lineType, category, label,
+            plannedAmount, actualAmount, currency, notes, data[i][10], data[i][11], data[i][12]
+          ]]);
+          _rawDataCache_.budgetLines = null;
+          invalidateCrossRequestCache_(BUDGET_LINES_CACHE_KEY_);
+          return { status: 'ok', lineId: existingLineId };
+        }
+      }
+    }
+
+    const lineId = mintId_('BL');
+    sheet.appendRow([lineId, eventId, subEventId, lineType, category, label,
+      plannedAmount, actualAmount, currency, notes, new Date(), adminEmail, data.length]);
+    _rawDataCache_.budgetLines = null;
+    invalidateCrossRequestCache_(BUDGET_LINES_CACHE_KEY_);
+    return { status: 'ok', lineId: lineId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteBudgetLine(token, eventId, lineId) {
+  requireAdmin_(token);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getBudgetLinesSheet_();
+    const data = sheet.getLastRow() > 1 ? sheet.getDataRange().getValues() : [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(lineId) && String(data[i][1]) === String(eventId)) {
+        sheet.deleteRow(i + 1);
+        _rawDataCache_.budgetLines = null;
+        invalidateCrossRequestCache_(BUDGET_LINES_CACHE_KEY_);
+        return { status: 'ok' };
+      }
+    }
+    throw new Error('Budget line not found.');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** PaymentStatus is column 12, PaidDate is column 15 in ordersHeaders_(). */
+function updateOrderPaymentStatus(token, orderId, newStatus) {
+  requireAdmin_(token);
+  const status = newStatus === ORDER_STATUS_PAID ? ORDER_STATUS_PAID : ORDER_STATUS_NOT_PAID;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getOrdersSheet_();
+    const data = sheet.getLastRow() > 1 ? sheet.getDataRange().getValues() : [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(orderId)) {
+        sheet.getRange(i + 1, 12).setValue(status);
+        sheet.getRange(i + 1, 15).setValue(status === ORDER_STATUS_PAID ? new Date() : '');
+        _rawDataCache_.orders = null;
+        invalidateCrossRequestCache_(ORDERS_CACHE_KEY_);
+        return { status: 'ok' };
+      }
+    }
+    throw new Error('Order not found.');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** Used by the standalone Dashboard.html (accessed via ?key=...) to populate its event picker. */
 function getDashboardEventOptions() {
   const events = getAllEvents_();
@@ -2685,12 +3227,24 @@ function authenticateUserPortal(email) {
    REGISTRATIONS SHEET HELPERS
    ========================================================================= */
 
+/**
+ * RegistrationID is a trailing, additive column (see Budget feature —
+ * Orders rows need a stable FK back to the registration that generated
+ * them). Existing rows created before this column existed simply have it
+ * blank; reads look it up by header name, never by position.
+ */
+function registrationsHeaders_() {
+  return ['Timestamp', 'EventID', 'Work Email', 'Full Name', ...MEMBERSHIP_COLUMNS, 'Registration Type',
+    'ExtraFields', 'DietaryRequirements', 'DietaryOther', 'CompletedBy', 'RegistrationID'];
+}
+
 function getRegistrationsSheet_() {
   const ss = getSpreadsheet_();
   let s = ss.getSheetByName(REGISTRATIONS_SHEET_NAME) || ss.insertSheet(REGISTRATIONS_SHEET_NAME);
   if (s.getLastRow() === 0) {
-    s.appendRow(['Timestamp', 'EventID', 'Work Email', 'Full Name', ...MEMBERSHIP_COLUMNS, 'Registration Type',
-      'ExtraFields', 'DietaryRequirements', 'DietaryOther', 'CompletedBy']);
+    s.appendRow(registrationsHeaders_());
+  } else {
+    ensureHeadersFresh_(s, registrationsHeaders_(), 'headers_checked_registrations');
   }
   return s;
 }
@@ -2716,7 +3270,8 @@ function getRegistrationsRaw_() {
     extraFields: headers.indexOf('extrafields'),
     dietaryRequirements: headers.indexOf('dietaryrequirements'),
     dietaryOther: headers.indexOf('dietaryother'),
-    completedBy: headers.indexOf('completedby')
+    completedBy: headers.indexOf('completedby'),
+    registrationId: headers.indexOf('registrationid')
   };
 
   const out = [];
@@ -2738,7 +3293,8 @@ function getRegistrationsRaw_() {
       extraFields: idx.extraFields !== -1 ? String(row[idx.extraFields] || '') : '',
       dietaryRequirements: idx.dietaryRequirements !== -1 ? String(row[idx.dietaryRequirements] || '') : '',
       dietaryOther: idx.dietaryOther !== -1 ? String(row[idx.dietaryOther] || '') : '',
-      completedBy: idx.completedBy !== -1 ? String(row[idx.completedBy] || '') : ''
+      completedBy: idx.completedBy !== -1 ? String(row[idx.completedBy] || '') : '',
+      registrationId: idx.registrationId !== -1 ? String(row[idx.registrationId] || '') : ''
     });
   }
   _rawDataCache_.registrations = out;
@@ -3017,14 +3573,22 @@ function submitEventRegistration(payload) {
     const alreadyRegistered = getRegistrationsRaw_().some(r => r.eventId === payload.eventId && r.email.toLowerCase() === email);
     if (alreadyRegistered) throw new Error('This email address is already registered for this event.');
 
+    const registrationId = mintId_('REG');
     sheet.appendRow([
       new Date(), payload.eventId, email, fullName,
       ...companyRow,
       payload.registrationType || '',
-      JSON.stringify(payload.extraFields || {})
+      JSON.stringify(payload.extraFields || {}),
+      '', '', '', // DietaryRequirements, DietaryOther, CompletedBy — not collected on this path
+      registrationId
     ]);
     _rawDataCache_.registrations = null; // invalidate: this execution's cached Registrations read is now stale
     _rawDataCache_.registrationCounts = null; // derived from registrations — same staleness risk
+
+    // Budget: a non-zero-price standalone event registration is a payable
+    // item — auto-create a not_paid Order the organizer can later mark paid.
+    recordOrder_(payload.eventId, '', registrationId, email, fullName, companyRow[0] || '',
+      getEventPrice_(event), getEventCurrency_(event), event.eventName);
   } finally {
     lock.releaseLock();
   }
@@ -3135,7 +3699,8 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
       extraFields: a.extraFields || {},
       dietaryRequirements: a.dietaryRequirements || [],
       dietaryOther: a.dietaryOther || '',
-      subEventSelections: a.subEventSelections || []
+      subEventSelections: a.subEventSelections || [],
+      registrationId: mintId_('REG')
     });
   });
 
@@ -3161,6 +3726,7 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
         (nowDuplicate.length > 1 ? ' are already registered' : ' is already registered') + ' for this event.');
     }
 
+    const pricePerRegistrant_ = getEventPrice_(event); // top-level event's own price, if any (0 for most Umbrella events)
     normalizedAttendees.forEach(a => {
       sheet.appendRow([
         timestamp, eventId, a.email, a.fullName,
@@ -3169,8 +3735,13 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
         JSON.stringify(a.extraFields),
         a.dietaryRequirements.join('|'),
         a.dietaryOther,
-        completedBy
+        completedBy,
+        a.registrationId
       ]);
+      // Budget: a non-zero-price top-level registration is a payable item —
+      // auto-create a not_paid Order the organizer can later mark paid.
+      recordOrder_(eventId, '', a.registrationId, a.email, a.fullName, a.companyRow[0] || '',
+        pricePerRegistrant_, currency, event.eventName);
     });
     _rawDataCache_.registrations = null; // invalidate: this execution's cached Registrations read is now stale
     _rawDataCache_.registrationCounts = null; // derived from registrations — same staleness risk
