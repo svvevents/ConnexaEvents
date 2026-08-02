@@ -68,6 +68,22 @@
     .fp-dropdown-item .fp-item-price { color: var(--text-muted); font-weight: 600; font-size: 12px; }
     .fp-dropdown-empty { padding: 9px 14px; font-size: 12px; color: var(--text-muted); font-style: italic; }
 
+    /* ---- "Generate Seats" modal (bulk seat-grid placement) ---- */
+    .type-config-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; box-sizing: border-box; }
+    .fp-modal-overlay {
+      position: fixed; inset: 0; background: rgba(20,22,29,0.45); display: flex;
+      align-items: center; justify-content: center; z-index: 50; padding: 20px;
+    }
+    .fp-modal { background: white; border-radius: 14px; padding: 22px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; }
+    .fp-modal h3 { margin: 0 0 8px; font-size: 16px; }
+    .fp-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+    .fp-modal-hint-error { color: var(--error-color); font-weight: 700; }
+
     .btn { background: var(--primary-color); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; white-space: nowrap; }
     .btn:hover { background: var(--navy-color); }
     .btn.secondary { background: #eef1f5; color: var(--text-dark); }
@@ -199,6 +215,7 @@
           </div>
           <button type="button" class="btn secondary" id="btnCopyElement" onclick="copySelectedElement()" disabled title="Select an element first">Copy</button>
           <button type="button" class="btn secondary" id="btnPasteElement" onclick="pasteClipboardElement()" disabled title="Copy an element first">Paste</button>
+          <button type="button" class="btn secondary" onclick="openSeatGenModal()">⊞ Generate Seats</button>
           <button class="btn" id="btnSaveLayout" onclick="saveLayout()">Save Layout</button>
         </div>
 
@@ -207,6 +224,39 @@
         <div class="fp-canvas-wrap">
           <div class="fp-canvas" id="fpCanvas"></div>
           <p class="fp-canvas-caption" id="fpCanvasCaption"></p>
+        </div>
+      </div>
+
+      <!-- Generate Seats modal: bulk-places a grid of booth elements (theatre-style assigned seating) instead of adding + resizing hundreds by hand -->
+      <div class="fp-modal-overlay" id="seatGenOverlay" style="display:none;" onclick="if (event.target === this) closeSeatGenModal();">
+        <div class="fp-modal">
+          <h3>Generate Seats</h3>
+          <p class="type-config-hint">
+            Places a grid of individually-bookable seats labeled by row (A1, A2, … B1, …), each priced via the Asset
+            Type you pick. Run it again with a different Start X/Y for each additional section (e.g. Orchestra,
+            then Balcony) — each seat stays individually movable/resizable afterward.
+          </p>
+          <div class="form-group">
+            <label>Asset Type (price tier)</label>
+            <select id="seatGenAssetType"></select>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Rows</label><input type="number" id="seatGenRows" min="1" step="1" value="10" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label>Seats per row</label><input type="number" id="seatGenSeatsPerRow" min="1" step="1" value="20" oninput="updateSeatGenPreview()"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Seat width (px)</label><input type="number" id="seatGenWidth" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label>Seat height (px)</label><input type="number" id="seatGenHeight" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Start X (px)</label><input type="number" id="seatGenStartX" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label>Start Y (px)</label><input type="number" id="seatGenStartY" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
+          </div>
+          <p class="type-config-hint" id="seatGenPreview"></p>
+          <div class="fp-modal-actions">
+            <button type="button" class="btn secondary" onclick="closeSeatGenModal()">Cancel</button>
+            <button type="button" class="btn" id="btnGenerateSeats" onclick="generateSeats()">Generate</button>
+          </div>
         </div>
       </div>
 
@@ -410,6 +460,102 @@
     }
   }
 
+  /* ---------------- Generate Seats (bulk grid placement) ---------------- */
+
+  function openSeatGenModal() {
+    var select = document.getElementById('seatGenAssetType');
+    var options = [{ id: '', label: ELEMENT_PRESETS.booth.label, price: EXHIBITION_FLAT_PRICE }];
+    EXHIBITION_ASSET_TYPES.forEach(function(a) { options.push({ id: a.id, label: a.label, price: a.price }); });
+    select.innerHTML = options.map(function(o) {
+      return '<option value="' + escapeHtml(o.id) + '">' + escapeHtml(o.label) + ' — ' + formatMoney(o.price) + '</option>';
+    }).join('');
+    document.getElementById('seatGenOverlay').style.display = 'flex';
+    updateSeatGenPreview();
+  }
+
+  function closeSeatGenModal() {
+    document.getElementById('seatGenOverlay').style.display = 'none';
+  }
+
+  /** Computes the grid's required footprint from the modal's current inputs and shows a live seat-count/fit preview, disabling Generate if it overflows the canvas. */
+  function updateSeatGenPreview() {
+    var g = readSeatGenInputs();
+    var totalWidth = g.startX + g.seatsPerRow * g.width;
+    var totalHeight = g.startY + g.rows * g.height;
+    var preview = document.getElementById('seatGenPreview');
+    var fits = totalWidth <= CANVAS_WIDTH && totalHeight <= CANVAS_HEIGHT;
+    var seatCount = g.rows * g.seatsPerRow;
+    if (fits) {
+      preview.className = 'type-config-hint';
+      preview.textContent = 'Will place ' + seatCount + ' seat(s), labeled A1–' + rowLetterForIndex(g.rows - 1) + g.seatsPerRow + ', using ' + totalWidth + ' × ' + totalHeight + 'px of the ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + ' canvas.';
+    } else {
+      preview.className = 'type-config-hint fp-modal-hint-error';
+      preview.textContent = 'Doesn\'t fit: needs ' + totalWidth + ' × ' + totalHeight + 'px but the canvas is only ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + 'px. Reduce seat size/rows/columns, or pick a larger Canvas Size on the event\'s edit form.';
+    }
+    document.getElementById('btnGenerateSeats').disabled = !fits;
+  }
+
+  function readSeatGenInputs() {
+    return {
+      assetTypeId: document.getElementById('seatGenAssetType').value,
+      rows: Math.max(1, Math.floor(Number(document.getElementById('seatGenRows').value) || 0)),
+      seatsPerRow: Math.max(1, Math.floor(Number(document.getElementById('seatGenSeatsPerRow').value) || 0)),
+      width: Math.max(GRID_SIZE, snap(Number(document.getElementById('seatGenWidth').value) || GRID_SIZE)),
+      height: Math.max(GRID_SIZE, snap(Number(document.getElementById('seatGenHeight').value) || GRID_SIZE)),
+      startX: Math.max(0, snap(Number(document.getElementById('seatGenStartX').value) || 0)),
+      startY: Math.max(0, snap(Number(document.getElementById('seatGenStartY').value) || 0))
+    };
+  }
+
+  /** Spreadsheet-style row letters: A, B, ... Z, AA, AB, ... — no artificial row-count cap. */
+  function rowLetterForIndex(idx) {
+    var n = idx + 1;
+    var s = '';
+    while (n > 0) {
+      var rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  /**
+   * Bulk-places a rows x seatsPerRow grid of individually bookable seats —
+   * the whole point being to avoid adding + resizing hundreds of booths by
+   * hand for theatre-style assigned seating. Each seat is a normal "booth"
+   * element afterward (draggable/resizable/removable, same as any other),
+   * tagged with the chosen Asset Type for its price (blank = flat event
+   * price, same as the generic Booth elsewhere). Labeled "A1".."A20",
+   * "B1".., etc — bare, no Asset Type prefix, since sections are told
+   * apart by WHERE they are on the canvas (like a real seating chart);
+   * add a renamed Decoration as a section banner if you want an explicit
+   * "Orchestra" / "Balcony" label above a block.
+   */
+  function generateSeats() {
+    var g = readSeatGenInputs();
+    var totalWidth = g.startX + g.seatsPerRow * g.width;
+    var totalHeight = g.startY + g.rows * g.height;
+    if (totalWidth > CANVAS_WIDTH || totalHeight > CANVAS_HEIGHT) { updateSeatGenPreview(); return; }
+
+    for (var r = 0; r < g.rows; r++) {
+      for (var c = 0; c < g.seatsPerRow; c++) {
+        addElementToCanvas({
+          elementId: '',
+          x: g.startX + c * g.width,
+          y: g.startY + r * g.height,
+          width: g.width,
+          height: g.height,
+          type: 'booth',
+          label: rowLetterForIndex(r) + (c + 1),
+          cssClass: '',
+          assetTypeId: g.assetTypeId
+        }, true);
+      }
+    }
+    closeSeatGenModal();
+    showFpMsg('Generated ' + (g.rows * g.seatsPerRow) + ' seat(s).', false);
+  }
+
   /* ---------------- Add elements ---------------- */
 
   function addElement(presetKey) {
@@ -576,6 +722,10 @@
   }
 
   document.addEventListener('keydown', function(evt) {
+    if (evt.key === 'Escape' && document.getElementById('seatGenOverlay').style.display !== 'none') {
+      closeSeatGenModal();
+      return;
+    }
     var inEditableField = evt.target && (evt.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(evt.target.tagName));
     if (inEditableField) return;
     var isCopy = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'c';
