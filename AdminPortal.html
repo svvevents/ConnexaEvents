@@ -79,6 +79,7 @@
     /* Modal */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(13,27,42,0.55); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
     .modal-box { background: white; border-radius: 16px; max-width: 560px; width: 100%; padding: 24px; max-height: 88vh; overflow-y: auto; position: relative; }
+    .modal-box.wide { max-width: 900px; }
     .modal-close { position: absolute; top: 14px; right: 16px; font-size: 20px; cursor: pointer; color: var(--text-muted); }
     .form-group { margin-bottom: 14px; }
     .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
@@ -128,16 +129,7 @@
     .event-picker select { padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; min-width: 260px; max-width: 100%; background: #fbfcfe; }
     .badge-warn { background: #FBF4E6; color: var(--warning-color); font-weight: 700; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
 
-    /* Sub-tabs inside a per-event dashboard (e.g. Overview / Budget) —
-       ported from Dashboard.html's identical .nav-tabs/.tab-btn pattern. */
-    .nav-tabs { display: flex; gap: 8px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; overflow-x: auto; }
-    .tab-btn { background: none; border: none; padding: 12px 18px; font-size: 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s ease; white-space: nowrap; }
-    .tab-btn:hover { color: var(--primary-color); }
-    .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-
-    /* Budget tab */
+    /* Budget */
     .filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
     .filter-row select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; background: #fbfcfe; }
     .variance-neg { color: var(--error-color); font-weight: 700; }
@@ -396,7 +388,16 @@
     </div>
   </div>
 
-  <!-- Budget Line Modal (Budget tab, per-event dashboard) -->
+  <!-- Budget Modal — opened from a "Budget" action on an event's card in My Events -->
+  <div id="budgetModal" class="modal-overlay">
+    <div class="modal-box wide">
+      <span class="modal-close" onclick="closeBudgetModal()">&times;</span>
+      <h3 id="budgetModalTitle" style="margin-top:0;">Budget</h3>
+      <div id="budgetModalBody"><p style="color:var(--text-muted);">Loading...</p></div>
+    </div>
+  </div>
+
+  <!-- Budget Line Modal (opened from within the Budget Modal above) -->
   <div id="budgetLineModal" class="modal-overlay">
     <div class="modal-box">
       <span class="modal-close" onclick="closeBudgetLineModal()">&times;</span>
@@ -569,10 +570,12 @@
         '</div></div>' +
         '<div class="event-card-actions">' +
           '<button class="btn small secondary" data-action="edit-parent">Edit</button>' +
+          '<button class="btn small secondary" data-action="budget">💰 Budget</button>' +
           (isUmbrella ? '<button class="btn small" data-action="add-sub">+ Add Sub-Event</button>' : '') +
           (evt.eventType === EXHIBITION_TYPE ? '<button class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
         '</div>';
       header.querySelector('[data-action="edit-parent"]').addEventListener('click', function(e) { e.stopPropagation(); openEventModal(evt); });
+      header.querySelector('[data-action="budget"]').addEventListener('click', function(e) { e.stopPropagation(); openBudgetModal(evt.eventId, evt.eventName); });
       var addSubBtn = header.querySelector('[data-action="add-sub"]');
       if (addSubBtn) addSubBtn.addEventListener('click', function(e) { e.stopPropagation(); openEventModal(null, evt); });
       var floorPlanBtn = header.querySelector('[data-action="floor-plan"]');
@@ -1187,13 +1190,14 @@
       '</div>';
     }
 
-    content.innerHTML =
-      '<div class="nav-tabs">' +
-        '<button class="tab-btn active" onclick="switchTab(\'tab-overview\', this)">Overview</button>' +
-        '<button class="tab-btn" onclick="switchDashboardTab(\'tab-budget\', this, \'' + eventId + '\')">Budget</button>' +
-      '</div>' +
-      '<div id="tab-overview" class="tab-content active">' + html + '</div>' +
-      '<div id="tab-budget" class="tab-content"><p style="color:var(--text-muted);">Loading...</p></div>';
+    // Budget is READ-ONLY here — a quick glance at planned/actual/net,
+    // with a link into the full editable view (My Events > Budget). Fetched
+    // separately (see loadDashboardBudgetSummary below) so a slow Budget
+    // read never blocks the rest of this dashboard from rendering.
+    html += '<div class="section" id="budgetSummarySection"><h3>Budget</h3><p style="color:var(--text-muted);">Loading budget...</p></div>';
+
+    content.innerHTML = html;
+    loadDashboardBudgetSummary(eventId);
 
     // Bar chart
     var entries = Object.entries(data.byRegistrationType || {});
@@ -1268,44 +1272,59 @@
     }
   }
 
-  /* ================= BUDGET TAB ================= */
+  /* ================= BUDGET (My Events > Budget modal; Dashboard > read-only summary) ================= */
   // { eventId: { summary, categories } } — populates the Add/Edit Line
   // modal's dropdowns without a second round trip.
   var budgetSummaryCache = {};
   var budgetFilterState = { lineType: 'all', subEventId: 'all' };
-
-  function switchTab(tabId, btn) {
-    document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
-    document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
-    document.getElementById(tabId).classList.add('active');
-    btn.classList.add('active');
-  }
-
-  /**
-   * Wraps switchTab with a lazy first-load of the Budget tab's data — tied
-   * to the tab-budget DOM element itself (not a module-level flag) so a
-   * freshly re-rendered dashboard (a new element instance) always re-fetches
-   * on its own first click, even if a previous event's dashboard had
-   * already loaded its Budget tab earlier in the session.
-   */
-  function switchDashboardTab(tabId, btn, eventId) {
-    switchTab(tabId, btn);
-    if (tabId === 'tab-budget') {
-      var el = document.getElementById('tab-budget');
-      if (el.getAttribute('data-loaded') !== '1') {
-        el.setAttribute('data-loaded', '1');
-        loadBudgetTab(eventId);
-      }
-    }
-  }
 
   function fmtMoney(amount, currency) {
     var n = Number(amount) || 0;
     return (currency || 'USD') + ' ' + n.toFixed(2);
   }
 
-  function loadBudgetTab(eventId) {
-    var el = document.getElementById('tab-budget');
+  /**
+   * Read-only Budget glance shown inside the Dashboard's per-event detail
+   * (see renderEventDashboard) — fetched separately from the rest of the
+   * dashboard so a slow Budget read never blocks it. Editing always
+   * happens in the full Budget modal (My Events), never here.
+   */
+  function loadDashboardBudgetSummary(eventId) {
+    var el = document.getElementById('budgetSummarySection');
+    google.script.run
+      .withSuccessHandler(function(summary) {
+        el.innerHTML = '<h3>Budget</h3>' +
+          '<div class="tiles-row">' +
+            tileHtml(fmtMoney(summary.plannedIncome, summary.currency), 'Planned Income') +
+            tileHtml(fmtMoney(summary.actualIncome, summary.currency), 'Actual Income') +
+            tileHtml(fmtMoney(summary.plannedCost, summary.currency), 'Planned Cost') +
+            tileHtml(fmtMoney(summary.actualCost, summary.currency), 'Actual Cost') +
+            tileHtml(fmtMoney(summary.net, summary.currency), 'Net (Actual)') +
+          '</div>' +
+          '<a href="#" onclick="event.preventDefault(); goToEventBudget(\'' + eventId + '\')" style="font-size:13px; font-weight:700; color:var(--primary-color);">Manage Budget &rarr;</a>';
+      })
+      .withFailureHandler(function(err) { el.innerHTML = '<h3>Budget</h3><p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
+      .getBudgetSummary(ADMIN_TOKEN, eventId);
+  }
+
+  /** "Manage Budget" link in the Dashboard summary — jumps to My Events and opens the full Budget modal for this event. */
+  function goToEventBudget(eventId) {
+    var cached = eventDashboardCache[eventId];
+    var eventName = (cached && cached.data && cached.data.eventName) || '';
+    switchAdminPanel('events');
+    openBudgetModal(eventId, eventName);
+  }
+
+  function openBudgetModal(eventId, eventName) {
+    document.getElementById('budgetModalTitle').textContent = 'Budget — ' + eventName;
+    document.getElementById('budgetModal').style.display = 'flex';
+    loadBudgetModal(eventId);
+  }
+
+  function closeBudgetModal() { document.getElementById('budgetModal').style.display = 'none'; }
+
+  function loadBudgetModal(eventId) {
+    var el = document.getElementById('budgetModalBody');
     el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
     budgetFilterState = { lineType: 'all', subEventId: 'all' };
 
@@ -1314,7 +1333,7 @@
         google.script.run
           .withSuccessHandler(function(categories) {
             budgetSummaryCache[eventId] = { summary: summary, categories: categories };
-            renderBudgetTab(eventId);
+            renderBudgetModal(eventId);
           })
           .withFailureHandler(function(err) { el.innerHTML = '<p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
           .getBudgetCategories(ADMIN_TOKEN);
@@ -1323,11 +1342,11 @@
       .getBudgetSummary(ADMIN_TOKEN, eventId);
   }
 
-  function renderBudgetTab(eventId) {
+  function renderBudgetModal(eventId) {
     var cache = budgetSummaryCache[eventId];
     if (!cache) return;
     var summary = cache.summary;
-    var el = document.getElementById('tab-budget');
+    var el = document.getElementById('budgetModalBody');
 
     var html = '<div class="tiles-row">' +
       tileHtml(fmtMoney(summary.plannedIncome, summary.currency), 'Planned Income') +
@@ -1427,7 +1446,7 @@
 
   function markOrderPaidClient(eventId, orderId, newStatus) {
     google.script.run
-      .withSuccessHandler(function() { loadBudgetTab(eventId); })
+      .withSuccessHandler(function() { loadBudgetModal(eventId); })
       .withFailureHandler(function(err) { alert(err.message); })
       .updateOrderPaymentStatus(ADMIN_TOKEN, orderId, newStatus);
   }
@@ -1435,7 +1454,7 @@
   function deleteBudgetLineClient(eventId, lineId) {
     if (!confirm('Delete this budget line?')) return;
     google.script.run
-      .withSuccessHandler(function() { loadBudgetTab(eventId); })
+      .withSuccessHandler(function() { loadBudgetModal(eventId); })
       .withFailureHandler(function(err) { alert(err.message); })
       .deleteBudgetLine(ADMIN_TOKEN, eventId, lineId);
   }
@@ -1508,7 +1527,7 @@
     };
 
     google.script.run
-      .withSuccessHandler(function() { closeBudgetLineModal(); loadBudgetTab(eventId); })
+      .withSuccessHandler(function() { closeBudgetLineModal(); loadBudgetModal(eventId); })
       .withFailureHandler(function(err) { showBudgetLineModalMsg(err.message, true); })
       .saveBudgetLine(ADMIN_TOKEN, eventId, payload);
   }
