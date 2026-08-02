@@ -52,6 +52,22 @@
     .fp-toolbar .fp-event-type-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; background: rgba(28,114,147,0.12); color: var(--primary-color); padding: 3px 8px; border-radius: 10px; margin-right: 12px; }
     .fp-spacer { flex: 1; }
 
+    /* ---- "Assets" / "Decorations" toolbar dropdown menus ---- */
+    .fp-dropdown { position: relative; }
+    .fp-dropdown-menu {
+      display: none; position: absolute; top: 100%; left: 0; margin-top: 6px;
+      background: white; border: 1px solid var(--border-color); border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.14); min-width: 220px; z-index: 30; overflow: hidden;
+    }
+    .fp-dropdown-menu.open { display: block; }
+    .fp-dropdown-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .fp-dropdown-item:hover { background: #eef1f5; }
+    .fp-dropdown-item .fp-item-price { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+    .fp-dropdown-empty { padding: 9px 14px; font-size: 12px; color: var(--text-muted); font-style: italic; }
+
     .btn { background: var(--primary-color); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; white-space: nowrap; }
     .btn:hover { background: var(--navy-color); }
     .btn.secondary { background: #eef1f5; color: var(--text-dark); }
@@ -124,6 +140,9 @@
     /* Keynote Stage landmark: high-contrast treatment */
     .facility-stage { background: #14161d; color: #ffd400; border: 2px solid #ffd400; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; border-radius: 4px; }
 
+    /* Meeting Table amenity: décor only, never bookable — soft wood tone */
+    .facility-meeting-table { background: #6b7a8f; border-radius: 50%; }
+
     @media (max-width: 900px) {
       .fp-canvas-wrap { padding: 12px; }
     }
@@ -170,11 +189,16 @@
           </div>
           <a href="javascript:void(0)" onclick="showEventPicker()" style="font-size:12px; color:var(--primary-color); text-decoration:underline;">Change event</a>
           <div class="fp-spacer"></div>
-          <button class="btn secondary" onclick="addElement('booth')">+ Booth</button>
-          <button class="btn secondary" onclick="addElement('entrance')">+ Entrance</button>
-          <button class="btn secondary" onclick="addElement('coffee')">+ Coffee Lounge</button>
-          <button class="btn secondary" onclick="addElement('welcome')">+ Welcome Desk</button>
-          <button class="btn secondary" onclick="addElement('stage')">+ Keynote Stage</button>
+          <div class="fp-dropdown">
+            <button type="button" class="btn secondary" onclick="toggleFpDropdown('assets')">+ Assets ▾</button>
+            <div class="fp-dropdown-menu" id="assetsMenu"></div>
+          </div>
+          <div class="fp-dropdown">
+            <button type="button" class="btn secondary" onclick="toggleFpDropdown('decor')">+ Decorations ▾</button>
+            <div class="fp-dropdown-menu" id="decorMenu"></div>
+          </div>
+          <button type="button" class="btn secondary" id="btnCopyElement" onclick="copySelectedElement()" disabled title="Select an element first">Copy</button>
+          <button type="button" class="btn secondary" id="btnPasteElement" onclick="pasteClipboardElement()" disabled title="Copy an element first">Paste</button>
           <button class="btn" id="btnSaveLayout" onclick="saveLayout()">Save Layout</button>
         </div>
 
@@ -182,7 +206,7 @@
 
         <div class="fp-canvas-wrap">
           <div class="fp-canvas" id="fpCanvas"></div>
-          <p class="fp-canvas-caption">800 × 600 canvas · snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove.</p>
+          <p class="fp-canvas-caption">800 × 600 canvas · snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove · click an element to select it, then Copy/Paste (or Ctrl+C / Ctrl+V) to duplicate it with its current size.</p>
         </div>
       </div>
 
@@ -203,19 +227,39 @@
   var CANVAS_HEIGHT = 600;
   var GRID_SIZE = 20;
 
-  // Toolbar element presets — the four required types.
+  // Toolbar element presets. "booth" is the generic, flat-priced Asset;
+  // the rest are Decorations (static, non-bookable). Custom Asset Types
+  // (from the event's own TypeConfig — see EXHIBITION_ASSET_TYPES below)
+  // are additional "booth"-type presets built dynamically at load time,
+  // not hardcoded here.
   var ELEMENT_PRESETS = {
-    booth:    { type: 'booth',    label: 'Booth',          width: 100, height: 80, cssClass: '' },
-    entrance: { type: 'landmark', label: 'Entrance',       width: 120, height: 50, cssClass: 'facility-entrance' },
-    coffee:   { type: 'amenity',  label: 'Coffee Lounge',  width: 180, height: 70, cssClass: 'facility-coffee' },
-    welcome:  { type: 'amenity',  label: 'Welcome Desk',   width: 240, height: 50, cssClass: 'facility-welcome' },
-    stage:    { type: 'landmark', label: 'Keynote Stage',  width: 500, height: 80, cssClass: 'facility-stage' }
+    booth:        { type: 'booth',    label: 'Booth',          width: 100, height: 80, cssClass: '' },
+    entrance:     { type: 'landmark', label: 'Entrance',       width: 120, height: 50, cssClass: 'facility-entrance' },
+    coffee:       { type: 'amenity',  label: 'Coffee Lounge',  width: 180, height: 70, cssClass: 'facility-coffee' },
+    welcome:      { type: 'amenity',  label: 'Welcome Desk',   width: 240, height: 50, cssClass: 'facility-welcome' },
+    stage:        { type: 'landmark', label: 'Keynote Stage',  width: 500, height: 80, cssClass: 'facility-stage' },
+    meetingTable: { type: 'amenity',  label: 'Meeting Table',  width: 100, height: 100, cssClass: 'facility-meeting-table' }
   };
+  // Decorations shown in the "+ Decorations" dropdown, in display order.
+  var DECOR_PRESET_KEYS = ['entrance', 'coffee', 'welcome', 'stage', 'meetingTable'];
 
   var currentEventId = '';
-  var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass }]
+  var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass, assetTypeId }]
   var elementsById = {};   // elementId -> element object (same references as in `elements`)
   var addCounter = 0;
+
+  // This Exhibition's own Asset Types (label/price tiers, from TypeConfig
+  // — see normalizeExhibitionAssetTypes_ in Code.gs) plus its flat
+  // fallback price/currency, loaded alongside the layout itself.
+  var EXHIBITION_ASSET_TYPES = [];
+  var EXHIBITION_FLAT_PRICE = 0;
+  var EXHIBITION_CURRENCY = 'USD';
+
+  // Copy/paste: tracks the single currently-selected element (by id) and
+  // whatever was last copied, so "Paste" can duplicate an element's
+  // current size/type without re-adding and re-resizing it from scratch.
+  var selectedElementId = null;
+  var clipboardElement = null;
 
   document.addEventListener('DOMContentLoaded', function() {
     if (!ADMIN_TOKEN) return; // session-expired branch is shown server-side instead
@@ -285,6 +329,9 @@
         CANVAS_WIDTH = data.canvasWidth || CANVAS_WIDTH;
         CANVAS_HEIGHT = data.canvasHeight || CANVAS_HEIGHT;
         GRID_SIZE = data.gridSize || GRID_SIZE;
+        EXHIBITION_ASSET_TYPES = data.assetTypes || [];
+        EXHIBITION_FLAT_PRICE = data.flatPrice || 0;
+        EXHIBITION_CURRENCY = data.currency || 'USD';
 
         document.getElementById('fpEventName').textContent = data.eventName;
         document.getElementById('eventPickerBox').style.display = 'none';
@@ -296,43 +343,130 @@
         canvas.innerHTML = '';
         elements = [];
         elementsById = {};
+        selectedElementId = null;
+        clipboardElement = null;
+        updateCopyPasteButtons();
 
         (data.elements || []).forEach(function(el) { addElementToCanvas(el, false); });
+        renderFpMenus();
       })
       .withFailureHandler(function(err) { showPickerMsg(err.message, true); })
       .getFloorPlanLayout(ADMIN_TOKEN, eventId);
   }
 
-  /* ---------------- Toolbar: add elements ---------------- */
+  /* ---------------- Toolbar: Assets / Decorations dropdown menus ---------------- */
+
+  function toggleFpDropdown(which) {
+    var openId = which === 'assets' ? 'assetsMenu' : 'decorMenu';
+    var otherId = which === 'assets' ? 'decorMenu' : 'assetsMenu';
+    document.getElementById(otherId).classList.remove('open');
+    document.getElementById(openId).classList.toggle('open');
+  }
+
+  document.addEventListener('click', function(evt) {
+    if (evt.target.closest('.fp-dropdown')) return;
+    document.querySelectorAll('.fp-dropdown-menu.open').forEach(function(m) { m.classList.remove('open'); });
+  });
+
+  function formatMoney(amount) {
+    var n = Number(amount) || 0;
+    if (n <= 0) return 'Free';
+    return EXHIBITION_CURRENCY + ' ' + n.toFixed(2);
+  }
+
+  /** (Re)builds the "+ Assets" and "+ Decorations" dropdown menu contents — called once the event's Asset Types are loaded. */
+  function renderFpMenus() {
+    var assetsMenu = document.getElementById('assetsMenu');
+    var assetItems = [{ key: 'booth', label: ELEMENT_PRESETS.booth.label, price: EXHIBITION_FLAT_PRICE }];
+    EXHIBITION_ASSET_TYPES.forEach(function(a) { assetItems.push({ key: 'asset:' + a.id, label: a.label, price: a.price }); });
+    assetsMenu.innerHTML = assetItems.map(function(it) {
+      return '<div class="fp-dropdown-item" onclick="toggleFpDropdown(\'assets\'); handleFpMenuAdd(\'' + it.key + '\')">' +
+        '<span>+ ' + escapeHtml(it.label) + '</span>' +
+        '<span class="fp-item-price">' + formatMoney(it.price) + '</span>' +
+        '</div>';
+    }).join('');
+
+    var decorMenu = document.getElementById('decorMenu');
+    decorMenu.innerHTML = DECOR_PRESET_KEYS.map(function(key) {
+      var preset = ELEMENT_PRESETS[key];
+      return '<div class="fp-dropdown-item" onclick="toggleFpDropdown(\'decor\'); handleFpMenuAdd(\'' + key + '\')">' +
+        '<span>+ ' + escapeHtml(preset.label) + '</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function handleFpMenuAdd(key) {
+    if (key.indexOf('asset:') === 0) {
+      addAssetElement(key.slice('asset:'.length));
+    } else {
+      addElement(key);
+    }
+  }
+
+  /* ---------------- Add elements ---------------- */
 
   function addElement(presetKey) {
     var preset = ELEMENT_PRESETS[presetKey];
     if (!preset) return;
+    addElementFromSpec({ type: preset.type, width: preset.width, height: preset.height, cssClass: preset.cssClass, assetTypeId: '' }, preset.label);
+  }
 
+  function addAssetElement(assetTypeId) {
+    var assetType = EXHIBITION_ASSET_TYPES.filter(function(a) { return a.id === assetTypeId; })[0];
+    if (!assetType) return;
+    var boothPreset = ELEMENT_PRESETS.booth;
+    addElementFromSpec({ type: 'booth', width: boothPreset.width, height: boothPreset.height, cssClass: '', assetTypeId: assetType.id }, assetType.label);
+  }
+
+  /**
+   * Shared "add one new element" path for both the generic Booth /
+   * Decorations (addElement) and configured Asset Types (addAssetElement).
+   * fallbackLabel is the preset/Asset Type's own label, used as-is for
+   * Decorations, or as the prefix for the "Label - N" counter on bookable
+   * booths (see nextInstanceLabel).
+   */
+  function addElementFromSpec(spec, fallbackLabel) {
     // Cascade each newly-added element a little so they don't stack
     // exactly on top of one another; still grid-aligned.
     var offset = (addCounter * GRID_SIZE) % (GRID_SIZE * 8);
     addCounter++;
 
-    // Every new booth defaulting to the literal string "Booth" meant a
-    // floor plan with several un-renamed booths rendered identically to
-    // attendees with no way to tell them apart. Auto-generate a unique
-    // code (A1, A2, ... B1, ...) instead; the admin can still rename it.
-    var label = presetKey === 'booth'
-      ? nextBoothLabel(elements.filter(function(e) { return e.type === 'booth'; }).length)
-      : preset.label;
-
     var el = {
       elementId: '',
       x: snap(20 + offset),
       y: snap(20 + offset),
-      width: preset.width,
-      height: preset.height,
-      type: preset.type,
-      label: label,
-      cssClass: preset.cssClass
+      width: spec.width,
+      height: spec.height,
+      type: spec.type,
+      label: nextInstanceLabel(spec.type, spec.assetTypeId, fallbackLabel),
+      cssClass: spec.cssClass,
+      assetTypeId: spec.assetTypeId || ''
     };
     addElementToCanvas(el, true);
+    selectElement(el.elementId);
+    return el;
+  }
+
+  /**
+   * Every new booth defaulting to the literal preset label meant a floor
+   * plan with several un-renamed booths rendered identically to
+   * attendees, with no way to tell them apart:
+   *  - A configured Asset Type gets "{Label} - {n}" (n = how many of THAT
+   *    Asset Type are already on the canvas) — e.g. "Premium Booth - 1",
+   *    "Premium Booth - 2".
+   *  - The generic, un-tiered "Booth" keeps its original short A1/A2/...
+   *    scheme, unchanged from before Asset Types existed.
+   *  - Decorations (landmark/amenity) just reuse their static preset
+   *    label — the admin can still rename any element by clicking it.
+   */
+  function nextInstanceLabel(type, assetTypeId, fallbackLabel) {
+    if (type !== 'booth') return fallbackLabel;
+    if (assetTypeId) {
+      var count = elements.filter(function(e) { return e.assetTypeId === assetTypeId; }).length;
+      return fallbackLabel + ' - ' + (count + 1);
+    }
+    var plainBoothCount = elements.filter(function(e) { return e.type === 'booth' && !e.assetTypeId; }).length;
+    return nextBoothLabel(plainBoothCount);
   }
 
   function nextBoothLabel(existingBoothCount) {
@@ -347,7 +481,8 @@
     var el = {
       elementId: elData.elementId || ('local-' + new Date().getTime() + '-' + Math.floor(Math.random() * 100000)),
       x: elData.x, y: elData.y, width: elData.width, height: elData.height,
-      type: elData.type, label: elData.label, cssClass: elData.cssClass || ''
+      type: elData.type, label: elData.label, cssClass: elData.cssClass || '',
+      assetTypeId: elData.assetTypeId || ''
     };
     elements.push(el);
     elementsById[el.elementId] = el;
@@ -371,8 +506,7 @@
       removeElement(el.elementId);
     });
     div.addEventListener('click', function() {
-      document.querySelectorAll('.fp-element.selected').forEach(function(n) { n.classList.remove('selected'); });
-      div.classList.add('selected');
+      selectElement(el.elementId);
     });
 
     document.getElementById('fpCanvas').appendChild(div);
@@ -384,7 +518,64 @@
     if (div) div.remove();
     delete elementsById[elementId];
     elements = elements.filter(function(e) { return e.elementId !== elementId; });
+    if (selectedElementId === elementId) {
+      selectedElementId = null;
+      updateCopyPasteButtons();
+    }
   }
+
+  /* ---------------- Selection + Copy/Paste ---------------- */
+
+  function selectElement(elementId) {
+    selectedElementId = elementId;
+    document.querySelectorAll('.fp-element.selected').forEach(function(n) { n.classList.remove('selected'); });
+    var div = document.querySelector('.fp-element[data-id="' + elementId + '"]');
+    if (div) div.classList.add('selected');
+    updateCopyPasteButtons();
+  }
+
+  function updateCopyPasteButtons() {
+    document.getElementById('btnCopyElement').disabled = !selectedElementId;
+    document.getElementById('btnPasteElement').disabled = !clipboardElement;
+  }
+
+  function copySelectedElement() {
+    var el = selectedElementId ? elementsById[selectedElementId] : null;
+    if (!el) return;
+    clipboardElement = { type: el.type, width: el.width, height: el.height, cssClass: el.cssClass, assetTypeId: el.assetTypeId, label: el.label };
+    updateCopyPasteButtons();
+    showFpMsg('Copied "' + el.label + '". Click Paste (or Ctrl+V) to duplicate it.', false);
+  }
+
+  /**
+   * Pastes the last-copied element as a brand-new one on the canvas,
+   * keeping its size/type/Asset Type (the whole point — resize a booth
+   * once, then copy/paste it instead of re-adding and re-resizing every
+   * time) but getting a FRESH auto-generated label via nextInstanceLabel,
+   * same as adding a new instance from the toolbar.
+   */
+  function pasteClipboardElement() {
+    if (!clipboardElement) return;
+    var fallbackLabel = clipboardElement.assetTypeId
+      ? (EXHIBITION_ASSET_TYPES.filter(function(a) { return a.id === clipboardElement.assetTypeId; })[0] || {}).label || clipboardElement.label
+      : clipboardElement.label;
+    addElementFromSpec({
+      type: clipboardElement.type,
+      width: clipboardElement.width,
+      height: clipboardElement.height,
+      cssClass: clipboardElement.cssClass,
+      assetTypeId: clipboardElement.assetTypeId
+    }, fallbackLabel);
+  }
+
+  document.addEventListener('keydown', function(evt) {
+    var inEditableField = evt.target && (evt.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(evt.target.tagName));
+    if (inEditableField) return;
+    var isCopy = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'c';
+    var isPaste = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'v';
+    if (isCopy) { evt.preventDefault(); copySelectedElement(); }
+    if (isPaste) { evt.preventDefault(); pasteClipboardElement(); }
+  });
 
   /* ---------------- interact.js: drag + resize with 20px grid snap ---------------- */
 
@@ -458,7 +649,7 @@
       return {
         elementId: el.elementId.indexOf('local-') === 0 ? '' : el.elementId, // let the server assign a durable ID for brand-new elements
         x: el.x, y: el.y, width: el.width, height: el.height,
-        type: el.type, label: el.label, cssClass: el.cssClass
+        type: el.type, label: el.label, cssClass: el.cssClass, assetTypeId: el.assetTypeId || ''
       };
     });
 
