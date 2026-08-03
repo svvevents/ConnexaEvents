@@ -1,0 +1,27 @@
+<!--
+  Minimal email layout — no banner/logo header, for transactional mail
+  where a marketing-style banner would read wrong (e.g. a milestone
+  reminder or "all steps complete" confirmation). Same data contract as
+  EmailLayoutDefault.html — see that file's header comment for the
+  bodyHtml-as-data note.
+-->
+<div style="background:<?= branding.pageBgColor ?>; padding:24px 12px; font-family:Arial, Helvetica, sans-serif;">
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;"><?= preheader ?></div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; margin:0 auto; border-collapse:collapse;">
+    <tr>
+      <td style="background:#ffffff; padding:28px; border:1px solid #eef1f5; border-radius:10px 10px 0 0; color:<?= branding.navyColor ?>; font-size:14px; line-height:1.6;">
+        <?!= bodyHtml ?>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:16px 28px; font-size:11px; color:<?= branding.mutedTextColor ?>; border:1px solid #eef1f5; border-top:none; border-radius:0 0 10px 10px; text-align:center;">
+        <?= footerOrgName ?><? if (footerPostalAddress) { ?> &middot; <?= footerPostalAddress ?><? } ?>
+        <? if (footerText) { ?><br><?= footerText ?><? } ?>
+        <? if (unsubscribeUrl) { ?>
+          <br><a href="<?= unsubscribeUrl ?>" style="color:<?= branding.primaryColor ?>;">Unsubscribe from these emails</a>
+        <? } ?>
+      </td>
+    </tr>
+  </table>
+</div>

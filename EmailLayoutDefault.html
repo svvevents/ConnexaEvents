@@ -1,0 +1,40 @@
+<!--
+  Developer-authored email chrome — the ONLY thing evaluated as an
+  HtmlService template in the Communications feature. bodyHtml arrives
+  already merge-tag-substituted and HTML-escaped by substituteMergeTags_;
+  it is assigned to this template as DATA (tpl.bodyHtml = ...) by
+  renderEmailLayout_ in Code.js and emitted here with <?!= ?> (raw), never
+  itself passed through HtmlService.createTemplate(). See renderEmailLayout_
+  for why that distinction matters.
+
+  Table-based layout throughout — email clients (Outlook's Word rendering
+  engine especially) do not reliably support flexbox/grid.
+-->
+<div style="background:<?= branding.pageBgColor ?>; padding:24px 12px; font-family:Arial, Helvetica, sans-serif;">
+  <!-- Preheader: shown in inbox preview lists, hidden in the rendered email -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;"><?= preheader ?></div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; margin:0 auto; border-collapse:collapse;">
+    <tr>
+      <td style="background:<?= branding.navyColor ?>; padding:22px 28px; border-radius:10px 10px 0 0;">
+        <span style="color:<?= branding.mintColor ?>; font-weight:800; font-size:13px; letter-spacing:0.04em; text-transform:uppercase; font-family:Arial, Helvetica, sans-serif;">
+          <?= branding.eventTitle ?>
+        </span>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#ffffff; padding:28px; border:1px solid #eef1f5; border-top:none; color:<?= branding.navyColor ?>; font-size:14px; line-height:1.6;">
+        <?!= bodyHtml ?>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:16px 28px; font-size:11px; color:<?= branding.mutedTextColor ?>; border:1px solid #eef1f5; border-top:none; border-radius:0 0 10px 10px; text-align:center;">
+        <?= footerOrgName ?><? if (footerPostalAddress) { ?> &middot; <?= footerPostalAddress ?><? } ?>
+        <? if (footerText) { ?><br><?= footerText ?><? } ?>
+        <? if (unsubscribeUrl) { ?>
+          <br><a href="<?= unsubscribeUrl ?>" style="color:<?= branding.primaryColor ?>;">Unsubscribe from these emails</a>
+        <? } ?>
+      </td>
+    </tr>
+  </table>
+</div>

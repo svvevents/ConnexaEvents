@@ -239,6 +239,17 @@ const ORDERS_SHEET_NAME           = 'Orders';
 const BUDGET_LINES_SHEET_NAME     = 'BudgetLines';
 const BUDGET_CATEGORIES_SHEET_NAME = 'BudgetCategories';
 
+// Communications feature — see the "COMMUNICATIONS FEATURE" section near
+// the end of this file for the full engine. Sheet names declared here
+// alongside every other sheet constant, same convention as everywhere else.
+const COMM_TEMPLATES_SHEET_NAME    = 'CommunicationTemplates';
+const COMM_CAMPAIGNS_SHEET_NAME    = 'CommunicationsCampaigns';
+const COMM_QUEUE_SHEET_NAME        = 'CommunicationsQueue';
+const COMM_LOG_SHEET_NAME          = 'CommunicationsLog';
+const COMM_OPTOUT_SHEET_NAME       = 'CommunicationsOptOut';
+const COMM_SETTINGS_SHEET_NAME     = 'CommunicationsSettings';
+const COMM_AUTOMATIONS_SHEET_NAME  = 'CommunicationsAutomations';
+
 // Default Budget category seed rows (see getBudgetCategoriesSheet_) — admins
 // can add/edit/remove categories directly in the BudgetCategories sheet
 // afterwards, same trust model as RegistrationFormFields.
@@ -394,7 +405,17 @@ const _rawDataCache_ = {
   milestoneCompletions: null, // array of completion objects — see getMilestoneCompletionsRaw_
   orders: null,            // array of order objects — see getOrdersRaw_
   budgetLines: null,       // array of budget line objects — see getBudgetLinesRaw_
-  budgetCategories: null   // array of {lineType, categoryName, sortOrder} — see getBudgetCategoriesRaw_
+  budgetCategories: null,  // array of {lineType, categoryName, sortOrder} — see getBudgetCategoriesRaw_
+  commTemplates: null,     // see getCommTemplatesRaw_
+  commCampaigns: null,     // see getCommCampaignsRaw_
+  commAutomations: null,   // see getCommAutomationsRaw_
+  commOptOut: null,        // see getCommOptOutRaw_
+  commLog: null            // see getCommLogRaw_ — execution-scoped only, see note there
+  // CommunicationsQueue is deliberately NOT cached here (or cross-request)
+  // — it drives at-most-once send claims and must always read the live
+  // sheet. CommunicationsLog gets an execution-scoped-only cache (see
+  // getCommLogRaw_) since it's an audit trail that must reflect the live
+  // sheet across requests; it is never put in CacheService.
 };
 
 /**
@@ -514,6 +535,26 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
+  // --- Unsubscribe confirmation page (from a Communications email footer
+  // link). Deliberately does NOT write the opt-out here on GET — mail
+  // scanners and Gmail's link prefetcher fetch every URL in an email
+  // before a human sees it, so auto-unsubscribing on page load would
+  // silently opt out people who never clicked anything. The write only
+  // happens from confirmUnsubscribe(), called via google.script.run after
+  // an explicit button click in Unsubscribe.html. ---
+  if (String(params.page).toLowerCase() === 'unsubscribe') {
+    const tpl = HtmlService.createTemplateFromFile('Unsubscribe');
+    tpl.branding = BRANDING;
+    tpl.email = decodeURIComponent(params.e || '');
+    tpl.scope = decodeURIComponent(params.s || 'Global');
+    tpl.token = params.t || '';
+    tpl.portalUrl = getWebAppUrl_();
+    return tpl.evaluate()
+      .setTitle('Unsubscribe')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   // --- Default: attendee-facing portal ---
   const tpl = HtmlService.createTemplateFromFile('Portal');
   tpl.branding = BRANDING;
@@ -628,12 +669,7 @@ function requestAdminPasswordReset(email) {
       const resetUrl = getWebAppUrl_() + '?admin=reset&token=' + encodeURIComponent(token) +
         '&email=' + encodeURIComponent(email);
 
-      MailApp.sendEmail({
-        to: email,
-        subject: 'Reset your Admin Portal password',
-        htmlBody: '<p>Click the link below to reset your Admin Portal password. This link expires in ' +
-          RESET_TOKEN_TTL_MINUTES + ' minutes.</p><p><a href="' + resetUrl + '">Reset Password</a></p>'
-      });
+      sendAdminPasswordResetEmail_(email, resetUrl);
       break;
     }
   }
@@ -1435,7 +1471,30 @@ function completeMilestone(payload) {
   const handler = MILESTONE_COMPLETION_HANDLERS_[milestone.milestoneType];
   if (!handler) throw new Error('Unsupported milestone type: ' + milestone.milestoneType);
 
-  return handler(milestone, email, payload);
+  const result = handler(milestone, email, payload);
+
+  // AllMilestonesCompleted fires once, right after the LAST remaining
+  // milestone for this entity is completed for this attendee — the
+  // log-based dedupe inside fireCommunicationTrigger_ is what keeps this
+  // check from re-firing an email every time a milestone is completed
+  // after the entity is already fully done.
+  if (haveAllMilestonesCompleted_(milestone.eventId, email)) {
+    // milestone.eventId is whichever entity the milestone was configured
+    // on — a TOP-LEVEL event id OR a sub-event's own id (milestones apply
+    // to either, per the MILESTONE ARCHITECTURE note). Automation bindings
+    // are always keyed by (top-level EventID, SubEventID-or-blank) — see
+    // saveCommAutomationBinding — so a sub-event milestone has to resolve
+    // its TRUE top-level id here, or findActiveAutomations_ would look for
+    // a binding under the wrong EventID and silently never match.
+    const milestoneEntity = getEventById_(milestone.eventId);
+    const topId = milestoneEntity ? (milestoneEntity.parentEventId || milestoneEntity.eventId) : milestone.eventId;
+    const subId = (milestoneEntity && milestoneEntity.parentEventId) ? milestoneEntity.eventId : '';
+    fireCommunicationTrigger_(COMM_TRIGGER_ALL_MILESTONES_DONE, topId, subId, email, {
+      dedupeIdentity: COMM_TRIGGER_ALL_MILESTONES_DONE + '::' + milestone.eventId + '::' + email
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -3636,6 +3695,12 @@ function submitEventRegistration(payload) {
   } finally {
     lock.releaseLock();
   }
+
+  // Fired AFTER the lock is released and the row is durably written —
+  // fireCommunicationTrigger_ never throws, so this can never turn a
+  // successful registration into a failed one.
+  fireCommunicationTrigger_(COMM_TRIGGER_REGISTRATION_COMPLETE, payload.eventId, '', email, { dedupeIdentity: COMM_TRIGGER_REGISTRATION_COMPLETE + '::' + payload.eventId + '::' + registrationId });
+
   return {
     status: 'ok',
     price: getEventPrice_(event),
@@ -3857,6 +3922,12 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
   });
 
   const pricePerRegistrant = getEventPrice_(event);
+
+  // One RegistrationComplete trigger per attendee in the batch, after
+  // every row is durably written — see the note at submitEventRegistration.
+  normalizedAttendees.forEach(a => {
+    fireCommunicationTrigger_(COMM_TRIGGER_REGISTRATION_COMPLETE, eventId, '', a.email, { dedupeIdentity: COMM_TRIGGER_REGISTRATION_COMPLETE + '::' + eventId + '::' + a.registrationId });
+  });
 
   return {
     status: 'ok',
@@ -4467,62 +4538,33 @@ function getAttendeeItinerary(eventId, email) {
   };
 }
 
-function emailItinerary(recipientEmail, itineraryData) {
-  recipientEmail = (recipientEmail || '').trim();
-  if (!recipientEmail) throw new Error('Please specify a recipient email address.');
+/**
+ * Emails the caller's OWN itinerary to their OWN registered address —
+ * deliberately takes only (eventId, email) rather than a recipient +
+ * pre-built body from the client. Previously this function accepted an
+ * arbitrary recipientEmail AND an arbitrary itineraryData object straight
+ * from the browser with no ownership check, which meant any anonymous
+ * visitor to this ANYONE_ANONYMOUS web app could make it send arbitrary
+ * text to an arbitrary address from the deploying account's mailbox — a
+ * spam/quota-drain relay. getAttendeeItinerary(eventId, email) both
+ * derives the itinerary content server-side AND is itself the ownership
+ * check: it throws unless a real Registrations row exists for that
+ * eventId+email, so there is no path to sending to/about someone who isn't
+ * actually registered.
+ */
+function emailItinerary(eventId, email) {
+  email = (email || '').trim().toLowerCase();
+  if (!email) throw new Error('Please specify a recipient email address.');
 
-  let tableHtml = `
-    <h2 style="color:#1a73e8;">Meeting Itinerary for ${escapeHtml(itineraryData.userName)} (${escapeHtml(itineraryData.userCompany)})</h2>
-    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse; width:100%; font-family:Arial, sans-serif; font-size:13px;">
-      <thead>
-        <tr style="background-color:#f1f3f4; text-align:left;">
-          <th>Appt # / Event</th><th>Start Time</th><th>End Time</th><th>Table No.</th>
-          <th>Status</th><th>Company Name</th><th>Full Name</th><th>Meeting Type</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
+  const itineraryData = getAttendeeItinerary(eventId, email); // throws if not registered — this IS the ownership check
 
-  let csvContent = 'Appointment,Start Time,End Time,Table Number,Status,Company Name,Full Name,Meeting Type\n';
-
-  if (!itineraryData.meetings || itineraryData.meetings.length === 0) {
-    tableHtml += `<tr><td colspan="8" style="text-align:center;">No scheduled meetings found.</td></tr>`;
-  } else {
-    itineraryData.meetings.forEach(m => {
-      if (m.isSpecialBlock) {
-        tableHtml += `
-          <tr style="background-color:#f8f9fa;">
-            <td colspan="8" style="text-align:center; font-weight:bold; color:#5f6368;">
-              ${escapeHtml(m.startTime)} - ${escapeHtml(m.endTime)} &nbsp;|&nbsp; ${escapeHtml(m.appointment)} ${m.tableNumber ? ' (' + escapeHtml(m.tableNumber) + ')' : ''}
-            </td>
-          </tr>`;
-        csvContent += `"${m.appointment}","${m.startTime}","${m.endTime}","${m.tableNumber}","","","",""\n`;
-      } else {
-        tableHtml += `
-          <tr>
-            <td>${escapeHtml(m.appointment)}</td>
-            <td><strong>${escapeHtml(m.startTime)}</strong></td>
-            <td><strong>${escapeHtml(m.endTime)}</strong></td>
-            <td>${escapeHtml(m.tableNumber)}</td>
-            <td>${escapeHtml(m.status)}</td>
-            <td><strong>${escapeHtml(m.companyName)}</strong></td>
-            <td>${escapeHtml(m.fullName)}</td>
-            <td>${escapeHtml(m.meetingType)}</td>
-          </tr>`;
-        csvContent += `"${m.appointment}","${m.startTime}","${m.endTime}","${m.tableNumber}","${m.status}","${m.companyName}","${m.fullName}","${m.meetingType}"\n`;
-      }
-    });
-  }
-
-  tableHtml += `</tbody></table><p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>`;
-
-  const sanitizedFileName = (itineraryData.userName || 'Attendee').replace(/[^a-zA-Z0-9]/g, '_');
-  const attachmentBlob = Utilities.newBlob(csvContent, 'text/csv', `Meeting_Itinerary_${sanitizedFileName}.csv`);
+  const tableHtml = renderItineraryTableHtml_(itineraryData);
+  const attachmentBlob = buildItineraryCsvAttachment_(itineraryData);
 
   MailApp.sendEmail({
-    to: recipientEmail,
+    to: email,
     subject: `Meeting Itinerary - ${itineraryData.userName}`,
-    htmlBody: tableHtml,
+    htmlBody: tableHtml + `<p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>`,
     attachments: [attachmentBlob]
   });
 
@@ -4890,4 +4932,1820 @@ function escapeHtml(str) {
 /** Used by HtmlService templates for includes, if ever needed. */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/* =========================================================================
+   COMMUNICATIONS FEATURE
+   ----------------------------------------------------------------------
+   Email template design + sending: reusable templates, audience-targeted
+   admin-initiated campaigns, and automated single-recipient triggers tied
+   to specific attendee actions (registration, milestones) or system events
+   (admin password reset).
+
+   Architecture: developer-authored HtmlService layout files
+   (EmailLayoutDefault.html / EmailLayoutPlain.html) supply the branded
+   chrome; a user-authored BODY FRAGMENT (CommunicationTemplates.BodyHtml)
+   is merge-tag-substituted and injected into the layout AS DATA, never
+   evaluated as template code — see renderEmailLayout_ for why that
+   distinction matters (evaluating user-authored text via
+   HtmlService.createTemplate() would be arbitrary code execution against
+   this account's Drive/Gmail).
+
+   ONE renderer, always: renderCommunication_() is the only function
+   allowed to turn a template + context into subject/body HTML. Preview,
+   test-send, automated triggers, and the campaign queue all call it with
+   the same context-building logic, so what an admin previews is
+   guaranteed to be what gets sent.
+
+   New sheets (same lazy-create + ensureHeadersFresh_ pattern as every
+   other sheet in this file):
+     CommunicationTemplates    — reusable template definitions
+     CommunicationsCampaigns   — audience-targeted, admin-initiated sends
+     CommunicationsQueue       — per-recipient send state for a campaign
+     CommunicationsLog         — append-only per-recipient audit trail
+     CommunicationsOptOut      — unsubscribe suppression list
+     CommunicationsSettings    — single operator-config row
+     CommunicationsAutomations — trigger-type -> template bindings
+   ========================================================================= */
+
+// ---- Constants ----------------------------------------------------------
+
+const COMM_CATEGORY_TRANSACTIONAL = 'Transactional';
+const COMM_CATEGORY_ANNOUNCEMENT  = 'Announcement';
+const COMM_CATEGORY_MARKETING     = 'Marketing';
+const COMM_CATEGORIES = [COMM_CATEGORY_TRANSACTIONAL, COMM_CATEGORY_ANNOUNCEMENT, COMM_CATEGORY_MARKETING];
+
+const COMM_BODY_MODE_FRAGMENT = 'Fragment';
+const COMM_BODY_MODE_FULLHTML = 'FullHtml';
+
+const COMM_SCOPE_EVENT  = 'Event';
+const COMM_SCOPE_SYSTEM = 'System';
+
+// v1 trigger types. Adding a new one later is: one more entry here, one
+// more hook call site — same extensibility shape as
+// MILESTONE_TYPES/MILESTONE_COMPLETION_HANDLERS_ above.
+const COMM_TRIGGER_REGISTRATION_COMPLETE = 'RegistrationComplete';
+const COMM_TRIGGER_ADMIN_PASSWORD_RESET  = 'AdminPasswordReset';
+const COMM_TRIGGER_ALL_MILESTONES_DONE   = 'AllMilestonesCompleted';
+const COMM_TRIGGER_MILESTONE_DEADLINE    = 'MilestoneDeadlineReminder';
+const COMM_TRIGGER_TYPES = [COMM_TRIGGER_REGISTRATION_COMPLETE, COMM_TRIGGER_ADMIN_PASSWORD_RESET, COMM_TRIGGER_ALL_MILESTONES_DONE, COMM_TRIGGER_MILESTONE_DEADLINE];
+
+const COMM_CAMPAIGN_STATUS_DRAFT     = 'Draft';
+const COMM_CAMPAIGN_STATUS_QUEUED    = 'Queued';
+const COMM_CAMPAIGN_STATUS_RUNNING   = 'Running';
+const COMM_CAMPAIGN_STATUS_AWAITING  = 'AwaitingQuota';
+const COMM_CAMPAIGN_STATUS_PAUSED    = 'Paused';
+const COMM_CAMPAIGN_STATUS_COMPLETED = 'Completed';
+const COMM_CAMPAIGN_STATUS_CANCELLED = 'Cancelled';
+const COMM_CAMPAIGN_STATUS_FAILED    = 'Failed';
+
+const COMM_QUEUE_STATUS_PENDING   = 'Pending';
+const COMM_QUEUE_STATUS_SENDING   = 'Sending';
+const COMM_QUEUE_STATUS_SENT      = 'Sent';
+const COMM_QUEUE_STATUS_FAILED    = 'Failed';
+const COMM_QUEUE_STATUS_CANCELLED = 'Cancelled';
+
+const COMM_LOG_STATUS_SENT    = 'Sent';
+const COMM_LOG_STATUS_FAILED  = 'Failed';
+const COMM_LOG_STATUS_SKIPPED = 'Skipped';
+
+// Queue/quota tuning — see drainCommunicationsQueue_ for how each is used.
+const COMM_QUOTA_RESERVE = 10;                    // campaign sending never touches the day's last N sends — keeps admin password reset / itinerary emails always able to send
+const COMM_BATCH_SOFT_LIMIT_MS = 4.5 * 60 * 1000; // stop claiming new sends this far into one drain execution (GAS trigger executions cap at 6 min)
+const COMM_STATUS_FLUSH_EVERY = 25;               // flush queue/log writes to the sheet every N sends, not just at the end
+const COMM_DRAIN_LEASE_KEY = 'comm_drain_lease_v1';
+const COMM_DRAIN_LEASE_TTL_SECONDS = 360;
+const COMM_STUCK_CLAIM_MINUTES = 15;
+const COMM_DRAIN_TRIGGER_HANDLER = 'drainCommunicationsQueue_';
+const COMM_REMINDER_TRIGGER_HANDLER = 'sendMilestoneDeadlineReminders_';
+
+const COMM_TEMPLATES_HEADERS_    = ['TemplateID', 'Name', 'Category', 'LayoutId', 'BodyMode', 'Subject', 'PreheaderText', 'BodyHtml', 'EventID', 'Status', 'Version', 'UpdatedBy', 'UpdatedAt'];
+const COMM_CAMPAIGNS_HEADERS_    = ['CampaignID', 'Name', 'TemplateID', 'EventID', 'AudienceSpec', 'Status', 'TotalRecipients', 'SentCount', 'FailedCount', 'CreatedBy', 'CreatedAt', 'StartedAt', 'CompletedAt', 'LastError'];
+const COMM_QUEUE_HEADERS_        = ['QueueID', 'CampaignID', 'Email', 'FullName', 'Status', 'Attempts', 'QueuedAt', 'ClaimedAt', 'SentAt', 'Error'];
+const COMM_LOG_HEADERS_          = ['LogID', 'Timestamp', 'CampaignID', 'TemplateID', 'TemplateName', 'EventID', 'SubEventID', 'RecipientEmail', 'RecipientName', 'Subject', 'Category', 'Status', 'ErrorMessage', 'SentBy'];
+const COMM_OPTOUT_HEADERS_       = ['Email', 'Scope', 'OptedOutAt', 'Source', 'Note'];
+const COMM_SETTINGS_HEADERS_     = ['FromName', 'ReplyTo', 'FooterOrgName', 'FooterPostalAddress', 'FooterText', 'DailySendCap', 'TransportType', 'AdminPasswordResetTemplateId'];
+const COMM_AUTOMATIONS_HEADERS_  = ['AutomationID', 'Scope', 'EventID', 'SubEventID', 'TriggerType', 'MilestoneID', 'ReminderDaysBefore', 'TemplateID', 'Status', 'CreatedBy', 'CreatedAt'];
+
+// ---- Sheet accessors: CommunicationTemplates -----------------------------
+
+function getCommTemplatesSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_TEMPLATES_SHEET_NAME) || ss.insertSheet(COMM_TEMPLATES_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_TEMPLATES_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_TEMPLATES_HEADERS_, 'headers_checked_commtemplates');
+  return s;
+}
+
+const COMM_TEMPLATES_CACHE_KEY_ = 'comm_templates_v1';
+
+function getCommTemplatesRaw_() {
+  if (_rawDataCache_.commTemplates) return _rawDataCache_.commTemplates;
+  const cached = getCrossRequestCache_(COMM_TEMPLATES_CACHE_KEY_);
+  if (cached) { _rawDataCache_.commTemplates = cached; return cached; }
+
+  const sheet = getCommTemplatesSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      out.push({
+        templateId: String(row[0] || ''),
+        name: String(row[1] || ''),
+        category: String(row[2] || COMM_CATEGORY_TRANSACTIONAL),
+        layoutId: String(row[3] || 'Default'),
+        bodyMode: String(row[4] || COMM_BODY_MODE_FRAGMENT),
+        subject: String(row[5] || ''),
+        preheaderText: String(row[6] || ''),
+        bodyHtml: String(row[7] || ''),
+        eventId: String(row[8] || ''),
+        status: String(row[9] || 'Draft'),
+        version: Number(row[10]) || 1,
+        updatedBy: String(row[11] || ''),
+        updatedAt: row[12] instanceof Date ? row[12].toISOString() : String(row[12] || '')
+      });
+    }
+  }
+  _rawDataCache_.commTemplates = out;
+  putCrossRequestCache_(COMM_TEMPLATES_CACHE_KEY_, out);
+  return out;
+}
+
+function getCommTemplateById_(templateId) {
+  return getCommTemplatesRaw_().find(t => t.templateId === String(templateId)) || null;
+}
+
+function invalidateCommTemplatesCache_() {
+  _rawDataCache_.commTemplates = null;
+  invalidateCrossRequestCache_(COMM_TEMPLATES_CACHE_KEY_);
+}
+
+// ---- Sheet accessors: CommunicationsCampaigns ----------------------------
+
+function getCommCampaignsSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_CAMPAIGNS_SHEET_NAME) || ss.insertSheet(COMM_CAMPAIGNS_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_CAMPAIGNS_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_CAMPAIGNS_HEADERS_, 'headers_checked_commcampaigns');
+  return s;
+}
+
+function commCampaignRowToObj_(row) {
+  let audienceSpec = {};
+  try { audienceSpec = JSON.parse(row[4]) || {}; } catch (e) { audienceSpec = {}; }
+  return {
+    campaignId: String(row[0] || ''),
+    name: String(row[1] || ''),
+    templateId: String(row[2] || ''),
+    eventId: String(row[3] || ''),
+    audienceSpec: audienceSpec,
+    status: String(row[5] || COMM_CAMPAIGN_STATUS_DRAFT),
+    totalRecipients: Number(row[6]) || 0,
+    sentCount: Number(row[7]) || 0,
+    failedCount: Number(row[8]) || 0,
+    createdBy: String(row[9] || ''),
+    createdAt: row[10] instanceof Date ? row[10].toISOString() : String(row[10] || ''),
+    startedAt: row[11] instanceof Date ? row[11].toISOString() : String(row[11] || ''),
+    completedAt: row[12] instanceof Date ? row[12].toISOString() : String(row[12] || ''),
+    lastError: String(row[13] || '')
+  };
+}
+
+// Deliberately NOT cross-request cached — campaign status is polled by the
+// progress UI and must always reflect the latest drain execution's writes.
+function getCommCampaignsRaw_() {
+  const sheet = getCommCampaignsSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) out.push(commCampaignRowToObj_(data[i]));
+  }
+  return out;
+}
+
+function getCommCampaignById_(campaignId) {
+  return getCommCampaignsRaw_().find(c => c.campaignId === String(campaignId)) || null;
+}
+
+function findCommCampaignRowNum_(sheet, campaignId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return -1;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(campaignId)) return i + 2;
+  }
+  return -1;
+}
+
+/** Patches specific fields of one campaign row in place — used throughout the drain loop instead of a full bulk-replace, since campaigns are read/written far more often than templates/automations. */
+function updateCommCampaign_(campaignId, patch) {
+  const sheet = getCommCampaignsSheet_();
+  const rowNum = findCommCampaignRowNum_(sheet, campaignId);
+  if (rowNum === -1) return;
+  const current = commCampaignRowToObj_(sheet.getRange(rowNum, 1, 1, COMM_CAMPAIGNS_HEADERS_.length).getValues()[0]);
+  const merged = Object.assign({}, current, patch);
+  sheet.getRange(rowNum, 1, 1, COMM_CAMPAIGNS_HEADERS_.length).setValues([[
+    merged.campaignId, merged.name, merged.templateId, merged.eventId, JSON.stringify(merged.audienceSpec || {}),
+    merged.status, merged.totalRecipients, merged.sentCount, merged.failedCount, merged.createdBy,
+    merged.createdAt, merged.startedAt, merged.completedAt, merged.lastError
+  ]]);
+}
+
+// ---- Sheet accessors: CommunicationsQueue --------------------------------
+
+function getCommQueueSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_QUEUE_SHEET_NAME) || ss.insertSheet(COMM_QUEUE_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_QUEUE_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_QUEUE_HEADERS_, 'headers_checked_commqueue');
+  return s;
+}
+
+// ---- Sheet accessors: CommunicationsLog ----------------------------------
+
+function getCommLogSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_LOG_SHEET_NAME) || ss.insertSheet(COMM_LOG_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_LOG_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_LOG_HEADERS_, 'headers_checked_commlog');
+  return s;
+}
+
+/**
+ * Appends one or more CommunicationsLog rows in a single write. Every send
+ * attempt in this feature — campaign, automation, or test send — goes
+ * through this, so CommunicationsLog is the one place to look for "did
+ * this actually go out" regardless of which path sent it.
+ */
+function appendCommLogRows_(entries) {
+  if (!entries || !entries.length) return;
+  const sheet = getCommLogSheet_();
+  const rows = entries.map(e => [
+    mintId_('CLOG'), new Date(), e.campaignId || '', e.templateId || '', e.templateName || '',
+    e.eventId || '', e.subEventId || '', e.recipientEmail || '', e.recipientName || '',
+    e.subject || '', e.category || '', e.status, e.errorMessage || '', e.sentBy || ''
+  ]);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COMM_LOG_HEADERS_.length).setValues(rows);
+  // Invalidate: this execution's cached CommunicationsLog read is now stale
+  // — without this, a hasCommLogSentIdentity_ check later in the same
+  // execution wouldn't see the row just appended above.
+  _rawDataCache_.commLog = null;
+}
+
+/**
+ * Full CommunicationsLog read, cached for the lifetime of this execution
+ * only. Unlike most get*Raw_() helpers in this file, this is deliberately
+ * NOT put in CacheService (see the note by _rawDataCache_ above) — the log
+ * is an audit trail that must reflect the live sheet across requests.
+ * Execution-scoped memoization is still worthwhile because
+ * hasCommLogSentIdentity_ is called once per attendee from
+ * fireCommunicationTrigger_ and once per (candidate x milestone) pair from
+ * sendMilestoneDeadlineReminders_'s innermost loop — a full getValues() on
+ * every call there is the dominant cost of that daily scan.
+ */
+function getCommLogRaw_() {
+  if (_rawDataCache_.commLog) return _rawDataCache_.commLog;
+  const sheet = getCommLogSheet_();
+  if (sheet.getLastRow() <= 1) { _rawDataCache_.commLog = []; return []; }
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMM_LOG_HEADERS_.length).getValues();
+  _rawDataCache_.commLog = data;
+  return data;
+}
+
+/**
+ * Checks CommunicationsLog for a prior Sent row matching this trigger
+ * "identity" — the log-based dedupe mechanism used by AllMilestonesCompleted
+ * and MilestoneDeadlineReminder instead of separate state tracking (see the
+ * COMMUNICATIONS FEATURE header). identity is a free-form string the caller
+ * builds to be unique per (trigger, entity, recipient[, window]) — e.g.
+ * 'AllMilestonesCompleted::EVT-123::person@co.com' or
+ * 'MilestoneDeadlineReminder::MS-1::person@co.com'. Stored in the log's
+ * CampaignID column with a 'trigger:' prefix so it never collides with a
+ * real CampaignID.
+ */
+function hasCommLogSentIdentity_(identity) {
+  const marker = 'trigger:' + identity;
+  const data = getCommLogRaw_();
+  if (!data.length) return false;
+  const campaignIdIdx = COMM_LOG_HEADERS_.indexOf('CampaignID');
+  const statusIdx = COMM_LOG_HEADERS_.indexOf('Status');
+  return data.some(row => String(row[campaignIdIdx]) === marker && String(row[statusIdx]) === COMM_LOG_STATUS_SENT);
+}
+
+// ---- Sheet accessors: CommunicationsOptOut -------------------------------
+
+function getCommOptOutSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_OPTOUT_SHEET_NAME) || ss.insertSheet(COMM_OPTOUT_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_OPTOUT_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_OPTOUT_HEADERS_, 'headers_checked_commoptout');
+  return s;
+}
+
+const COMM_OPTOUT_CACHE_KEY_ = 'comm_optout_v1';
+
+function getCommOptOutRaw_() {
+  if (_rawDataCache_.commOptOut) return _rawDataCache_.commOptOut;
+  const cached = getCrossRequestCache_(COMM_OPTOUT_CACHE_KEY_);
+  if (cached) { _rawDataCache_.commOptOut = cached; return cached; }
+
+  const sheet = getCommOptOutSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      out.push({
+        email: String(row[0] || '').trim().toLowerCase(),
+        scope: String(row[1] || 'Global'), // 'Global' or a specific EventID
+        optedOutAt: row[2] instanceof Date ? row[2].toISOString() : String(row[2] || ''),
+        source: String(row[3] || ''),
+        note: String(row[4] || '')
+      });
+    }
+  }
+  _rawDataCache_.commOptOut = out;
+  putCrossRequestCache_(COMM_OPTOUT_CACHE_KEY_, out);
+  return out;
+}
+
+function isOptedOut_(email, eventId) {
+  const em = (email || '').trim().toLowerCase();
+  return getCommOptOutRaw_().some(o => o.email === em && (o.scope === 'Global' || o.scope === String(eventId)));
+}
+
+// ---- Sheet accessors: CommunicationsSettings -----------------------------
+
+function getCommSettingsSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_SETTINGS_SHEET_NAME) || ss.insertSheet(COMM_SETTINGS_SHEET_NAME);
+  if (s.getLastRow() === 0) {
+    s.appendRow(COMM_SETTINGS_HEADERS_);
+    s.appendRow(['Event Portal', '', BRANDING.eventTitle, '', '', 90, 'MailApp', '']);
+  } else {
+    ensureHeadersFresh_(s, COMM_SETTINGS_HEADERS_, 'headers_checked_commsettings');
+  }
+  return s;
+}
+
+/** Single-row operator config — see COMM_SETTINGS_HEADERS_. Always returns an object even before any admin has saved settings (sensible defaults). */
+function getCommSettings_() {
+  const sheet = getCommSettingsSheet_();
+  if (sheet.getLastRow() < 2) {
+    return { fromName: 'Event Portal', replyTo: '', footerOrgName: BRANDING.eventTitle, footerPostalAddress: '', footerText: '', dailySendCap: 90, transportType: 'MailApp', adminPasswordResetTemplateId: '' };
+  }
+  const row = sheet.getRange(2, 1, 1, COMM_SETTINGS_HEADERS_.length).getValues()[0];
+  return {
+    fromName: String(row[0] || 'Event Portal'),
+    replyTo: String(row[1] || ''),
+    footerOrgName: String(row[2] || BRANDING.eventTitle),
+    footerPostalAddress: String(row[3] || ''),
+    footerText: String(row[4] || ''),
+    dailySendCap: Number(row[5]) || 90,
+    transportType: String(row[6] || 'MailApp'),
+    adminPasswordResetTemplateId: String(row[7] || '')
+  };
+}
+
+function saveCommSettings(token, settings) {
+  requireAdmin_(token);
+  const sheet = getCommSettingsSheet_();
+  const s = settings || {};
+  const row = [
+    String(s.fromName || 'Event Portal').trim(),
+    String(s.replyTo || '').trim(),
+    String(s.footerOrgName || BRANDING.eventTitle).trim(),
+    String(s.footerPostalAddress || '').trim(),
+    String(s.footerText || '').trim(),
+    Math.max(0, Number(s.dailySendCap) || 90),
+    String(s.transportType || 'MailApp').trim(),
+    String(s.adminPasswordResetTemplateId || '').trim()
+  ];
+  if (sheet.getLastRow() < 2) sheet.appendRow(row);
+  else sheet.getRange(2, 1, 1, COMM_SETTINGS_HEADERS_.length).setValues([row]);
+  return { status: 'ok' };
+}
+
+// ---- Sheet accessors: CommunicationsAutomations --------------------------
+
+function getCommAutomationsSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(COMM_AUTOMATIONS_SHEET_NAME) || ss.insertSheet(COMM_AUTOMATIONS_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(COMM_AUTOMATIONS_HEADERS_);
+  else ensureHeadersFresh_(s, COMM_AUTOMATIONS_HEADERS_, 'headers_checked_commautomations');
+  return s;
+}
+
+const COMM_AUTOMATIONS_CACHE_KEY_ = 'comm_automations_v1';
+
+function getCommAutomationsRaw_() {
+  if (_rawDataCache_.commAutomations) return _rawDataCache_.commAutomations;
+  const cached = getCrossRequestCache_(COMM_AUTOMATIONS_CACHE_KEY_);
+  if (cached) { _rawDataCache_.commAutomations = cached; return cached; }
+
+  const sheet = getCommAutomationsSheet_();
+  const out = [];
+  if (sheet.getLastRow() > 1) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      out.push({
+        automationId: String(row[0] || ''),
+        scope: String(row[1] || COMM_SCOPE_EVENT),
+        eventId: String(row[2] || ''),
+        subEventId: String(row[3] || ''),
+        triggerType: String(row[4] || ''),
+        milestoneId: String(row[5] || ''),
+        reminderDaysBefore: row[6] === '' || row[6] == null ? null : Number(row[6]),
+        templateId: String(row[7] || ''),
+        status: String(row[8] || 'Active'),
+        createdBy: String(row[9] || ''),
+        createdAt: row[10] instanceof Date ? row[10].toISOString() : String(row[10] || '')
+      });
+    }
+  }
+  _rawDataCache_.commAutomations = out;
+  putCrossRequestCache_(COMM_AUTOMATIONS_CACHE_KEY_, out);
+  return out;
+}
+
+function invalidateCommAutomationsCache_() {
+  _rawDataCache_.commAutomations = null;
+  invalidateCrossRequestCache_(COMM_AUTOMATIONS_CACHE_KEY_);
+}
+
+/**
+ * Every Active automation matching this trigger for this event/sub-event
+ * (or Scope=System for AdminPasswordReset), and — for MilestoneCompleted-
+ * shaped triggers — this specific milestoneId. An entity can have more
+ * than one Active binding for the same TriggerType (e.g. bound both at
+ * the sub-event AND its parent event) — all matches fire.
+ */
+function findActiveAutomations_(triggerType, eventId, subEventId) {
+  return getCommAutomationsRaw_().filter(a => {
+    if (a.status !== 'Active' || a.triggerType !== triggerType) return false;
+    if (a.scope === COMM_SCOPE_SYSTEM) return true;
+    if (a.eventId !== String(eventId)) return false;
+    if (a.subEventId && a.subEventId !== String(subEventId || '')) return false;
+    return true;
+  });
+}
+
+// ---- Merge tag engine -----------------------------------------------
+
+// {{namespace.field}} — double braces, dot-namespaced, whitespace-tolerant.
+const COMM_MERGE_TAG_RE_ = /\{\{\s*([a-zA-Z][\w]*(?:\.[\w]+)*)\s*\}\}/g;
+
+/**
+ * Server-rendered HTML components a template can drop in with a
+ * {{block.xxx}} tag — e.g. {{block.itineraryTable}} expands to a complete
+ * table, not a single value. Deliberately NOT a template language (no
+ * {{#each}}/{{#if}}) — these are fixed components, each backed by a real
+ * function, extensible the same way MILESTONE_COMPLETION_HANDLERS_ is:
+ * add a renderer here, nothing else changes.
+ */
+const COMM_BLOCK_RENDERERS_ = {
+  'block.itineraryTable': function(context) {
+    if (!context._itineraryData) return '<p style="color:#8a8f98;">(No itinerary data available for this recipient.)</p>';
+    return renderItineraryTableHtml_(context._itineraryData);
+  }
+};
+
+/** Resolves a dotted path ('attendee.firstName') against a context object; returns undefined if any segment is missing. */
+function resolveMergeTagPath_(path, context) {
+  const parts = path.split('.');
+  let cur = context;
+  for (let i = 0; i < parts.length; i++) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+/**
+ * Single-pass substitution — NOT an iterative find/replace loop. Iterative
+ * replacement re-scans already-substituted text, so a recipient whose own
+ * free-text data (e.g. Company Name) happens to contain literal
+ * "{{...}}" would get it expanded a second time. String.replace with a
+ * callback visits the ORIGINAL string exactly once, so merged values are
+ * inert by construction.
+ *
+ * mode: 'html' — value tags are escapeHtml()'d, block tags render raw
+ *                (safe internally); used for the email body.
+ *       'text' — value tags are NOT html-escaped, block tags are rejected
+ *                (a table doesn't belong in a subject line); used for
+ *                Subject/PreheaderText.
+ *
+ * Returns { text, warnings } — warnings collects every tag name that
+ * didn't resolve to anything, so the caller can refuse to send (or ask
+ * the admin to confirm) rather than silently mailing "{{typo}}" to 400
+ * people.
+ */
+function substituteMergeTags_(raw, context, mode) {
+  const warnings = [];
+  const text = String(raw || '').replace(COMM_MERGE_TAG_RE_, function(match, tagPath) {
+    if (tagPath.indexOf('block.') === 0) {
+      if (mode === 'text') { warnings.push(tagPath); return ''; }
+      const renderer = COMM_BLOCK_RENDERERS_[tagPath];
+      if (!renderer) { warnings.push(tagPath); return ''; }
+      try { return renderer(context); } catch (e) { warnings.push(tagPath + ' (render error: ' + e.message + ')'); return ''; }
+    }
+    const value = resolveMergeTagPath_(tagPath, context);
+    if (value === undefined || value === null) { warnings.push(tagPath); return ''; }
+    return mode === 'html' ? escapeHtml(value) : String(value);
+  });
+  return { text: text, warnings: warnings };
+}
+
+function dedupeMergeWarnings_(list) {
+  const seen = {};
+  const out = [];
+  (list || []).forEach(w => { if (!seen[w]) { seen[w] = true; out.push(w); } });
+  return out;
+}
+
+/**
+ * Builds the read-mostly indexes ONE per campaign/automation batch (never
+ * per-recipient) — at 250+ recipients, re-reading Registrations/
+ * SubEventRegistrations per person would dominate the execution budget on
+ * sheet reads alone. itineraryEntityId is optional: when set (a B2B
+ * sub-event id), buildMergeContextForEmail_ will additionally attempt to
+ * attach that recipient's itinerary (for {{block.itineraryTable}} /
+ * {{attendee.meetingCount}}) — pass it only when the template/audience
+ * actually needs it.
+ */
+function buildMergeIndexes_(eventId, itineraryEntityId) {
+  const event = getEventById_(eventId);
+  const topEventId = event ? (event.parentEventId || event.eventId) : String(eventId);
+
+  const registrationsByEmail = {};
+  getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => {
+    registrationsByEmail[r.email.trim().toLowerCase()] = r;
+  });
+
+  const subEventRegsByEmail = {};
+  getSubEventRegsRaw_().filter(r => r.eventId === topEventId).forEach(r => {
+    if (!subEventRegsByEmail[r.email]) subEventRegsByEmail[r.email] = [];
+    subEventRegsByEmail[r.email].push(r);
+  });
+
+  return {
+    event: event,
+    topEventId: topEventId,
+    registrationsByEmail: registrationsByEmail,
+    subEventRegsByEmail: subEventRegsByEmail,
+    onboarding: getOnboardingData_(),
+    settings: getCommSettings_(),
+    itineraryEntityId: itineraryEntityId || null
+  };
+}
+
+function formatEventDateRange_(event) {
+  if (!event) return '';
+  return event.eventDate || '';
+}
+
+/**
+ * Builds the full merge-tag context for ONE recipient from indexes built
+ * once per batch by buildMergeIndexes_. `extra` lets a specific caller
+ * (e.g. an automation firing right after a fresh registration write, or a
+ * campaign that already resolved a friendlier registration type) override
+ * or supplement individual fields without a second sheet read.
+ */
+function buildMergeContextForEmail_(indexes, email, extra) {
+  const em = (email || '').trim().toLowerCase();
+  const reg = indexes.registrationsByEmail[em] || {};
+  const subRegs = indexes.subEventRegsByEmail[em] || [];
+  const profileRow = findProfileRow_(em);
+  const profileVal = function(col) { return profileRow ? String(profileRow.values[profileRow.idx[col]] || '') : ''; };
+
+  // B2B registration-type resolution mirrors getAttendeeItinerary
+  // (Code.js) — a modern B2B attendee's flat Registration Type is blank
+  // and the real tier lives on their allocated sub-event option instead.
+  let registrationType = reg.registrationType || '';
+  const regTypesForEventType = indexes.event && indexes.onboarding[indexes.event.eventType]
+    ? indexes.onboarding[indexes.event.eventType].registrationTypes : [];
+  const allocation = subRegs.find(r => (r.status === 'Confirmed' || r.status === 'Waitlisted') && r.optionLabel);
+  if (!registrationType && allocation) registrationType = allocation.optionLabel;
+
+  const firstName = profileVal('FirstName') || (reg.fullName || '').split(' ')[0] || '';
+  const lastName = profileVal('Surname') || (reg.fullName || '').split(' ').slice(1).join(' ') || '';
+
+  const context = {
+    attendee: Object.assign({
+      fullName: reg.fullName || '',
+      firstName: firstName,
+      lastName: lastName,
+      email: reg.email || email,
+      jobTitle: profileVal('JobTitle'),
+      companyName: reg.companyName || '',
+      companyDescription: reg.companyDescription || '',
+      membershipType: reg.membershipType || '',
+      membershipCategory: reg.membershipCategory || '',
+      website: reg.website || '',
+      domain: reg.domain || (email.split('@')[1] || ''),
+      registrationType: registrationType,
+      dietaryRequirements: (reg.dietaryRequirements || '').split('|').filter(Boolean).join(', '),
+      subEventStatus: allocation ? allocation.status : '',
+      optionLabel: allocation ? allocation.optionLabel : '',
+      meetingCount: 0
+    }, extra && extra.attendee),
+    event: indexes.event ? {
+      name: indexes.event.eventName,
+      date: indexes.event.eventDate,
+      dateRange: formatEventDateRange_(indexes.event),
+      time: indexes.event.eventTime,
+      location: indexes.event.location,
+      description: indexes.event.description,
+      website: indexes.event.website,
+      detailsPageUrl: indexes.event.detailsPageUrl,
+      type: indexes.event.eventType
+    } : {},
+    portal: {
+      url: getWebAppUrl_(),
+      eventUrl: getWebAppUrl_() + (indexes.event ? '?eventId=' + encodeURIComponent(indexes.event.eventId) : ''),
+      unsubscribeUrl: buildUnsubscribeUrl_(em, indexes.topEventId)
+    },
+    branding: BRANDING,
+    campaign: Object.assign({
+      name: '', sentDate: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'),
+      fromName: indexes.settings.fromName, footerOrgName: indexes.settings.footerOrgName,
+      footerPostalAddress: indexes.settings.footerPostalAddress, footerText: indexes.settings.footerText
+    }, extra && extra.campaign),
+    _itineraryData: null
+  };
+
+  if (indexes.itineraryEntityId) {
+    try {
+      const itin = getAttendeeItinerary(indexes.itineraryEntityId, em);
+      context._itineraryData = itin;
+      context.attendee.meetingCount = (itin.meetings || []).filter(m => !m.isSpecialBlock).length;
+    } catch (e) {
+      // Not registered/allocated for that sub-event yet — leave
+      // _itineraryData null; {{block.itineraryTable}} renders its "no
+      // data" fallback rather than failing the whole send.
+    }
+  }
+
+  return context;
+}
+
+/**
+ * Lightweight context for SYSTEM-scoped sends (currently just
+ * AdminPasswordReset) — the recipient is an admin, not an attendee, so
+ * there's no Registrations/Profiles row to build from. Takes explicit
+ * key/values instead of resolving anything from sheets.
+ */
+function buildSystemMergeContext_(vars) {
+  const settings = getCommSettings_();
+  return {
+    admin: Object.assign({ email: '' }, vars && vars.admin),
+    portal: Object.assign({ url: getWebAppUrl_(), resetUrl: '' }, vars && vars.portal),
+    branding: BRANDING,
+    settings: Object.assign({ resetTtlMinutes: RESET_TOKEN_TTL_MINUTES }, vars && vars.settings),
+    campaign: { fromName: settings.fromName, footerOrgName: settings.footerOrgName, footerPostalAddress: settings.footerPostalAddress, footerText: settings.footerText },
+    _itineraryData: null
+  };
+}
+
+function needsUnsubscribeFooter_(template) {
+  return template.category !== COMM_CATEGORY_TRANSACTIONAL;
+}
+
+/** For BodyMode=FullHtml templates (typically pasted in from an external drag-and-drop design tool as a complete document) — appends the unsubscribe footer before </body> rather than forcing the document through EmailLayoutDefault, since re-wrapping already-tested cross-client HTML risks breaking it. */
+function injectUnsubscribeFooter_(html, template, context) {
+  if (!needsUnsubscribeFooter_(template)) return html;
+  const footer = '<div style="padding:16px 24px;font-size:11px;color:#5B6472;text-align:center;font-family:Arial,sans-serif;">' +
+    escapeHtml(context.campaign.footerOrgName || '') +
+    (context.campaign.footerPostalAddress ? ' &middot; ' + escapeHtml(context.campaign.footerPostalAddress) : '') +
+    '<br><a href="' + context.portal.unsubscribeUrl + '" style="color:#1C7293;">Unsubscribe</a></div>';
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, footer + '</body>') : html + footer;
+}
+
+/**
+ * Wraps an already-merged body FRAGMENT in the shared branded layout.
+ * bodyHtml is assigned to the template as DATA (tpl.bodyHtml = ...), never
+ * passed into HtmlService.createTemplate() itself — <?!= bodyHtml ?> in
+ * the layout file EMITS it as a string. If user-authored template text
+ * were instead evaluated directly as an HtmlService template, that would
+ * be arbitrary Apps Script execution (full Drive/Gmail/Sheets access)
+ * triggered by whatever an admin typed into a Body field. This is the one
+ * line in the whole feature where getting that distinction wrong would
+ * matter most.
+ */
+function renderEmailLayout_(layoutId, mergedBodyHtml, context, template) {
+  const fileName = layoutId === 'Plain' ? 'EmailLayoutPlain' : 'EmailLayoutDefault';
+  const tpl = HtmlService.createTemplateFromFile(fileName);
+  tpl.branding = BRANDING;
+  tpl.bodyHtml = mergedBodyHtml;
+  tpl.preheader = '';
+  tpl.footerOrgName = context.campaign.footerOrgName || BRANDING.eventTitle;
+  tpl.footerPostalAddress = context.campaign.footerPostalAddress || '';
+  tpl.footerText = context.campaign.footerText || '';
+  tpl.unsubscribeUrl = needsUnsubscribeFooter_(template) ? context.portal.unsubscribeUrl : '';
+  return tpl.evaluate().getContent();
+}
+
+/**
+ * THE single renderer — preview, test-send, automations, and the campaign
+ * queue all call this with the same context-building logic, so "what the
+ * admin previewed" and "what got sent" can never drift apart into two
+ * different code paths.
+ */
+function renderCommunication_(template, context) {
+  const subjectResult = substituteMergeTags_(template.subject, context, 'text');
+  const bodyResult = substituteMergeTags_(template.bodyHtml, context, 'html');
+  const preheaderResult = template.preheaderText ? substituteMergeTags_(template.preheaderText, context, 'text') : { text: '', warnings: [] };
+
+  let htmlBody;
+  if (template.bodyMode === COMM_BODY_MODE_FULLHTML) {
+    htmlBody = injectUnsubscribeFooter_(bodyResult.text, template, context);
+  } else {
+    htmlBody = renderEmailLayout_(template.layoutId, bodyResult.text, context, template);
+  }
+
+  return {
+    subject: subjectResult.text.replace(/[\r\n]+/g, ' ').substring(0, 150),
+    htmlBody: htmlBody,
+    preheader: preheaderResult.text,
+    warnings: dedupeMergeWarnings_(subjectResult.warnings.concat(bodyResult.warnings, preheaderResult.warnings))
+  };
+}
+
+/** Extracted from the original emailItinerary — shared by the attendee-triggered "Email Itinerary" button AND {{block.itineraryTable}}, so both render byte-identical tables. */
+function renderItineraryTableHtml_(itineraryData) {
+  let tableHtml = `
+    <h2 style="color:#1a73e8;">Meeting Itinerary for ${escapeHtml(itineraryData.userName)} (${escapeHtml(itineraryData.userCompany)})</h2>
+    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse; width:100%; font-family:Arial, sans-serif; font-size:13px;">
+      <thead>
+        <tr style="background-color:#f1f3f4; text-align:left;">
+          <th>Appt # / Event</th><th>Start Time</th><th>End Time</th><th>Table No.</th>
+          <th>Status</th><th>Company Name</th><th>Full Name</th><th>Meeting Type</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  if (!itineraryData.meetings || itineraryData.meetings.length === 0) {
+    tableHtml += `<tr><td colspan="8" style="text-align:center;">No scheduled meetings found.</td></tr>`;
+  } else {
+    itineraryData.meetings.forEach(m => {
+      if (m.isSpecialBlock) {
+        tableHtml += `
+          <tr style="background-color:#f8f9fa;">
+            <td colspan="8" style="text-align:center; font-weight:bold; color:#5f6368;">
+              ${escapeHtml(m.startTime)} - ${escapeHtml(m.endTime)} &nbsp;|&nbsp; ${escapeHtml(m.appointment)} ${m.tableNumber ? ' (' + escapeHtml(m.tableNumber) + ')' : ''}
+            </td>
+          </tr>`;
+      } else {
+        tableHtml += `
+          <tr>
+            <td>${escapeHtml(m.appointment)}</td>
+            <td><strong>${escapeHtml(m.startTime)}</strong></td>
+            <td><strong>${escapeHtml(m.endTime)}</strong></td>
+            <td>${escapeHtml(m.tableNumber)}</td>
+            <td>${escapeHtml(m.status)}</td>
+            <td><strong>${escapeHtml(m.companyName)}</strong></td>
+            <td>${escapeHtml(m.fullName)}</td>
+            <td>${escapeHtml(m.meetingType)}</td>
+          </tr>`;
+      }
+    });
+  }
+  tableHtml += `</tbody></table>`;
+  return tableHtml;
+}
+
+function buildItineraryCsvAttachment_(itineraryData) {
+  let csvContent = 'Appointment,Start Time,End Time,Table Number,Status,Company Name,Full Name,Meeting Type\n';
+  (itineraryData.meetings || []).forEach(m => {
+    if (m.isSpecialBlock) {
+      csvContent += `"${m.appointment}","${m.startTime}","${m.endTime}","${m.tableNumber}","","","",""\n`;
+    } else {
+      csvContent += `"${m.appointment}","${m.startTime}","${m.endTime}","${m.tableNumber}","${m.status}","${m.companyName}","${m.fullName}","${m.meetingType}"\n`;
+    }
+  });
+  const sanitizedFileName = (itineraryData.userName || 'Attendee').replace(/[^a-zA-Z0-9]/g, '_');
+  return Utilities.newBlob(csvContent, 'text/csv', `Meeting_Itinerary_${sanitizedFileName}.csv`);
+}
+
+// ---- Transport ------------------------------------------------------
+
+/**
+ * The ONLY function in this feature allowed to hand a message to an email
+ * transport. TransportType (CommunicationsSettings) picks the backend —
+ * today only 'MailApp' is implemented, but every caller (queue drain,
+ * automations, test sends) already goes through this one seam, so adding
+ * 'GmailApp' or an external ESP later is a new branch here, not a rewrite
+ * of the callers.
+ */
+function deliverEmail_(msg) {
+  const settings = getCommSettings_();
+  try {
+    const options = {};
+    if (settings.replyTo) options.replyTo = settings.replyTo;
+    if (settings.fromName) options.name = settings.fromName;
+    if (msg.attachments) options.attachments = msg.attachments;
+    MailApp.sendEmail(Object.assign({ to: msg.to, subject: msg.subject, htmlBody: msg.htmlBody }, options));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function getRemainingCommQuota_() {
+  let remaining;
+  try { remaining = MailApp.getRemainingDailyQuota(); } catch (e) { remaining = 0; }
+  const settings = getCommSettings_();
+  const capped = Math.min(remaining, settings.dailySendCap != null ? settings.dailySendCap : remaining);
+  return Math.max(0, capped - COMM_QUOTA_RESERVE);
+}
+
+// ---- Unsubscribe secret ------------------------------------------------
+
+/**
+ * Lazily-generated HMAC signing secret for unsubscribe links — the first
+ * real use of PropertiesService in this codebase (everything else uses
+ * sheets or CacheService). ScriptProperties is the right home here
+ * specifically because, unlike the spreadsheet, it is NOT shared with the
+ * client organization admins the spreadsheet is shared with.
+ */
+function getCommHmacSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('COMM_HMAC_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('COMM_HMAC_SECRET', secret);
+  }
+  return secret;
+}
+
+function computeUnsubscribeToken_(email, scope) {
+  const raw = Utilities.computeHmacSha256Signature(email + '|' + scope, getCommHmacSecret_());
+  return Utilities.base64EncodeWebSafe(raw).substring(0, 22);
+}
+
+function buildUnsubscribeUrl_(email, eventScope) {
+  const scope = eventScope || 'Global';
+  const token = computeUnsubscribeToken_(email, scope);
+  return getWebAppUrl_() + '?page=unsubscribe&e=' + encodeURIComponent(email) + '&s=' + encodeURIComponent(scope) + '&t=' + encodeURIComponent(token);
+}
+
+/* =========================================================================
+   AUTOMATED TRIGGERS — v1: RegistrationComplete, AdminPasswordReset,
+   AllMilestonesCompleted, MilestoneDeadlineReminder. Synchronous,
+   single-recipient sends fired inline by the attendee's/admin's own
+   action (the first three) or by a daily scheduled scan (the fourth) —
+   distinct from an admin-initiated, audience-targeted Campaign below.
+   ========================================================================= */
+
+/**
+ * Fires every Active automation bound to (triggerType, eventId[,
+ * subEventId]) for one recipient. FAIL-SOFT BY DESIGN: this function
+ * never throws — every call site is inside an existing user-facing save
+ * (registration, milestone completion), and an email problem must never
+ * be able to break the thing it's supposed to confirm. Errors are
+ * swallowed after being logged to CommunicationsLog where possible.
+ *
+ * extra: { dedupeIdentity, dedupe (default true), itineraryEntityId,
+ *          attendee: {...overrides}, campaign: {...overrides} }
+ * Log-based dedupe (see hasCommLogSentIdentity_) is ON by default — set
+ * dedupe:false for triggers that are legitimately allowed to fire more
+ * than once for the same person (e.g. AdminPasswordReset, requested
+ * again each time someone forgets their password).
+ */
+function fireCommunicationTrigger_(triggerType, eventId, subEventId, email, extra) {
+  extra = extra || {};
+  try {
+    const em = (email || '').trim().toLowerCase();
+    if (!em) return;
+
+    const automations = findActiveAutomations_(triggerType, eventId, subEventId);
+    if (!automations.length) return;
+
+    const identity = extra.dedupeIdentity || (triggerType + '::' + (subEventId || eventId) + '::' + em);
+    if (extra.dedupe !== false && hasCommLogSentIdentity_(identity)) return;
+
+    const indexes = buildMergeIndexes_(eventId, extra.itineraryEntityId);
+
+    automations.forEach(automation => {
+      const template = getCommTemplateById_(automation.templateId);
+      if (!template || template.status !== 'Active') return;
+
+      const context = buildMergeContextForEmail_(indexes, em, extra);
+      let rendered, result;
+      try {
+        rendered = renderCommunication_(template, context);
+        result = deliverEmail_({ to: em, subject: rendered.subject, htmlBody: rendered.htmlBody });
+      } catch (renderErr) {
+        result = { ok: false, error: renderErr.message };
+        rendered = { subject: '(render failed)' };
+      }
+
+      appendCommLogRows_([{
+        campaignId: 'trigger:' + identity,
+        templateId: template.templateId, templateName: template.name,
+        eventId: eventId || '', subEventId: subEventId || '',
+        recipientEmail: em, recipientName: context.attendee ? context.attendee.fullName : '',
+        subject: rendered.subject, category: template.category,
+        status: result.ok ? COMM_LOG_STATUS_SENT : COMM_LOG_STATUS_FAILED,
+        errorMessage: result.ok ? '' : result.error,
+        sentBy: 'system:trigger'
+      }]);
+    });
+  } catch (e) {
+    // Swallow — see function doc. Nowhere safe left to report this that
+    // wouldn't risk failing the caller's own save.
+  }
+}
+
+/**
+ * AdminPasswordReset is System-scoped (Scope=System — no EventID) and
+ * SECURITY-CRITICAL: an admin locked out of their account can't afford
+ * "nobody configured a template yet." Tries the templated path if an
+ * Active automation+template is bound; falls back to the original
+ * hardcoded email in EVERY other case (no binding, inactive template,
+ * render error, or a failed send) — template-driven is the enhancement,
+ * never the only path. dedupe:false is implicit here (this isn't routed
+ * through fireCommunicationTrigger_'s log-based dedupe at all) since a
+ * legitimate second reset request must always go out.
+ */
+function sendAdminPasswordResetEmail_(email, resetUrl) {
+  let sent = false;
+  const automations = findActiveAutomations_(COMM_TRIGGER_ADMIN_PASSWORD_RESET, '', '');
+  if (automations.length) {
+    const template = getCommTemplateById_(automations[0].templateId);
+    if (template && template.status === 'Active') {
+      try {
+        const context = buildSystemMergeContext_({ admin: { email: email }, portal: { resetUrl: resetUrl } });
+        const rendered = renderCommunication_(template, context);
+        const result = deliverEmail_({ to: email, subject: rendered.subject, htmlBody: rendered.htmlBody });
+        appendCommLogRows_([{
+          campaignId: 'trigger:' + COMM_TRIGGER_ADMIN_PASSWORD_RESET + '::system::' + email,
+          templateId: template.templateId, templateName: template.name, eventId: '', subEventId: '',
+          recipientEmail: email, recipientName: '', subject: rendered.subject, category: template.category,
+          status: result.ok ? COMM_LOG_STATUS_SENT : COMM_LOG_STATUS_FAILED, errorMessage: result.ok ? '' : result.error,
+          sentBy: 'system:trigger'
+        }]);
+        sent = result.ok;
+      } catch (e) {
+        sent = false;
+      }
+    }
+  }
+
+  if (!sent) {
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Reset your Admin Portal password',
+      htmlBody: '<p>Click the link below to reset your Admin Portal password. This link expires in ' +
+        RESET_TOKEN_TTL_MINUTES + ' minutes.</p><p><a href="' + resetUrl + '">Reset Password</a></p>'
+    });
+  }
+}
+
+/**
+ * True once an attendee has completed EVERY milestone configured for one
+ * entity (top-level event or sub-event) — reuses getMilestonesForEntity_,
+ * which already handles the SetPreferences milestone type's special
+ * "derived, not row-based" completion status (see that function and
+ * hasSubmittedPreferences_). An entity with zero milestones configured is
+ * never "complete" (there's nothing to complete), so this returns false
+ * rather than vacuously true.
+ */
+function haveAllMilestonesCompleted_(entityId, email) {
+  const milestones = getMilestonesForEntity_(entityId, email);
+  if (!milestones.length) return false;
+  return milestones.every(m => m.status === 'Completed');
+}
+
+/**
+ * Ensures exactly one daily time-driven trigger exists for the milestone-
+ * deadline-reminder scan. Idempotent — safe to call every time an admin
+ * saves a MilestoneDeadlineReminder automation. Project triggers are
+ * capped at 20/script/user, so this checks for an existing one by handler
+ * name before creating another rather than blindly calling newTrigger.
+ */
+function ensureDailyReminderTrigger_() {
+  const already = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === COMM_REMINDER_TRIGGER_HANDLER);
+  if (already) return;
+  ScriptApp.newTrigger(COMM_REMINDER_TRIGGER_HANDLER).timeBased().everyDays(1).atHour(8).create();
+}
+
+/**
+ * Daily scheduled scan (NOT an inline hook — see the COMMUNICATIONS
+ * FEATURE header). For every event with an Active MilestoneDeadlineReminder
+ * automation, finds milestones with a DueDate, and for each attendee who
+ * hasn't completed that milestone and whose DueDate falls within
+ * ReminderDaysBefore days, sends one reminder — deduped per (milestone,
+ * email) via CommunicationsLog so the same person isn't reminded every
+ * day the window stays open. Draws on the same daily quota reserve as
+ * everything else (getRemainingCommQuota_), so a reminder run on a busy
+ * campaign day logs Skipped rather than erroring once quota is gone.
+ */
+function sendMilestoneDeadlineReminders_() {
+  const automations = getCommAutomationsRaw_().filter(a => a.status === 'Active' && a.triggerType === COMM_TRIGGER_MILESTONE_DEADLINE);
+  if (!automations.length) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  automations.forEach(automation => {
+    const entityId = automation.subEventId || automation.eventId;
+    if (!entityId) return;
+    const daysBefore = automation.reminderDaysBefore != null ? automation.reminderDaysBefore : 3;
+    const template = getCommTemplateById_(automation.templateId);
+    if (!template || template.status !== 'Active') return;
+
+    const milestonesWithDeadline = getMilestonesRaw_().filter(m => m.eventId === entityId && m.dueDate);
+    if (!milestonesWithDeadline.length) return;
+
+    // Every attendee registered at the top-level event this entity
+    // belongs to is a candidate — getMilestonesForEntity_ below resolves
+    // per-attendee completion status (including the SetPreferences
+    // special case), so a non-eligible attendee simply shows "Completed"
+    // or isn't affected either way.
+    const event = getEventById_(entityId);
+    const topEventId = event ? (event.parentEventId || event.eventId) : entityId;
+    const candidateEmails = getRegistrationsRaw_().filter(r => r.eventId === topEventId).map(r => r.email.trim().toLowerCase());
+    if (!candidateEmails.length) return;
+
+    const indexes = buildMergeIndexes_(entityId);
+
+    milestonesWithDeadline.forEach(milestone => {
+      let dueDate;
+      try { dueDate = new Date(milestone.dueDate); } catch (e) { return; }
+      if (isNaN(dueDate.getTime())) return;
+      dueDate.setHours(0, 0, 0, 0);
+      const daysUntilDue = Math.round((dueDate - today) / (24 * 60 * 60 * 1000));
+      // "N days or fewer before, and not yet reminded" rather than
+      // "exactly N days before" — self-healing if a quota-exhausted day
+      // causes a miss (see the design note this mirrors).
+      if (daysUntilDue > daysBefore || daysUntilDue < 0) return;
+
+      candidateEmails.forEach(email => {
+        if (isOptedOut_(email, topEventId)) return;
+        const completion = findMilestoneCompletion_(milestone.milestoneId, email);
+        const isDone = milestone.milestoneType === MILESTONE_TYPE_SET_PREFERENCES
+          ? hasSubmittedPreferences_(entityId, email)
+          : !!completion;
+        if (isDone) return;
+
+        const identity = COMM_TRIGGER_MILESTONE_DEADLINE + '::' + milestone.milestoneId + '::' + email;
+        if (hasCommLogSentIdentity_(identity)) return;
+
+        if (getRemainingCommQuota_() <= 0) {
+          appendCommLogRows_([{
+            campaignId: 'trigger:' + identity, templateId: template.templateId, templateName: template.name,
+            eventId: topEventId, subEventId: automation.subEventId || '', recipientEmail: email, recipientName: '',
+            subject: '', category: template.category, status: COMM_LOG_STATUS_SKIPPED,
+            errorMessage: 'Daily quota exhausted — will retry on next scan', sentBy: 'system:reminder'
+          }]);
+          return;
+        }
+
+        const context = buildMergeContextForEmail_(indexes, email, {
+          attendee: { milestoneDueDate: milestone.dueDate, milestoneTitle: milestone.title }
+        });
+        let rendered, result;
+        try {
+          rendered = renderCommunication_(template, context);
+          result = deliverEmail_({ to: email, subject: rendered.subject, htmlBody: rendered.htmlBody });
+        } catch (e) {
+          result = { ok: false, error: e.message };
+          rendered = { subject: '(render failed)' };
+        }
+        appendCommLogRows_([{
+          campaignId: 'trigger:' + identity, templateId: template.templateId, templateName: template.name,
+          eventId: topEventId, subEventId: automation.subEventId || '', recipientEmail: email,
+          recipientName: context.attendee.fullName, subject: rendered.subject, category: template.category,
+          status: result.ok ? COMM_LOG_STATUS_SENT : COMM_LOG_STATUS_FAILED, errorMessage: result.ok ? '' : result.error,
+          sentBy: 'system:reminder'
+        }]);
+      });
+    });
+  });
+}
+
+/* =========================================================================
+   ADMIN-FACING CRUD — templates, automation bindings, settings. Called
+   from AdminPortal.html's Communications panel and My Events' Automated
+   Emails section.
+   ========================================================================= */
+
+function saveCommTemplate(token, payload) {
+  const adminEmail = requireAdmin_(token);
+  const p = payload || {};
+  const name = String(p.name || '').trim();
+  if (!name) throw new Error('Template name is required.');
+  const category = COMM_CATEGORIES.indexOf(p.category) !== -1 ? p.category : COMM_CATEGORY_TRANSACTIONAL;
+  const bodyMode = p.bodyMode === COMM_BODY_MODE_FULLHTML ? COMM_BODY_MODE_FULLHTML : COMM_BODY_MODE_FRAGMENT;
+  const subject = String(p.subject || '').trim();
+  if (!subject) throw new Error('Subject is required.');
+
+  const sheet = getCommTemplatesSheet_();
+  const existing = p.templateId ? getCommTemplateById_(p.templateId) : null;
+  const templateId = existing ? existing.templateId : mintId_('CTMPL');
+  const version = existing ? existing.version + 1 : 1;
+  const row = [
+    templateId, name, category, String(p.layoutId || 'Default').trim() || 'Default', bodyMode,
+    subject, String(p.preheaderText || '').trim(), String(p.bodyHtml || ''), String(p.eventId || '').trim(),
+    String(p.status || 'Active').trim() || 'Active', version, adminEmail, new Date()
+  ];
+
+  if (existing) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === templateId) { sheet.getRange(i + 1, 1, 1, COMM_TEMPLATES_HEADERS_.length).setValues([row]); break; }
+    }
+  } else {
+    sheet.appendRow(row);
+  }
+  invalidateCommTemplatesCache_();
+  return { status: 'ok', templateId: templateId };
+}
+
+function deleteCommTemplate(token, templateId) {
+  requireAdmin_(token);
+  const sheet = getCommTemplatesSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(templateId)) {
+      sheet.getRange(i + 1, 10).setValue('Archived'); // Status column
+      break;
+    }
+  }
+  invalidateCommTemplatesCache_();
+  return { status: 'ok' };
+}
+
+function listCommTemplates(token, eventId) {
+  requireAdmin_(token);
+  return getCommTemplatesRaw_()
+    .filter(t => t.status !== 'Archived' && (!eventId || !t.eventId || t.eventId === String(eventId)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getCommTemplate(token, templateId) {
+  requireAdmin_(token);
+  const t = getCommTemplateById_(templateId);
+  if (!t) throw new Error('Template not found.');
+  return t;
+}
+
+/**
+ * Upserts ONE automation binding by its natural key (scope, eventId,
+ * subEventId, triggerType) — matches the UI model of one dropdown per
+ * trigger row (see the My Events "Automated Emails" section). Passing
+ * templateId '' / 'None' deletes the existing binding for that key rather
+ * than saving an inactive one, so the sheet doesn't accumulate rows for
+ * every trigger an admin ever glanced at.
+ */
+function saveCommAutomationBinding(token, binding) {
+  const adminEmail = requireAdmin_(token);
+  const b = binding || {};
+  const triggerType = String(b.triggerType || '');
+  if (COMM_TRIGGER_TYPES.indexOf(triggerType) === -1) throw new Error('Unknown trigger type: ' + triggerType);
+  const scope = b.scope === COMM_SCOPE_SYSTEM ? COMM_SCOPE_SYSTEM : COMM_SCOPE_EVENT;
+  const eventId = scope === COMM_SCOPE_SYSTEM ? '' : String(b.eventId || '').trim();
+  const subEventId = String(b.subEventId || '').trim();
+  const templateId = String(b.templateId || '').trim();
+
+  const sheet = getCommAutomationsSheet_();
+  const data = sheet.getLastRow() > 1 ? sheet.getDataRange().getValues() : [];
+  let rowNum = -1;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[1]) === scope && String(row[2]) === eventId && String(row[3]) === subEventId && String(row[4]) === triggerType) {
+      rowNum = i + 1;
+      break;
+    }
+  }
+
+  if (!templateId || templateId === 'None') {
+    if (rowNum !== -1) sheet.deleteRow(rowNum);
+    invalidateCommAutomationsCache_();
+    return { status: 'ok', deleted: true };
+  }
+
+  const automationId = rowNum !== -1 ? String(data[rowNum - 1][0]) : mintId_('CAUTO');
+  const reminderDaysBefore = triggerType === COMM_TRIGGER_MILESTONE_DEADLINE ? (Number(b.reminderDaysBefore) || 3) : '';
+  const row = [automationId, scope, eventId, subEventId, triggerType, String(b.milestoneId || ''), reminderDaysBefore, templateId, 'Active', adminEmail, new Date()];
+
+  if (rowNum !== -1) sheet.getRange(rowNum, 1, 1, COMM_AUTOMATIONS_HEADERS_.length).setValues([row]);
+  else sheet.appendRow(row);
+
+  invalidateCommAutomationsCache_();
+  if (triggerType === COMM_TRIGGER_MILESTONE_DEADLINE) ensureDailyReminderTrigger_();
+  return { status: 'ok', automationId: automationId };
+}
+
+/** Automation bindings for one entity, keyed by TriggerType, for the My Events "Automated Emails" section to pre-select each dropdown. Pass eventId='' to get System-scoped bindings (AdminPasswordReset) instead. */
+function listCommAutomationsForEntity(token, eventId, subEventId) {
+  requireAdmin_(token);
+  const scope = eventId ? COMM_SCOPE_EVENT : COMM_SCOPE_SYSTEM;
+  return getCommAutomationsRaw_().filter(a =>
+    a.scope === scope &&
+    (scope === COMM_SCOPE_SYSTEM || (a.eventId === String(eventId) && a.subEventId === String(subEventId || '')))
+  );
+}
+
+function getCommSettings(token) {
+  requireAdmin_(token);
+  return getCommSettings_();
+}
+
+/* =========================================================================
+   AUDIENCE, PREVIEW, TEST-SEND — Phase 3. resolveCommunicationAudience is
+   the single source of truth for "who does this reach", called
+   identically by the live recipient count, the preview's sample-attendee
+   picker, and the actual campaign enqueue — so the number shown on screen
+   and the number of emails sent can never drift apart.
+   ========================================================================= */
+
+function queueHasSentStatus_(campaignId, email) {
+  if (!campaignId) return false;
+  const sheet = getCommQueueSheet_();
+  if (sheet.getLastRow() <= 1) return false;
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMM_QUEUE_HEADERS_.length).getValues();
+  const em = String(email).trim().toLowerCase();
+  return data.some(row => String(row[1]) === String(campaignId) && String(row[2]).trim().toLowerCase() === em && String(row[4]) === COMM_QUEUE_STATUS_SENT);
+}
+
+/**
+ * audienceSpec: { eventId, scope: 'event'|'subEvent', subEventId,
+ *   filters: { registrationTypes: [], subEventStatuses: [], hasMeetings: true|false|null },
+ *   manualIncludeEmails: [], manualExcludeEmails: [],
+ *   templateCategory (drives opt-out suppression), excludeAlreadySentCampaignId }
+ * Returns { count, sample (first 10, for the recipients table), recipientEmails
+ *   (the full resolved list — what sendCampaign actually enqueues), suppressed:
+ *   { optedOut, invalid, alreadySent } } so "252 matched, sending to 247" is
+ *   always explainable rather than mysterious.
+ */
+function resolveCommunicationAudience(token, audienceSpec) {
+  requireAdmin_(token);
+  const spec = audienceSpec || {};
+  const eventId = String(spec.eventId || '');
+  if (!eventId) throw new Error('Please select an event.');
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+  const topEventId = event.parentEventId || event.eventId;
+
+  const regsByEmail = {};
+  getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => { regsByEmail[r.email.trim().toLowerCase()] = r; });
+
+  let candidates;
+  if (spec.scope === 'subEvent' && spec.subEventId) {
+    const subRegs = getSubEventRegsRaw_().filter(r => r.eventId === topEventId && r.subEventId === spec.subEventId);
+    const byEmail = {};
+    subRegs.forEach(sr => {
+      const reg = regsByEmail[sr.email] || {};
+      byEmail[sr.email] = Object.assign({}, reg, { email: sr.email, subEventStatus: sr.status, optionLabel: sr.optionLabel });
+    });
+    candidates = Object.keys(byEmail).map(em => byEmail[em]);
+  } else {
+    const byEmail = {};
+    Object.keys(regsByEmail).forEach(em => { byEmail[em] = regsByEmail[em]; });
+    candidates = Object.keys(byEmail).map(em => byEmail[em]);
+  }
+
+  const filters = spec.filters || {};
+  if (filters.registrationTypes && filters.registrationTypes.length) {
+    const wanted = filters.registrationTypes;
+    candidates = candidates.filter(r => wanted.indexOf(r.registrationType || r.optionLabel || '') !== -1);
+  }
+  if (filters.subEventStatuses && filters.subEventStatuses.length && spec.scope === 'subEvent') {
+    candidates = candidates.filter(r => filters.subEventStatuses.indexOf(r.subEventStatus) !== -1);
+  }
+  if (filters.hasMeetings === true || filters.hasMeetings === false) {
+    const entityForMeetings = spec.scope === 'subEvent' ? spec.subEventId : eventId;
+    candidates = candidates.filter(r => {
+      let hasM = false;
+      try { hasM = getAttendeeItinerary(entityForMeetings, r.email).meetings.some(m => !m.isSpecialBlock); } catch (e) { hasM = false; }
+      return filters.hasMeetings ? hasM : !hasM;
+    });
+  }
+
+  (spec.manualIncludeEmails || []).forEach(raw => {
+    const em = String(raw).trim().toLowerCase();
+    if (em && !candidates.some(c => c.email === em)) {
+      const reg = regsByEmail[em];
+      if (reg) candidates.push(Object.assign({}, reg, { email: em }));
+    }
+  });
+  const excludeSet = {};
+  (spec.manualExcludeEmails || []).forEach(raw => { excludeSet[String(raw).trim().toLowerCase()] = true; });
+  candidates = candidates.filter(r => !excludeSet[r.email]);
+
+  let invalidCount = 0, optedOutCount = 0, alreadySentCount = 0;
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const finalList = candidates.filter(r => {
+    if (!emailRe.test(r.email)) { invalidCount++; return false; }
+    if (spec.templateCategory && spec.templateCategory !== COMM_CATEGORY_TRANSACTIONAL && isOptedOut_(r.email, topEventId)) { optedOutCount++; return false; }
+    if (spec.excludeAlreadySentCampaignId && queueHasSentStatus_(spec.excludeAlreadySentCampaignId, r.email)) { alreadySentCount++; return false; }
+    return true;
+  });
+
+  return {
+    count: finalList.length,
+    sample: finalList.slice(0, 10).map(r => ({
+      email: r.email, fullName: r.fullName || '', companyName: r.companyName || '',
+      registrationType: r.registrationType || r.optionLabel || '', subEventStatus: r.subEventStatus || ''
+    })),
+    // Full resolved list (not just the first 10 shown in `sample`) — this
+    // is what sendCampaign actually enqueues.
+    recipients: finalList.map(r => ({ email: r.email, fullName: r.fullName || '' })),
+    suppressed: { optedOut: optedOutCount, invalid: invalidCount, alreadySent: alreadySentCount }
+  };
+}
+
+/**
+ * Renders a template against a REAL recipient (default: the audience's
+ * first match) — never fabricated sample data — via the same
+ * renderCommunication_ the actual send uses. sampleEmail lets the admin
+ * pick a different real attendee to preview against.
+ */
+function previewCommunication(token, templateId, audienceSpec, sampleEmail) {
+  requireAdmin_(token);
+  const template = getCommTemplateById_(templateId);
+  if (!template) throw new Error('Template not found.');
+  const spec = audienceSpec || {};
+
+  let email = sampleEmail ? String(sampleEmail).trim().toLowerCase() : '';
+  if (!email) {
+    const audience = resolveCommunicationAudience(token, Object.assign({}, spec, { templateCategory: template.category }));
+    if (!audience.sample.length) throw new Error('No recipients match this audience yet — cannot preview.');
+    email = audience.sample[0].email;
+  }
+
+  const needsItinerary = template.bodyHtml.indexOf('block.itineraryTable') !== -1;
+  const entityForItinerary = needsItinerary ? (spec.scope === 'subEvent' ? spec.subEventId : spec.eventId) : null;
+  const indexes = buildMergeIndexes_(spec.eventId, entityForItinerary);
+  const context = buildMergeContextForEmail_(indexes, email, { campaign: { name: '(preview)' } });
+  const rendered = renderCommunication_(template, context);
+
+  return {
+    subject: rendered.subject,
+    htmlBody: rendered.htmlBody,
+    warnings: rendered.warnings,
+    sampleAttendee: { email: email, name: context.attendee.fullName }
+  };
+}
+
+/** Sends to the admin's own address (or explicit testRecipients) using the real render pipeline — logged with CampaignID 'TEST' so test sends stay visible in quota accounting rather than looking like they never happened. */
+function sendTestCommunication(token, templateId, audienceSpec, sampleEmail, testRecipients) {
+  const adminEmail = requireAdmin_(token);
+  const preview = previewCommunication(token, templateId, audienceSpec, sampleEmail);
+  const template = getCommTemplateById_(templateId);
+  const recipients = ((testRecipients && testRecipients.length) ? testRecipients : [adminEmail]).map(e => String(e).trim()).filter(Boolean);
+  if (!recipients.length) throw new Error('Please specify at least one test recipient.');
+
+  const results = recipients.map(to => {
+    const result = deliverEmail_({ to: to, subject: '[TEST] ' + preview.subject, htmlBody: preview.htmlBody });
+    appendCommLogRows_([{
+      campaignId: 'TEST', templateId: template.templateId, templateName: template.name,
+      eventId: (audienceSpec && audienceSpec.eventId) || '', subEventId: (audienceSpec && audienceSpec.subEventId) || '',
+      recipientEmail: to, recipientName: '', subject: '[TEST] ' + preview.subject, category: template.category,
+      status: result.ok ? COMM_LOG_STATUS_SENT : COMM_LOG_STATUS_FAILED, errorMessage: result.ok ? '' : result.error, sentBy: adminEmail
+    }]);
+    return { to: to, ok: result.ok, error: result.error };
+  });
+
+  return { status: 'ok', results: results };
+}
+
+/* =========================================================================
+   QUEUE, DRAIN, CAMPAIGN LIFECYCLE — Phase 4. A campaign can genuinely
+   take several days to clear on a free-tier 100/day account, so this has
+   to be resumable, idempotent, and never allowed to lock out registration
+   or admin password reset. Read the drainCommunicationsQueue_ doc comment
+   before touching this section — several of the choices here are load-
+   bearing and NOT the same pattern as the LockService.getScriptLock()
+   used elsewhere in this file.
+   ========================================================================= */
+
+/**
+ * Starts a new campaign: creates the CommunicationsCampaigns row, enqueues
+ * one CommunicationsQueue row per resolved recipient, then runs the FIRST
+ * batch inline (synchronously, in this same request) so an admin sees
+ * immediate progress instead of a blank "Queued" state — drainCommunicationsQueue_
+ * self-schedules any continuation needed beyond that.
+ */
+function sendCampaign(token, templateId, audienceSpec, campaignName) {
+  const adminEmail = requireAdmin_(token);
+  const template = getCommTemplateById_(templateId);
+  if (!template) throw new Error('Template not found.');
+  if (template.status !== 'Active') throw new Error('Only an Active template can be sent.');
+
+  const spec = Object.assign({}, audienceSpec, { templateCategory: template.category });
+  const audience = resolveCommunicationAudience(token, spec);
+  if (!audience.count) throw new Error('No recipients match this audience.');
+
+  const campaignId = mintId_('CAMP');
+  getCommCampaignsSheet_().appendRow([
+    campaignId, String(campaignName || template.name).trim(), templateId, String(spec.eventId || ''),
+    JSON.stringify(spec), COMM_CAMPAIGN_STATUS_QUEUED, audience.count, 0, 0, adminEmail, new Date(), '', '', ''
+  ]);
+
+  const queueSheet = getCommQueueSheet_();
+  const now = new Date();
+  const queueRows = audience.recipients.map(r => [mintId_('CQ'), campaignId, r.email, r.fullName, COMM_QUEUE_STATUS_PENDING, 0, now, '', '', '']);
+  queueSheet.getRange(queueSheet.getLastRow() + 1, 1, queueRows.length, COMM_QUEUE_HEADERS_.length).setValues(queueRows);
+
+  drainCommunicationsQueue_();
+  return { status: 'ok', campaignId: campaignId, recipientCount: audience.count };
+}
+
+/**
+ * Atomic lease acquisition WITHOUT holding LockService.getScriptLock() for
+ * the whole drain. A brief tryLock(0) guards only the "check the cache
+ * flag, then set it" instant — released immediately after — so two
+ * concurrent drain triggers can't both proceed, while a live attendee
+ * registration elsewhere never waits behind a multi-minute send batch
+ * (which holding the script lock for the whole drain would cause).
+ * tryLock(0), never waitLock: if another execution holds the momentary
+ * check-lock, this one just treats the lease as busy and bails — it must
+ * NOT queue up and retry, or two drains could interleave claims.
+ */
+function acquireDrainLease_() {
+  const cache = CacheService.getScriptCache();
+  const checkLock = LockService.getScriptLock();
+  if (!checkLock.tryLock(0)) return null;
+  try {
+    if (cache.get(COMM_DRAIN_LEASE_KEY)) return null;
+    const leaseId = Utilities.getUuid();
+    cache.put(COMM_DRAIN_LEASE_KEY, leaseId, COMM_DRAIN_LEASE_TTL_SECONDS);
+    return leaseId;
+  } finally {
+    checkLock.releaseLock();
+  }
+}
+
+function releaseDrainLease_(leaseId) {
+  const cache = CacheService.getScriptCache();
+  if (cache.get(COMM_DRAIN_LEASE_KEY) === leaseId) cache.remove(COMM_DRAIN_LEASE_KEY);
+}
+
+/** Any queue row stuck 'Sending' for longer than a normal drain execution can possibly take is presumed to have been interrupted (execution killed mid-batch) — marked Failed rather than retried, since a killed execution may have already sent the mail before it could record success; one missing message beats a duplicate to hundreds of people. */
+function reconcileStuckClaims_() {
+  const sheet = getCommQueueSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+  const data = sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).getValues();
+  const cutoff = new Date(Date.now() - COMM_STUCK_CLAIM_MINUTES * 60000);
+  let changed = false;
+  data.forEach(row => {
+    if (String(row[4]) === COMM_QUEUE_STATUS_SENDING && row[7] instanceof Date && row[7] < cutoff) {
+      row[4] = COMM_QUEUE_STATUS_FAILED;
+      row[9] = 'Interrupted; not resent (stuck claim reconciled)';
+      changed = true;
+    }
+  });
+  if (changed) sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).setValues(data);
+}
+
+/** Claims up to maxCount Pending rows (skipping Paused/Cancelled campaigns) by writing Status=Sending + ClaimedAt for all of them in ONE setValues call BEFORE any sending happens — claim-before-send is what makes at-most-once achievable if this execution gets killed partway through. */
+function claimQueueSlice_(maxCount) {
+  const blocked = {};
+  getCommCampaignsRaw_().forEach(c => { if (c.status === COMM_CAMPAIGN_STATUS_PAUSED || c.status === COMM_CAMPAIGN_STATUS_CANCELLED) blocked[c.campaignId] = true; });
+
+  const sheet = getCommQueueSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).getValues();
+  const claimed = [];
+  const now = new Date();
+  for (let i = 0; i < data.length && claimed.length < maxCount; i++) {
+    if (String(data[i][4]) === COMM_QUEUE_STATUS_PENDING && !blocked[String(data[i][1])]) {
+      data[i][4] = COMM_QUEUE_STATUS_SENDING;
+      data[i][7] = now;
+      claimed.push({ rowNum: i + 2, queueId: String(data[i][0]), campaignId: String(data[i][1]), email: String(data[i][2]), fullName: String(data[i][3]) });
+    }
+  }
+  if (claimed.length) sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).setValues(data);
+  return claimed;
+}
+
+function flushQueueResults_(results) {
+  if (!results.length) return;
+  const sheet = getCommQueueSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+  const data = sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).getValues();
+  const byRowNum = {};
+  results.forEach(r => { byRowNum[r.rowNum] = r; });
+  for (let i = 0; i < data.length; i++) {
+    const rowNum = i + 2;
+    const r = byRowNum[rowNum];
+    if (!r) continue;
+    data[i][4] = r.ok ? COMM_QUEUE_STATUS_SENT : COMM_QUEUE_STATUS_FAILED;
+    data[i][5] = (Number(data[i][5]) || 0) + 1;
+    data[i][8] = r.ok ? new Date() : '';
+    data[i][9] = r.ok ? '' : (r.error || '');
+  }
+  sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).setValues(data);
+}
+
+/** Reverts claimed-but-not-yet-attempted rows back to Pending immediately (rather than leaving them falsely "Sending" for up to COMM_STUCK_CLAIM_MINUTES) when a drain execution stops early because it hit its own time budget. */
+function revertUnprocessedClaims_(items) {
+  if (!items.length) return;
+  const sheet = getCommQueueSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+  const data = sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).getValues();
+  const rowNums = {};
+  items.forEach(i => { rowNums[i.rowNum] = true; });
+  let changed = false;
+  for (let i = 0; i < data.length; i++) {
+    if (rowNums[i + 2]) { data[i][4] = COMM_QUEUE_STATUS_PENDING; data[i][7] = ''; changed = true; }
+  }
+  if (changed) sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).setValues(data);
+}
+
+function queueHasClaimablePending_() {
+  const blocked = {};
+  getCommCampaignsRaw_().forEach(c => { if (c.status === COMM_CAMPAIGN_STATUS_PAUSED || c.status === COMM_CAMPAIGN_STATUS_CANCELLED) blocked[c.campaignId] = true; });
+  const sheet = getCommQueueSheet_();
+  if (sheet.getLastRow() <= 1) return false;
+  const data = sheet.getRange(2, 2, sheet.getLastRow() - 1, 4).getValues(); // CampaignID, Email, FullName, Status
+  return data.some(row => String(row[3]) === COMM_QUEUE_STATUS_PENDING && !blocked[String(row[0])]);
+}
+
+function campaignQueueHasStatus_(campaignId, status) {
+  const sheet = getCommQueueSheet_();
+  if (sheet.getLastRow() <= 1) return false;
+  const data = sheet.getRange(2, 2, sheet.getLastRow() - 1, 4).getValues();
+  return data.some(row => String(row[0]) === String(campaignId) && String(row[3]) === status);
+}
+
+function finalizeCompletedCampaigns_() {
+  getCommCampaignsRaw_().forEach(camp => {
+    if ([COMM_CAMPAIGN_STATUS_RUNNING, COMM_CAMPAIGN_STATUS_QUEUED, COMM_CAMPAIGN_STATUS_AWAITING].indexOf(camp.status) === -1) return;
+    if (!campaignQueueHasStatus_(camp.campaignId, COMM_QUEUE_STATUS_PENDING) && !campaignQueueHasStatus_(camp.campaignId, COMM_QUEUE_STATUS_SENDING)) {
+      updateCommCampaign_(camp.campaignId, { status: COMM_CAMPAIGN_STATUS_COMPLETED, completedAt: new Date().toISOString() });
+    }
+  });
+}
+
+function markQueuedCampaignsAwaitingQuota_() {
+  getCommCampaignsRaw_().forEach(camp => {
+    if ((camp.status === COMM_CAMPAIGN_STATUS_RUNNING || camp.status === COMM_CAMPAIGN_STATUS_QUEUED) && campaignQueueHasStatus_(camp.campaignId, COMM_QUEUE_STATUS_PENDING)) {
+      updateCommCampaign_(camp.campaignId, { status: COMM_CAMPAIGN_STATUS_AWAITING });
+    }
+  });
+}
+
+/** Schedules the drain to resume shortly after MailApp's daily quota resets (local midnight, script timezone) — idempotent, won't double-schedule if a resume trigger already exists. */
+function scheduleNextQuotaResetResume_() {
+  const already = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === COMM_DRAIN_TRIGGER_HANDLER);
+  if (already) return;
+  const resumeAt = new Date();
+  resumeAt.setDate(resumeAt.getDate() + 1);
+  resumeAt.setHours(0, 15, 0, 0);
+  ScriptApp.newTrigger(COMM_DRAIN_TRIGGER_HANDLER).timeBased().at(resumeAt).create();
+}
+
+function ensureDrainTriggerSoon_() {
+  const already = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === COMM_DRAIN_TRIGGER_HANDLER);
+  if (!already) ScriptApp.newTrigger(COMM_DRAIN_TRIGGER_HANDLER).timeBased().after(10 * 1000).create();
+}
+
+function needsItineraryEntity_(template, campaign) {
+  if (!template || template.bodyHtml.indexOf('block.itineraryTable') === -1) return null;
+  const spec = campaign.audienceSpec || {};
+  return spec.scope === 'subEvent' ? spec.subEventId : campaign.eventId;
+}
+
+/**
+ * The trigger handler — called both directly (sendCampaign's inline first
+ * batch) and via ScriptApp time-driven triggers (continuations). See the
+ * section header comment for why several choices here (the lease instead
+ * of getScriptLock, claim-before-send, the quota reserve) are load-bearing
+ * and not just style.
+ */
+function drainCommunicationsQueue_() {
+  // Self-cleanup FIRST — the 20-trigger-per-script-per-user ceiling is
+  // real; a continuation chain that forgets this hits it within a few
+  // campaigns and then every future newTrigger() call throws.
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === COMM_DRAIN_TRIGGER_HANDLER).forEach(t => ScriptApp.deleteTrigger(t));
+
+  const leaseId = acquireDrainLease_();
+  if (!leaseId) return; // another execution is already draining — bail immediately, never wait
+
+  try {
+    reconcileStuckClaims_();
+
+    const budget = getRemainingCommQuota_();
+    if (budget <= 0) {
+      markQueuedCampaignsAwaitingQuota_();
+      scheduleNextQuotaResetResume_();
+      return;
+    }
+
+    const claimed = claimQueueSlice_(Math.min(budget, 200));
+    if (!claimed.length) {
+      finalizeCompletedCampaigns_();
+      return;
+    }
+
+    const seenCampaigns = {};
+    claimed.forEach(c => {
+      if (seenCampaigns[c.campaignId]) return;
+      seenCampaigns[c.campaignId] = true;
+      const camp = getCommCampaignById_(c.campaignId);
+      if (camp && camp.status !== COMM_CAMPAIGN_STATUS_RUNNING) {
+        updateCommCampaign_(c.campaignId, { status: COMM_CAMPAIGN_STATUS_RUNNING, startedAt: camp.startedAt || new Date().toISOString() });
+      }
+    });
+
+    const start = Date.now();
+    const templateCache = {};
+    const indexesCache = {};
+    const countsByCampaign = {};
+    let pendingResults = [];
+    let pendingLogRows = [];
+    let processedCount = 0;
+
+    for (; processedCount < claimed.length; processedCount++) {
+      if (Date.now() - start > COMM_BATCH_SOFT_LIMIT_MS) break;
+      const item = claimed[processedCount];
+
+      if (!(item.campaignId in templateCache)) {
+        const campaign = getCommCampaignById_(item.campaignId);
+        const template = campaign ? getCommTemplateById_(campaign.templateId) : null;
+        templateCache[item.campaignId] = template;
+        indexesCache[item.campaignId] = (campaign && template) ? buildMergeIndexes_(campaign.eventId, needsItineraryEntity_(template, campaign)) : null;
+        countsByCampaign[item.campaignId] = { sent: 0, failed: 0 };
+      }
+
+      const template = templateCache[item.campaignId];
+      const indexes = indexesCache[item.campaignId];
+      if (!template || !indexes) {
+        pendingResults.push({ rowNum: item.rowNum, ok: false, error: 'Template or campaign not found' });
+        countsByCampaign[item.campaignId].failed++;
+        continue;
+      }
+
+      const campaignMeta = getCommCampaignById_(item.campaignId);
+      const context = buildMergeContextForEmail_(indexes, item.email, { campaign: { name: campaignMeta ? campaignMeta.name : '' } });
+      let rendered, sendResult;
+      try {
+        rendered = renderCommunication_(template, context);
+        sendResult = deliverEmail_({ to: item.email, subject: rendered.subject, htmlBody: rendered.htmlBody });
+      } catch (e) {
+        sendResult = { ok: false, error: e.message };
+        rendered = { subject: '(render failed)' };
+      }
+
+      pendingResults.push({ rowNum: item.rowNum, ok: sendResult.ok, error: sendResult.error });
+      pendingLogRows.push({
+        campaignId: item.campaignId, templateId: template.templateId, templateName: template.name,
+        eventId: indexes.event ? indexes.event.eventId : '', recipientEmail: item.email,
+        recipientName: context.attendee.fullName, subject: rendered.subject, category: template.category,
+        status: sendResult.ok ? COMM_LOG_STATUS_SENT : COMM_LOG_STATUS_FAILED,
+        errorMessage: sendResult.ok ? '' : (sendResult.error || ''), sentBy: 'system:campaign'
+      });
+      if (sendResult.ok) countsByCampaign[item.campaignId].sent++; else countsByCampaign[item.campaignId].failed++;
+
+      if (pendingResults.length >= COMM_STATUS_FLUSH_EVERY) {
+        flushQueueResults_(pendingResults); appendCommLogRows_(pendingLogRows);
+        pendingResults = []; pendingLogRows = [];
+      }
+    }
+
+    if (pendingResults.length) { flushQueueResults_(pendingResults); appendCommLogRows_(pendingLogRows); }
+    if (processedCount < claimed.length) revertUnprocessedClaims_(claimed.slice(processedCount));
+
+    Object.keys(countsByCampaign).forEach(cid => {
+      const camp = getCommCampaignById_(cid);
+      if (!camp) return;
+      updateCommCampaign_(cid, { sentCount: camp.sentCount + countsByCampaign[cid].sent, failedCount: camp.failedCount + countsByCampaign[cid].failed });
+    });
+
+    finalizeCompletedCampaigns_();
+
+    if (queueHasClaimablePending_()) {
+      if (getRemainingCommQuota_() > 0) {
+        ScriptApp.newTrigger(COMM_DRAIN_TRIGGER_HANDLER).timeBased().after(60 * 1000).create();
+      } else {
+        markQueuedCampaignsAwaitingQuota_();
+        scheduleNextQuotaResetResume_();
+      }
+    }
+  } finally {
+    releaseDrainLease_(leaseId);
+  }
+}
+
+function getCampaignStatus(token, campaignId) {
+  requireAdmin_(token);
+  const camp = getCommCampaignById_(campaignId);
+  if (!camp) throw new Error('Campaign not found.');
+  return camp;
+}
+
+function listCommCampaigns(token, eventId) {
+  requireAdmin_(token);
+  return getCommCampaignsRaw_()
+    .filter(c => !eventId || c.eventId === String(eventId))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+function pauseCampaign(token, campaignId) {
+  requireAdmin_(token);
+  const camp = getCommCampaignById_(campaignId);
+  if (!camp) throw new Error('Campaign not found.');
+  if ([COMM_CAMPAIGN_STATUS_QUEUED, COMM_CAMPAIGN_STATUS_RUNNING, COMM_CAMPAIGN_STATUS_AWAITING].indexOf(camp.status) === -1) {
+    throw new Error('Only a Queued/Running/AwaitingQuota campaign can be paused.');
+  }
+  updateCommCampaign_(campaignId, { status: COMM_CAMPAIGN_STATUS_PAUSED });
+  return { status: 'ok' };
+}
+
+function resumeCampaign(token, campaignId) {
+  requireAdmin_(token);
+  const camp = getCommCampaignById_(campaignId);
+  if (!camp) throw new Error('Campaign not found.');
+  if (camp.status !== COMM_CAMPAIGN_STATUS_PAUSED) throw new Error('Only a Paused campaign can be resumed.');
+  updateCommCampaign_(campaignId, { status: COMM_CAMPAIGN_STATUS_QUEUED });
+  ensureDrainTriggerSoon_();
+  return { status: 'ok' };
+}
+
+function cancelCampaign(token, campaignId) {
+  requireAdmin_(token);
+  const camp = getCommCampaignById_(campaignId);
+  if (!camp) throw new Error('Campaign not found.');
+  updateCommCampaign_(campaignId, { status: COMM_CAMPAIGN_STATUS_CANCELLED, completedAt: new Date().toISOString() });
+
+  const sheet = getCommQueueSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const data = sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).getValues();
+    let changed = false;
+    data.forEach(row => { if (String(row[1]) === String(campaignId) && String(row[4]) === COMM_QUEUE_STATUS_PENDING) { row[4] = COMM_QUEUE_STATUS_CANCELLED; changed = true; } });
+    if (changed) sheet.getRange(2, 1, lastRow - 1, COMM_QUEUE_HEADERS_.length).setValues(data);
+  }
+  return { status: 'ok' };
+}
+
+function getCommLogForCampaign(token, campaignId) {
+  requireAdmin_(token);
+  const sheet = getCommLogSheet_();
+  if (sheet.getLastRow() <= 1) return [];
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMM_LOG_HEADERS_.length).getValues();
+  return data.filter(row => String(row[2]) === String(campaignId)).map(commLogRowToObj_).reverse();
+}
+
+function listCommLogRecent(token, eventId, limit) {
+  requireAdmin_(token);
+  const sheet = getCommLogSheet_();
+  if (sheet.getLastRow() <= 1) return [];
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMM_LOG_HEADERS_.length).getValues();
+  const rows = data.filter(row => !eventId || String(row[5]) === String(eventId)).map(commLogRowToObj_);
+  rows.reverse();
+  return rows.slice(0, limit || 100);
+}
+
+function commLogRowToObj_(row) {
+  return {
+    logId: String(row[0]), timestamp: row[1] instanceof Date ? row[1].toISOString() : String(row[1] || ''),
+    campaignId: String(row[2]), templateId: String(row[3]), templateName: String(row[4]), eventId: String(row[5]),
+    subEventId: String(row[6]), recipientEmail: String(row[7]), recipientName: String(row[8]), subject: String(row[9]),
+    category: String(row[10]), status: String(row[11]), errorMessage: String(row[12]), sentBy: String(row[13])
+  };
+}
+
+function getCommQuotaStatus(token) {
+  requireAdmin_(token);
+  let remaining = 0;
+  try { remaining = MailApp.getRemainingDailyQuota(); } catch (e) { remaining = 0; }
+  const settings = getCommSettings_();
+  return { remaining: remaining, reserve: COMM_QUOTA_RESERVE, usable: getRemainingCommQuota_(), dailyCap: settings.dailySendCap, transportType: settings.transportType };
+}
+
+/* =========================================================================
+   UNSUBSCRIBE — Phase 5. Public (no requireAdmin_) — protected instead by
+   an HMAC-signed token (see computeUnsubscribeToken_/getCommHmacSecret_)
+   so ?e=anyone@anywhere.com can't unsubscribe an arbitrary address.
+   ========================================================================= */
+
+function confirmUnsubscribe(email, scope, token) {
+  email = (email || '').trim().toLowerCase();
+  scope = scope || 'Global';
+  if (!email || token !== computeUnsubscribeToken_(email, scope)) {
+    throw new Error('This unsubscribe link is invalid or has expired.');
+  }
+
+  const sheet = getCommOptOutSheet_();
+  const data = sheet.getLastRow() > 1 ? sheet.getDataRange().getValues() : [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim().toLowerCase() === email && String(data[i][1]) === scope) {
+      return { status: 'ok', alreadyOptedOut: true };
+    }
+  }
+  sheet.appendRow([email, scope, new Date(), 'Link', '']);
+  _rawDataCache_.commOptOut = null;
+  invalidateCrossRequestCache_(COMM_OPTOUT_CACHE_KEY_);
+  return { status: 'ok', alreadyOptedOut: false };
 }

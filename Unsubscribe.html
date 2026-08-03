@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: <?!= branding.primaryColor ?>;
+      --navy-color: <?!= branding.navyColor ?>;
+      --font-family: <?!= branding.fontFamily ?>;
+      --border-color: #dfe3ea;
+      --text-dark: var(--navy-color);
+      --text-muted: <?!= branding.mutedTextColor ?>;
+      --success-color: <?!= branding.successColor ?>;
+      --error-color: <?!= branding.errorColor ?>;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); background: <?!= branding.pageBgColor ?>; margin: 0; padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .card { background: white; border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 8px 30px rgba(13,27,42,0.10); text-align: center; }
+    h2 { margin-top: 0; color: var(--navy-color); font-weight: 800; }
+    p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+    p strong { color: var(--text-dark); }
+    button { margin-top: 12px; background: var(--primary-color); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: var(--font-family); transition: background .15s ease; }
+    button:hover { background: var(--navy-color); }
+    button:disabled { background: #bdc1c6; cursor: not-allowed; }
+    .msg { padding: 10px 12px; border-radius: 8px; margin-top: 16px; font-size: 13px; display: none; }
+    .msg.error { background: #F9EBEA; color: var(--error-color); }
+    .msg.success { background: #EAF2EF; color: var(--success-color); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <? if (!email || !token) { ?>
+      <h2>Invalid Link</h2>
+      <p>This unsubscribe link is missing information and can't be processed. If you followed a link from an email, please try again from that email, or contact us directly.</p>
+    <? } else { ?>
+      <h2>Unsubscribe</h2>
+      <p><strong><?= email ?></strong><br>Click below to stop receiving these emails. This does not affect transactional messages you need for your registration (confirmations, itinerary updates).</p>
+      <div id="unsubMsg" class="msg"></div>
+      <button id="btnUnsub">Confirm Unsubscribe</button>
+      <p style="margin-top:20px;"><a href="<?= portalUrl ?>" style="color:var(--primary-color); font-weight:600;">Return to Event Portal</a></p>
+    <? } ?>
+  </div>
+
+  <script>
+    var email = '<?= email ?>';
+    var scope = '<?= scope ?>';
+    var token = '<?= token ?>';
+    var btn = document.getElementById('btnUnsub');
+    if (btn) {
+      btn.addEventListener('click', function() {
+        var msgEl = document.getElementById('unsubMsg');
+        btn.disabled = true;
+        google.script.run
+          .withSuccessHandler(function(res) {
+            msgEl.className = 'msg success';
+            msgEl.textContent = res.alreadyOptedOut
+              ? 'You were already unsubscribed — nothing more to do.'
+              : 'You\'ve been unsubscribed. You will no longer receive these emails.';
+            msgEl.style.display = 'block';
+            btn.style.display = 'none';
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            msgEl.className = 'msg error';
+            msgEl.textContent = err.message;
+            msgEl.style.display = 'block';
+          })
+          .confirmUnsubscribe(email, scope, token);
+      });
+    }
+  </script>
+</body>
+</html>
