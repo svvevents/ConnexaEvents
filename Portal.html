@@ -520,16 +520,28 @@
       <? if (branding.logoUrl) { ?>
         <img src="<?= branding.logoUrl ?>" class="landing-logo landing-logo-prominent" alt="Logo">
       <? } ?>
-      <h2>Welcome — please enter your email to continue</h2>
+      <h2 id="landingHeading">Welcome — please enter your email to continue</h2>
       <div id="landingError" class="msg-error" style="display:none;"></div>
       <div id="landingSuccess" class="msg-success" style="display:none;"></div>
 
-      <label class="field-label" for="landingEmail">Email Address</label>
-      <input type="email" id="landingEmail" placeholder="e.g. you@company.com" aria-describedby="landingEmailHelp">
-      <small id="landingEmailHelp" class="field-help">Enter the email you registered with</small>
+      <div id="landingEmailStep">
+        <label class="field-label" for="landingEmail">Email Address</label>
+        <input type="email" id="landingEmail" placeholder="e.g. you@company.com" aria-describedby="landingEmailHelp">
+        <small id="landingEmailHelp" class="field-help">Enter the email you registered with — we'll send a sign-in code</small>
 
-      <button id="btnLandingContinue">Continue</button>
-      <span class="admin-entry-link" onclick="showAdminLogin()">Are you an event admin?</span>
+        <button id="btnLandingContinue">Send Code</button>
+        <span class="admin-entry-link" onclick="showAdminLogin()">Are you an event admin?</span>
+      </div>
+
+      <div id="landingCodeStep" style="display:none;">
+        <label class="field-label" for="landingCode">Verification Code</label>
+        <input type="text" id="landingCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code">
+        <small class="field-help">Enter the 6-digit code we emailed you. It expires in 10 minutes.</small>
+
+        <button id="btnLandingVerify">Verify &amp; Continue</button>
+        <span class="admin-entry-link" onclick="resendLandingCode()">Resend code</span>
+        <span class="admin-entry-link" onclick="backToLandingEmailStep()">Use a different email</span>
+      </div>
     </div>
   </div>
 
@@ -737,7 +749,7 @@
   <script>
     var DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-Free', 'Dairy-Free', 'Nut Allergy'];
 
-    var portalState = { email: '', tiles: [], profile: null, businessTypeOptions: [], currentEvent: null, isRegistered: false };
+    var portalState = { email: '', sessionToken: '', tiles: [], profile: null, businessTypeOptions: [], currentEvent: null, isRegistered: false };
     var expandedRegisterKey = null;
     var regCart = { eventId: null, event: null, formDef: null, attendees: [], umbrellaChildren: [] };
     // Client-side cache of getRegistrationFormDefinition results, keyed by
@@ -795,6 +807,7 @@
 
     document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('btnLandingContinue').addEventListener('click', handleLandingContinue);
+      document.getElementById('btnLandingVerify').addEventListener('click', verifyLandingCode);
       document.getElementById('btnAdminSignIn').addEventListener('click', adminLoginAttempt);
       document.getElementById('registerSearchInput').addEventListener('input', renderRegisterGrid);
       document.getElementById('btnSaveProfile').addEventListener('click', saveProfileForm);
@@ -854,7 +867,7 @@
     }
 
     function handleLandingContinue() {
-      startAttendeePortal();
+      requestLandingCode();
     }
 
     function adminLoginAttempt() {
@@ -881,8 +894,16 @@
         .adminLogin(email, password);
     }
 
-    /* ================= ATTENDEE FLOW ================= */
-    function startAttendeePortal() {
+    /* ================= ATTENDEE FLOW =================
+     * Two steps: requestLandingCode() emails a 6-digit code to the
+     * address the attendee typed; verifyLandingCode() exchanges a correct
+     * code for a session token, then authenticateUserPortal(sessionToken)
+     * loads the portal data using that verified session — never a bare
+     * client-supplied email — for every subsequent server call.
+     */
+    var pendingLandingEmail = '';
+
+    function requestLandingCode() {
       var email = document.getElementById('landingEmail').value.trim();
       var errEl = document.getElementById('landingError');
       var btn = document.getElementById('btnLandingContinue');
@@ -890,11 +911,74 @@
 
       if (!email) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
 
-      btn.disabled = true; btn.textContent = 'Loading...';
+      btn.disabled = true; btn.textContent = 'Sending...';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          btn.disabled = false; btn.textContent = 'Send Code';
+          pendingLandingEmail = email;
+          document.getElementById('landingHeading').textContent = 'Enter your verification code';
+          document.getElementById('landingEmailStep').style.display = 'none';
+          document.getElementById('landingCodeStep').style.display = 'block';
+          document.getElementById('landingCode').value = '';
+          document.getElementById('landingCode').focus();
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = 'Send Code';
+          errEl.textContent = (err && err.message) ? err.message : 'Error sending code.';
+          errEl.style.display = 'block';
+        })
+        .requestAttendeeLoginCode(email);
+    }
+
+    function resendLandingCode() {
+      var errEl = document.getElementById('landingError');
+      errEl.style.display = 'none';
+      google.script.run
+        .withSuccessHandler(function() { /* code re-sent silently */ })
+        .withFailureHandler(function(err) {
+          errEl.textContent = (err && err.message) ? err.message : 'Error sending code.';
+          errEl.style.display = 'block';
+        })
+        .requestAttendeeLoginCode(pendingLandingEmail);
+    }
+
+    function backToLandingEmailStep() {
+      document.getElementById('landingError').style.display = 'none';
+      document.getElementById('landingHeading').textContent = 'Welcome — please enter your email to continue';
+      document.getElementById('landingCodeStep').style.display = 'none';
+      document.getElementById('landingEmailStep').style.display = 'block';
+    }
+
+    function verifyLandingCode() {
+      var code = document.getElementById('landingCode').value.trim();
+      var errEl = document.getElementById('landingError');
+      var btn = document.getElementById('btnLandingVerify');
+      errEl.style.display = 'none';
+
+      if (!code) { errEl.textContent = 'Please enter the code we emailed you.'; errEl.style.display = 'block'; return; }
+
+      btn.disabled = true; btn.textContent = 'Verifying...';
 
       google.script.run
         .withSuccessHandler(function(res) {
-          btn.disabled = false; btn.textContent = 'Continue';
+          portalState.sessionToken = res.sessionToken;
+          loadPortalAfterVerification();
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = 'Verify & Continue';
+          errEl.textContent = (err && err.message) ? err.message : 'Incorrect code.';
+          errEl.style.display = 'block';
+        })
+        .verifyAttendeeLoginCode(pendingLandingEmail, code);
+    }
+
+    function loadPortalAfterVerification() {
+      var btn = document.getElementById('btnLandingVerify');
+      var errEl = document.getElementById('landingError');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false; btn.textContent = 'Verify & Continue';
           portalState.email = res.email;
           portalState.tiles = res.tiles || [];
           portalState.profile = res.profile || null;
@@ -902,11 +986,11 @@
           showPortalShell();
         })
         .withFailureHandler(function(err) {
-          btn.disabled = false; btn.textContent = 'Continue';
+          btn.disabled = false; btn.textContent = 'Verify & Continue';
           errEl.textContent = (err && err.message) ? err.message : 'Error authenticating user.';
           errEl.style.display = 'block';
         })
-        .authenticateUserPortal(email);
+        .authenticateUserPortal(portalState.sessionToken);
     }
 
     function showPortalShell() {
@@ -943,7 +1027,7 @@
         .withFailureHandler(function() {
           delete regFormDefCache[eventId]; // let an actual click retry normally
         })
-        .getRegistrationFormDefinition(eventId, portalState.email);
+        .getRegistrationFormDefinition(portalState.sessionToken, eventId);
     }
 
     function switchShellPanel(panelId) {
@@ -962,11 +1046,16 @@
     }
 
     function logout() {
-      portalState = { email: '', tiles: [], profile: null, currentEvent: null, isRegistered: false };
+      portalState = { email: '', sessionToken: '', tiles: [], profile: null, currentEvent: null, isRegistered: false };
       regCart = { eventId: null, event: null, formDef: null, attendees: [] };
       regFormDefCache = {}; // prefetched form defs were fetched for the outgoing user's email — must not leak to the next login
       expandedRegisterKey = null;
+      pendingLandingEmail = '';
       document.getElementById('landingEmail').value = '';
+      document.getElementById('landingCode').value = '';
+      document.getElementById('landingHeading').textContent = 'Welcome — please enter your email to continue';
+      document.getElementById('landingCodeStep').style.display = 'none';
+      document.getElementById('landingEmailStep').style.display = 'block';
       document.getElementById('adminEmailInput').value = '';
       document.getElementById('adminPasswordInput').value = '';
       document.getElementById('adminLoginScreen').style.display = 'none';
@@ -1070,7 +1159,7 @@
           msgEl.textContent = 'Error saving profile: ' + err.message;
           msgEl.style.display = 'block';
         })
-        .saveProfile(payload);
+        .saveMyProfile(portalState.sessionToken, payload);
     }
 
     /* ================= MY EVENTS (tiles you're registered for) ================= */
@@ -1153,12 +1242,12 @@
       google.script.run
         .withSuccessHandler(function(data) { milestoneData = data; pending--; checkDone(); })
         .withFailureHandler(function(err) { failed = true; body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .getMilestonesForAttendee(portalState.email, evt.eventId);
+        .getMilestonesForAttendee(portalState.sessionToken, evt.eventId);
 
       google.script.run
         .withSuccessHandler(function(data) { updRegData = data; pending--; checkDone(); })
         .withFailureHandler(function(err) { failed = true; body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .getUpdateRegistrationData(evt.eventId, portalState.email);
+        .getUpdateRegistrationData(portalState.sessionToken, evt.eventId);
     }
 
     /* ---- Unified "My Events" workspace: Overview + (Umbrella only) Sessions ---- */
@@ -1287,7 +1376,7 @@
           google.script.run
             .withSuccessHandler(function() { loadMyEventWorkspace(evt, body); })
             .withFailureHandler(function(err) { alert(err.message); btn.textContent = originalText; })
-            .withdrawSubEventRegistration(evt.eventId, btn.dataset.leaveSession, portalState.email);
+            .withdrawSubEventRegistration(portalState.sessionToken, evt.eventId, btn.dataset.leaveSession);
         });
       });
 
@@ -1411,7 +1500,7 @@
           btn.disabled = false;
           showMilestoneActionMsg(msgEl, err.message, true);
         })
-        .addSubEventSelectionsForAttendee(evt.eventId, portalState.email, selections);
+        .addSubEventSelectionsForAttendee(portalState.sessionToken, evt.eventId, selections);
     }
 
     /**
@@ -1674,7 +1763,7 @@
       google.script.run
         .withSuccessHandler(function(info) { paintConfirmInfoDrawer(milestone, container, body, info); })
         .withFailureHandler(function(err) { body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .lookupAttendeeInfo(portalState.email);
+        .getMyAttendeeInfo(portalState.sessionToken);
     }
 
     function paintConfirmInfoDrawer(milestone, container, body, info) {
@@ -1707,8 +1796,7 @@
           btn.disabled = false; btn.textContent = 'Confirm';
           showMilestoneActionMsg(msgEl, err.message, true);
         })
-        .completeMilestone({
-          email: portalState.email,
+        .completeMilestone(portalState.sessionToken, {
           milestoneId: milestone.milestoneId,
           companyName: body.querySelector('.ms-ci-companyName').value.trim(),
           companyDescription: body.querySelector('.ms-ci-companyDescription').value.trim(),
@@ -1790,8 +1878,7 @@
             uploadBtn.disabled = false; uploadBtn.textContent = 'Upload';
             showMilestoneActionMsg(msgEl, err.message, true);
           })
-          .completeMilestone({
-            email: portalState.email,
+          .completeMilestone(portalState.sessionToken, {
             milestoneId: milestone.milestoneId,
             base64: base64,
             fileName: file.name,
@@ -1989,7 +2076,7 @@
           applyRegistrationFormDef(formDef);
         })
         .withFailureHandler(function(err) { body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .getRegistrationFormDefinition(evt.eventId, portalState.email);
+        .getRegistrationFormDefinition(portalState.sessionToken, evt.eventId);
     }
 
     function applyRegistrationFormDef(formDef) {
@@ -2478,7 +2565,7 @@
         return;
       }
 
-      google.script.run.withSuccessHandler(function(info) { applyLookupToFields(info); }).lookupAttendeeInfo(email);
+      google.script.run.withSuccessHandler(function(info) { applyLookupToFields(info); }).lookupAttendeeInfoForRegistration(portalState.sessionToken, email);
     }
 
     function applyLookupToFields(info) {
@@ -2887,6 +2974,20 @@
           var html = '<div class="msg-success">Registration complete! ' + res.registeredCount +
             ' attendee(s) registered — total billed: ' + formatMoney(res.totalPrice, res.currency) + '.</div>';
 
+          // Registration itself always succeeded by the time this handler
+          // runs — allocationErrors only lists sub-event/booth selections
+          // that failed afterward (e.g. lost a capacity race), so surface
+          // it as a follow-up notice rather than letting it pass silently.
+          if (res.allocationErrors && res.allocationErrors.length) {
+            html += '<div class="msg-error" style="margin-top:8px;">' +
+              res.allocationErrors.length + ' session selection(s) could not be completed and need manual follow-up:' +
+              '<ul style="margin:6px 0 0; padding-left:18px;">' +
+              res.allocationErrors.map(function(e) {
+                return '<li>' + escapeHtml(e.fullName || e.email) + ' — ' + escapeHtml(e.subEventName || e.subEventId) + ': ' + escapeHtml(e.error) + '</li>';
+              }).join('') +
+              '</ul></div>';
+          }
+
           html += renderRegistrationSummaryHtml(res.registrationSummary || []);
 
           document.getElementById('expandBody').innerHTML = html;
@@ -2901,7 +3002,7 @@
           msgEl.textContent = 'Error completing registration: ' + err.message;
           msgEl.style.display = 'block';
         })
-        .submitEventRegistrationBatch(regCart.eventId, finalList, portalState.email);
+        .submitEventRegistrationBatch(portalState.sessionToken, regCart.eventId, finalList);
     }
 
     /**
@@ -3036,7 +3137,7 @@
       google.script.run
         .withSuccessHandler(function(data) { paintMyDetailsDrawer(entityId, body, data); })
         .withFailureHandler(function(err) { body.innerHTML = '<div class="msg-error">' + err.message + '</div>'; })
-        .getMyDetailsForAttendee(entityId, portalState.email);
+        .getMyDetailsForAttendee(portalState.sessionToken, entityId);
     }
 
     function paintMyDetailsDrawer(entityId, body, data) {
@@ -3088,7 +3189,6 @@
       var msgEl = document.getElementById('myDetailsMsg');
       btn.disabled = true;
       var payload = {
-        email: portalState.email,
         companyDescription: document.getElementById('myDetailsCompanyDescription').value,
         website: document.getElementById('myDetailsWebsite').value
       };
@@ -3101,7 +3201,7 @@
           btn.disabled = false;
           showMilestoneActionMsg(msgEl, err.message, true);
         })
-        .updateMyDetailsForAttendee(entityId, payload);
+        .updateMyDetailsForAttendee(portalState.sessionToken, entityId, payload);
     }
 
     /* ---- Drawer: Event Details (URL if configured, else description + curated options/capacity) ---- */
@@ -3178,7 +3278,7 @@
           applyPortalPrefFilters();
           updatePortalCounter();
         })
-        .initializePreferencesSession(eventId, portalState.email);
+        .initializePreferencesSession(portalState.sessionToken, eventId);
     }
 
     function applyPortalPrefFilters() {
@@ -3260,7 +3360,7 @@
         if (item) selectedSelections.push({ companyName: item.companyName, targetEmail: item.targetEmail });
       });
 
-      var payload = { email: prefAppState.user.email, fullName: prefAppState.user.fullName, selectedSelections: selectedSelections };
+      var payload = { fullName: prefAppState.user.fullName, selectedSelections: selectedSelections };
 
       google.script.run
         .withSuccessHandler(function() {
@@ -3280,7 +3380,7 @@
           msgEl.textContent = 'Error saving preferences: ' + err.message; msgEl.style.display = 'block';
           btn.disabled = false;
         })
-        .savePreferences(eventId, payload);
+        .savePreferences(portalState.sessionToken, eventId, payload);
     }
 
     /* ---- Drawer: My Itinerary ---- */
@@ -3377,7 +3477,7 @@
           });
         })
         .withFailureHandler(function(err) { container.innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
-        .getAttendeeItinerary(eventId, portalState.email);
+        .getMyAttendeeItinerary(portalState.sessionToken, eventId);
     }
 
     function viewAttendeeCompanyProfile(partnerEmail) {
@@ -3396,7 +3496,7 @@
           document.getElementById('itinProfileModal').style.display = 'flex';
         })
         .withFailureHandler(function(err) { alert('Could not load profile: ' + err.message); })
-        .getAttendeeModalDetails(partnerEmail);
+        .getAttendeeModalDetails(portalState.sessionToken, partnerEmail);
     }
     function closeItinProfileModal() { document.getElementById('itinProfileModal').style.display = 'none'; }
 
@@ -3444,7 +3544,7 @@
           statusMsg.style.background = '#F9EBEA'; statusMsg.style.color = 'var(--error-color)';
           statusMsg.textContent = 'Failed to send email: ' + err.message;
         })
-        .emailItinerary(eventId, recipient);
+        .emailItinerary(portalState.sessionToken, eventId);
     }
 
     function escapeHtml(str) {

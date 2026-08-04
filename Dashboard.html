@@ -135,6 +135,7 @@
 
   <script>
     var selectedEventIsB2B = true;
+    var DASHBOARD_KEY = '<?!= dashboardKey ?>';
 
     document.addEventListener('DOMContentLoaded', function() {
       google.script.run.withSuccessHandler(function(options) {
@@ -145,7 +146,7 @@
           picker.appendChild(opt);
         });
         loadDashboard();
-      }).getDashboardEventOptions();
+      }).getDashboardEventOptions(DASHBOARD_KEY);
     });
 
     function switchTab(tabId, btn) {
@@ -165,17 +166,17 @@
       google.script.run
         .withSuccessHandler(renderRegistrationData)
         .withFailureHandler(function(err) {
-          document.getElementById('reg-type-chart').innerHTML = '<p class="empty-state">Error loading registration data: ' + err.message + '</p>';
+          document.getElementById('reg-type-chart').innerHTML = '<p class="empty-state">Error loading registration data: ' + escapeHtml(err.message) + '</p>';
         })
-        .getDashboardData(eventId);
+        .getDashboardData(DASHBOARD_KEY, eventId);
 
       if (selectedEventIsB2B) {
         google.script.run
           .withSuccessHandler(renderPreferencesData)
           .withFailureHandler(function(err) {
-            document.getElementById('pending-table').innerHTML = '<p class="empty-state">Error loading preferences summary: ' + err.message + '</p>';
+            document.getElementById('pending-table').innerHTML = '<p class="empty-state">Error loading preferences summary: ' + escapeHtml(err.message) + '</p>';
           })
-          .getPreferencesDashboardData(eventId);
+          .getPreferencesDashboardData(DASHBOARD_KEY, eventId);
       }
     }
 

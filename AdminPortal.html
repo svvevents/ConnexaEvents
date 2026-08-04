@@ -211,6 +211,7 @@
         <div class="admin-nav-item active" id="admin-nav-events">My Events</div>
         <div class="admin-nav-item" id="admin-nav-dashboard">Dashboard</div>
         <div class="admin-nav-item" id="admin-nav-comms">✉️ Communications</div>
+        <div class="admin-nav-item" id="admin-nav-databridge">🔗 Matching Engine Export</div>
       </div>
 
       <div class="admin-main">
@@ -396,6 +397,42 @@
               </div>
               <button class="btn" onclick="saveCommSettingsFromForm()">Save Settings</button>
               <div id="commSettingsMsg" style="display:none; padding:10px; border-radius:8px; margin-top:10px; font-size:13px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ MATCHING ENGINE EXPORT (B2B SQL bridge) ============ -->
+        <div id="admin-panel-databridge" class="admin-panel">
+          <div class="panel-header-row">
+            <h2>Matching Engine Export</h2>
+          </div>
+
+          <div class="section">
+            <h3>Generate SQL for the offline matching engine</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
+              Picks a "B2B Pre-scheduled Meetings" event or sub-event and builds a downloadable
+              <code>.sql</code> file of <code>INSERT</code> statements for the <code>attendees</code> and
+              <code>preferences</code> tables in your local MySQL matching engine. Confirmed attendees only
+              (waitlisted are excluded). Nothing is sent anywhere automatically — download the file and run
+              it yourself against your database.
+            </p>
+            <div class="form-group">
+              <label>B2B Event / Sub-Event</label>
+              <select id="dataBridgeEntityPicker"><option value="">-- Select a B2B event --</option></select>
+            </div>
+            <button class="btn" onclick="generateDataBridgeSql()">Generate SQL</button>
+            <div id="dataBridgeMsg" style="display:none; padding:10px; border-radius:8px; margin-top:14px; font-size:13px;"></div>
+
+            <div id="dataBridgeResult" style="display:none; margin-top:18px;">
+              <div id="dataBridgeSummary" style="font-size:13px; margin-bottom:10px;"></div>
+              <div id="dataBridgeSkippedWrap" style="display:none; margin-bottom:12px;">
+                <div style="font-weight:700; font-size:12.5px; color:var(--text-dark); margin-bottom:4px;">Skipped preference rows:</div>
+                <ul id="dataBridgeSkippedList" style="margin:0; padding-left:18px; font-size:12.5px; color:var(--text-muted);"></ul>
+              </div>
+              <textarea id="dataBridgeSqlText" readonly rows="16" style="width:100%; font-family:monospace; font-size:12px;"></textarea>
+              <div style="margin-top:10px;">
+                <button class="btn secondary" onclick="downloadDataBridgeSql()">Download .sql</button>
+              </div>
             </div>
           </div>
         </div>
@@ -779,6 +816,7 @@
     document.getElementById('admin-nav-events').addEventListener('click', function() { switchAdminPanel('events'); });
     document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
     document.getElementById('admin-nav-comms').addEventListener('click', function() { switchAdminPanel('comms'); });
+    document.getElementById('admin-nav-databridge').addEventListener('click', function() { switchAdminPanel('databridge'); });
     loadOnboardingData();
     loadEventsList();
   });
@@ -790,6 +828,7 @@
     document.getElementById('admin-panel-' + panelId).classList.add('active');
     if (panelId === 'dashboard') loadDashboardPanel();
     if (panelId === 'comms') loadCommPanel();
+    if (panelId === 'databridge') populateDataBridgeEntityPicker();
   }
 
   function loadOnboardingData() {
@@ -1941,6 +1980,69 @@
     var sel = document.getElementById('commTplEventId');
     sel.innerHTML = '<option value="">All events</option>';
     allEventsTreeCache.forEach(function(evt) { sel.innerHTML += '<option value="' + evt.eventId + '">' + escapeHtml(evt.eventName) + '</option>'; });
+  }
+
+  /* ================= MATCHING ENGINE EXPORT (B2B SQL bridge) ================= */
+  var dataBridgeSqlCache = null;
+  var dataBridgeFilenameCache = 'matching_engine_export.sql';
+
+  function populateDataBridgeEntityPicker() {
+    var sel = document.getElementById('dataBridgeEntityPicker');
+    sel.innerHTML = '<option value="">-- Select a B2B event --</option>';
+    allEventsTreeCache.forEach(function(evt) {
+      if (evt.eventType === B2B_MEETINGS_TYPE) {
+        sel.innerHTML += '<option value="' + evt.eventId + '">' + escapeHtml(evt.eventName) + '</option>';
+      }
+      (evt.subEvents || []).forEach(function(sub) {
+        if (sub.eventType === B2B_MEETINGS_TYPE) {
+          sel.innerHTML += '<option value="' + sub.eventId + '">' + escapeHtml(evt.eventName) + ' → ' + escapeHtml(sub.eventName) + '</option>';
+        }
+      });
+    });
+  }
+
+  function generateDataBridgeSql() {
+    var entityId = document.getElementById('dataBridgeEntityPicker').value;
+    var msg = document.getElementById('dataBridgeMsg');
+    var result = document.getElementById('dataBridgeResult');
+    result.style.display = 'none';
+    if (!entityId) {
+      msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = 'Please select a B2B event or sub-event first.';
+      return;
+    }
+    msg.style.display = 'none';
+    google.script.run
+      .withSuccessHandler(function(data) {
+        dataBridgeSqlCache = data.sql;
+        dataBridgeFilenameCache = data.filename;
+        document.getElementById('dataBridgeSummary').textContent =
+          data.entityName + ': ' + data.attendeeCount + ' attendee(s), ' + data.preferenceCount + ' preference row(s)' +
+          (data.skippedCount ? ', ' + data.skippedCount + ' skipped' : '') + '.';
+        var skippedWrap = document.getElementById('dataBridgeSkippedWrap');
+        if (data.skipped && data.skipped.length) {
+          document.getElementById('dataBridgeSkippedList').innerHTML =
+            data.skipped.map(function(s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('');
+          skippedWrap.style.display = 'block';
+        } else {
+          skippedWrap.style.display = 'none';
+        }
+        document.getElementById('dataBridgeSqlText').value = data.sql;
+        result.style.display = 'block';
+      })
+      .withFailureHandler(function(err) {
+        msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = err.message;
+      })
+      .generateB2BMatchingSql(ADMIN_TOKEN, entityId);
+  }
+
+  function downloadDataBridgeSql() {
+    if (!dataBridgeSqlCache) return;
+    var blob = new Blob([dataBridgeSqlCache], { type: 'text/plain;charset=utf-8;' });
+    var link = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', dataBridgeFilenameCache);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 
   function renderTagRefList() {

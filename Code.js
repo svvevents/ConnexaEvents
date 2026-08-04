@@ -335,7 +335,29 @@ const DIETARY_OPTIONS = [
   'Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-Free', 'Dairy-Free', 'Nut Allergy'
 ];
 
-const DASHBOARD_ACCESS_KEY = 'testEvent';
+/**
+ * Lazily-generated per-deployment key for the standalone stakeholder
+ * Dashboard.html (unauthenticated beyond this shared key). Stored in
+ * PropertiesService — NOT the spreadsheet, which is shared with client
+ * admins — mirroring getCommHmacSecret_'s pattern. Replaces a formerly
+ * hardcoded 'testEvent' constant that was committed to source.
+ */
+function getDashboardAccessKey_() {
+  const props = PropertiesService.getScriptProperties();
+  let key = props.getProperty('DASHBOARD_ACCESS_KEY');
+  if (!key) {
+    key = Utilities.getUuid();
+    props.setProperty('DASHBOARD_ACCESS_KEY', key);
+  }
+  return key;
+}
+
+/** Every Dashboard.html-facing server function must call this first. */
+function requireDashboardKey_(key) {
+  if (!key || key !== getDashboardAccessKey_()) {
+    throw new Error('Invalid or missing dashboard access key.');
+  }
+}
 const ADMIN_SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 hours
 const RESET_TOKEN_TTL_MINUTES = 60;
 
@@ -455,9 +477,9 @@ function getCrossRequestCache_(key) {
   }
 }
 
-function putCrossRequestCache_(key, value) {
+function putCrossRequestCache_(key, value, ttlSeconds) {
   try {
-    CacheService.getScriptCache().put(key, JSON.stringify(value), CROSS_REQUEST_CACHE_SECONDS);
+    CacheService.getScriptCache().put(key, JSON.stringify(value), ttlSeconds || CROSS_REQUEST_CACHE_SECONDS);
   } catch (e) {
     // Value too large for CacheService (100KB/key) or otherwise
     // unserializable — silently skip caching rather than fail the request.
@@ -525,10 +547,13 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  // --- Stakeholder dashboard (accessed via ?key=... or ?page=dashboard) ---
-  if (params.key === DASHBOARD_ACCESS_KEY || String(params.page).toLowerCase() === 'dashboard') {
+  // --- Stakeholder dashboard (accessed via ?key=...; the key IS the only
+  // auth this page has, so it must be present and correct regardless of
+  // whether ?page=dashboard is also set — it is never a bypass route). ---
+  if (params.key && params.key === getDashboardAccessKey_()) {
     const tpl = HtmlService.createTemplateFromFile('Dashboard');
     tpl.branding = BRANDING;
+    tpl.dashboardKey = params.key;
     return tpl.evaluate()
       .setTitle('Event Dashboard')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -576,9 +601,41 @@ function getWebAppUrl_() {
    ADMIN AUTHENTICATION
    ========================================================================= */
 
-function hashPassword_(plain) {
-  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(plain), Utilities.Charset.UTF_8);
-  return bytes.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+// Rounds for the password KDF below — a deliberate work-factor tradeoff:
+// enough to make offline brute-forcing meaningfully slower, low enough to
+// keep a single admin login well under a second in Apps Script.
+const PASSWORD_HASH_STRETCH_ROUNDS_ = 10000;
+
+/**
+ * Salted, stretched password hash — "<salt>$<hex digest>". Apps Script has
+ * no native bcrypt/scrypt/Argon2, so this builds a simple KDF out of
+ * Utilities.computeHmacSha256Signature (the same primitive already used
+ * soundly elsewhere in this file for the unsubscribe token, see
+ * computeUnsubscribeToken_), iterated PASSWORD_HASH_STRETCH_ROUNDS_ times.
+ * Replaces a prior unsalted single-round SHA-256 scheme that was bulk
+ * rainbow-table-crackable if the Admins sheet were ever exposed.
+ *
+ * Pass no salt to hash a new/changed password (one is generated); pass the
+ * stored salt to re-derive a hash for verification.
+ */
+function hashPassword_(plain, salt) {
+  salt = salt || Utilities.getUuid();
+  let out = String(plain) + salt;
+  for (let i = 0; i < PASSWORD_HASH_STRETCH_ROUNDS_; i++) {
+    out = Utilities.computeHmacSha256Signature(out, salt)
+      .map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+  }
+  return salt + '$' + out;
+}
+
+/** Constant-time string comparison, used for password hashes and reset tokens so response timing can't leak a partial match. */
+function secureCompare_(a, b) {
+  a = String(a == null ? '' : a);
+  b = String(b == null ? '' : b);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 function getAdminsSheet_() {
@@ -597,11 +654,16 @@ function runAdminSetPassword() {
 /**
  * DEV UTILITY — run manually from the Apps Script editor to create or
  * reset an admin's password. Not exposed to the client.
+ *
+ * You MUST edit the email below before running. A random, one-time
+ * password is generated and logged (View > Logs) rather than hardcoded
+ * in source, so nothing guessable ever sits in version control — copy it
+ * from the log and change it immediately via the normal login/reset flow.
  */
 function adminSetPassword_() {
   const email = 'admin@svvevents.com';       // <-- edit before running
-  const plainPassword = 'Pa$$W0rd';     // <-- edit before running
 
+  const plainPassword = Utilities.getUuid();
   const sheet = getAdminsSheet_();
   const data = sheet.getDataRange().getValues();
   const hash = hashPassword_(plainPassword);
@@ -609,12 +671,12 @@ function adminSetPassword_() {
     if (String(data[i][0]).trim().toLowerCase() === email.trim().toLowerCase()) {
       sheet.getRange(i + 1, 2).setValue(hash);
       sheet.getRange(i + 1, 3, 1, 2).setValue('');
-      Logger.log('Password updated for ' + email);
+      Logger.log('Password updated for ' + email + '. One-time password: ' + plainPassword);
       return;
     }
   }
   sheet.appendRow([email.trim().toLowerCase(), hash, '', '']);
-  Logger.log('Admin created: ' + email);
+  Logger.log('Admin created: ' + email + '. One-time password: ' + plainPassword);
 }
 
 function adminLogin(email, password) {
@@ -623,11 +685,18 @@ function adminLogin(email, password) {
 
   const sheet = getAdminsSheet_();
   const data = sheet.getDataRange().getValues();
-  const hash = hashPassword_(password);
+
+  // Same generic error for "no such admin" and "wrong password" — a
+  // distinct message for each would let a caller enumerate valid admin
+  // emails one guess at a time.
+  const INVALID_CREDENTIALS_ERROR = 'Invalid email or password.';
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim().toLowerCase() === email) {
-      if (String(data[i][1]) === hash) {
+      const stored = String(data[i][1] || '');
+      const sepIdx = stored.indexOf('$');
+      const salt = sepIdx > -1 ? stored.slice(0, sepIdx) : '';
+      if (salt && secureCompare_(stored, hashPassword_(password, salt))) {
         const token = Utilities.getUuid();
         CacheService.getScriptCache().put('admin_session_' + token, email, ADMIN_SESSION_TTL_SECONDS);
         return {
@@ -636,10 +705,10 @@ function adminLogin(email, password) {
           redirectUrl: getWebAppUrl_() + '?admin=1&token=' + encodeURIComponent(token)
         };
       }
-      throw new Error('Incorrect password.');
+      throw new Error(INVALID_CREDENTIALS_ERROR);
     }
   }
-  throw new Error('No admin account found for that email address.');
+  throw new Error(INVALID_CREDENTIALS_ERROR);
 }
 
 function validateAdminToken_(token) {
@@ -691,7 +760,7 @@ function resetAdminPassword(email, token, newPassword) {
       const storedToken = String(data[i][2] || '');
       const expiry = data[i][3] ? new Date(data[i][3]) : null;
 
-      if (!storedToken || storedToken !== token) throw new Error('This reset link is invalid.');
+      if (!storedToken || !secureCompare_(storedToken, token)) throw new Error('This reset link is invalid.');
       if (!expiry || expiry.getTime() < Date.now()) throw new Error('This reset link has expired. Please request a new one.');
 
       sheet.getRange(i + 1, 2).setValue(hashPassword_(newPassword));
@@ -1268,8 +1337,8 @@ function getUmbrellaChildren(eventId) {
  * attendee's per-milestone completion status. Same "collapse several round
  * trips into one" reasoning as getRegistrationFormDefinition.
  */
-function getMilestonesForAttendee(email, eventId) {
-  const em = (email || '').trim().toLowerCase();
+function getMilestonesForAttendee(sessionToken, eventId) {
+  const em = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
 
@@ -1460,8 +1529,8 @@ const MILESTONE_COMPLETION_HANDLERS_ = {
  * payload: { email, milestoneId, ...type-specific fields — see
  *            completeConfirmInfoMilestone_ / completeFileUploadMilestone_ }
  */
-function completeMilestone(payload) {
-  const email = ((payload && payload.email) || '').trim().toLowerCase();
+function completeMilestone(sessionToken, payload) {
+  const email = requireAttendeeSession_(sessionToken);
   const milestoneId = (payload && payload.milestoneId) || '';
   if (!email || !milestoneId) throw new Error('Missing email or milestone.');
 
@@ -1518,13 +1587,82 @@ function completeMilestone(payload) {
  * enforced client-side, and re-checked here since a request could
  * otherwise bypass that).
  */
+// How long an entity's own lock's CacheService entry survives if a
+// release is ever missed (e.g. the execution holding it is killed
+// mid-critical-section) — a safety net bounding how long a leaked lock
+// can block others, not the normal hold time.
+const ENTITY_LOCK_SAFETY_TTL_SECONDS = 30;
+const ENTITY_LOCK_COORDINATOR_WAIT_MS = 1000;
+const ENTITY_LOCK_POLL_INTERVAL_MS = 200;
+
+/**
+ * A true per-entity BLOCKING mutex, built on the same coordinator-
+ * script-lock + CacheService-lease shape already proven by
+ * acquireDrainLease_/releaseDrainLease_ (see the COMMUNICATIONS QUEUE
+ * DRAIN section) — the difference is this one WAITS and retries until the
+ * entity-specific lease is free (or timeoutMs elapses) instead of failing
+ * fast, since allocation genuinely needs "wait your turn for THIS
+ * entity," not "skip if someone else is already working."
+ *
+ * Every allocation function used to call LockService.getScriptLock()
+ * directly — a single, deployment-wide lock, so an Exhibition booth
+ * allocation for one event and an unrelated B2B allocation for a
+ * completely different event serialized behind each other for no reason.
+ * This scopes the actual wait to one entityId at a time: the coordinator
+ * script lock below is held only for the few milliseconds it takes to
+ * check-and-set a CacheService flag, never for the full allocation
+ * critical section (which re-reads live capacity state and writes a
+ * sheet row), so unrelated entities barely contend with each other at
+ * all — only two callers racing for the SAME entity actually queue behind
+ * one another, which is the only case that ever needed serializing.
+ */
+function acquireEntityLock_(entityId, timeoutMs) {
+  const cacheKey = 'entity_lock_' + entityId;
+  const cache = CacheService.getScriptCache();
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const coordinatorLock = LockService.getScriptLock();
+    if (coordinatorLock.tryLock(ENTITY_LOCK_COORDINATOR_WAIT_MS)) {
+      try {
+        if (!cache.get(cacheKey)) {
+          const leaseId = Utilities.getUuid();
+          cache.put(cacheKey, leaseId, ENTITY_LOCK_SAFETY_TTL_SECONDS);
+          return leaseId;
+        }
+      } finally {
+        coordinatorLock.releaseLock();
+      }
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('This item is busy right now — please try again in a moment.');
+    }
+    Utilities.sleep(ENTITY_LOCK_POLL_INTERVAL_MS);
+  }
+}
+
+function releaseEntityLock_(entityId, leaseId) {
+  const cacheKey = 'entity_lock_' + entityId;
+  const cache = CacheService.getScriptCache();
+  const coordinatorLock = LockService.getScriptLock();
+  // If the coordinator lock can't be grabbed here (extremely unlikely —
+  // it's only ever held for milliseconds at a time), the lease's own
+  // ENTITY_LOCK_SAFETY_TTL_SECONDS is the fallback that still frees it
+  // shortly after, same safety net acquireDrainLease_'s lease relies on.
+  if (coordinatorLock.tryLock(ENTITY_LOCK_COORDINATOR_WAIT_MS)) {
+    try {
+      if (cache.get(cacheKey) === leaseId) cache.remove(cacheKey);
+    } finally {
+      coordinatorLock.releaseLock();
+    }
+  }
+}
+
 function allocateChoice_(topEventId, entity, rankedIds, email, fullName, displayLabel, extraFields) {
   if (!rankedIds || !rankedIds.length) throw new Error('Please select at least one preference for ' + entity.eventName + '.');
   const maxAllowed = entity.eventType === EVENT_TYPE_B2B_MEETINGS ? 1 : 3;
   if (rankedIds.length > maxAllowed) throw new Error('Please select at most ' + maxAllowed + ' option' + (maxAllowed === 1 ? '' : 's') + ' for ' + entity.eventName + '.');
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const leaseId = acquireEntityLock_(entity.eventId, 15000);
   try {
     // Re-read fresh, inside the lock, so concurrent submissions can't both
     // see the same "available" slot.
@@ -1580,7 +1718,7 @@ function allocateChoice_(topEventId, entity, rankedIds, email, fullName, display
 
     return { subEventId: entity.eventId, subEventName: entity.eventName, eventType: entity.eventType, status: status, optionId: optionId, optionLabel: optionLabel, optionPrice: optionPrice, optionCurrency: optionCurrency, rank: allocated ? allocatedRank : null };
   } finally {
-    lock.releaseLock();
+    releaseEntityLock_(entity.eventId, leaseId);
   }
 }
 
@@ -1604,8 +1742,7 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
     throw new Error('You can select at most ' + maxAllowed + ' option' + (maxAllowed === 1 ? '' : 's') + ' for ' + entity.eventName + '.');
   }
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const leaseId = acquireEntityLock_(entity.eventId, 15000);
   try {
     // Re-read fresh, inside the lock, so concurrent submissions can't both
     // see the same "available" slot (same reasoning as allocateChoice_).
@@ -1646,7 +1783,7 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
 
     return results;
   } finally {
-    lock.releaseLock();
+    releaseEntityLock_(entity.eventId, leaseId);
   }
 }
 
@@ -1659,8 +1796,7 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
  * the sub-event is full so the caller can surface a clear error.
  */
 function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraFields) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const leaseId = acquireEntityLock_(subEvent.eventId, 15000);
   try {
     const capacityState = getEventCapacityState_(subEvent);
     if (!capacityState.unlimited && capacityState.isFull) {
@@ -1683,7 +1819,7 @@ function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraF
       optionPrice: optionPrice, optionCurrency: optionCurrency
     };
   } finally {
-    lock.releaseLock();
+    releaseEntityLock_(subEvent.eventId, leaseId);
   }
 }
 
@@ -2141,8 +2277,19 @@ function createOrUpdateEvent(token, payload) {
   // Milestones are saved as their own step, in their own lock, only after
   // the event row itself is safely committed and this lock is released —
   // see saveMilestonesForEntity_'s doc comment for why it isn't nested
-  // inside the lock above.
-  saveMilestonesForEntity_(resultEventId, payload.milestones, eventType);
+  // inside the lock above. Sheets has no cross-write transaction/rollback
+  // to make this genuinely atomic either way, so the real mitigation here
+  // is making a mid-process failure UNAMBIGUOUS to the admin rather than
+  // pretending it can't happen: if the milestone save throws, the event
+  // row is already durably saved (never lost), but the admin needs to
+  // know their milestone edits specifically did NOT take, or they might
+  // assume the whole save failed and re-submit a duplicate event.
+  try {
+    saveMilestonesForEntity_(resultEventId, payload.milestones, eventType);
+  } catch (e) {
+    throw new Error('The event itself was saved successfully, but its milestones failed to save: ' +
+      e.message + ' Reopen "' + (payload.eventName || 'this event') + '" and save again to retry just the milestones.');
+  }
 
   return { status: 'ok', eventId: resultEventId };
 }
@@ -3238,14 +3385,16 @@ function updateOrderPaymentStatus(token, orderId, newStatus) {
 }
 
 /** Used by the standalone Dashboard.html (accessed via ?key=...) to populate its event picker. */
-function getDashboardEventOptions() {
+function getDashboardEventOptions(key) {
+  requireDashboardKey_(key);
   const events = getAllEvents_();
   const topLevel = events.filter(e => !e.parentEventId);
   return topLevel.map(e => ({ eventId: e.eventId, label: e.eventName, isB2B: e.isB2B }));
 }
 
 /* Legacy/standalone Dashboard.html support (single-event or all-events view) */
-function getDashboardData(eventId) {
+function getDashboardData(key, eventId) {
+  requireDashboardKey_(key);
   const registrations = eventId ? getRegistrationsRaw_().filter(r => r.eventId === eventId) : getRegistrationsRaw_();
   const companies = new Set(registrations.map(r => r.companyName.toLowerCase()).filter(Boolean));
   const byType = {};
@@ -3265,19 +3414,130 @@ function getDashboardData(eventId) {
   };
 }
 
-function getPreferencesDashboardData(eventId) {
+function getPreferencesDashboardData(key, eventId) {
+  requireDashboardKey_(key);
   const registrations = eventId ? getRegistrationsRaw_().filter(r => r.eventId === eventId) : getRegistrationsRaw_();
   return getPreferencesDashboardData_(eventId, registrations);
+}
+
+/* =========================================================================
+   ATTENDEE AUTHENTICATION
+   ----------------------------------------------------------------------
+   Every attendee-facing function used to trust a bare, client-supplied
+   email string with no proof the caller actually controlled that mailbox
+   — anyone could act as any known attendee straight from devtools. This
+   adds a lightweight email one-time-code login: requestAttendeeLoginCode
+   sends a 6-digit code to the address, verifyAttendeeLoginCode exchanges a
+   correct code for an opaque session token (same CacheService-backed
+   pattern already used for the admin session — see
+   validateAdminToken_/requireAdmin_), and every attendee-facing function
+   below now derives its trusted email from that token via
+   requireAttendeeSession_ instead of accepting one as a bare argument.
+   ========================================================================= */
+
+const ATTENDEE_SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 hours — CacheService's own max TTL
+const ATTENDEE_OTP_TTL_SECONDS = 10 * 60;         // a code expires 10 minutes after it's sent
+const ATTENDEE_OTP_COOLDOWN_SECONDS = 30;         // minimum gap between two code requests for the same email
+const ATTENDEE_OTP_MAX_ATTEMPTS = 5;              // wrong-code attempts before a code is invalidated
+
+function attendeeOtpCacheKey_(email) { return 'attendee_otp_' + email; }
+function attendeeOtpCooldownKey_(email) { return 'attendee_otp_cooldown_' + email; }
+
+/**
+ * Sends a 6-digit sign-in code to `email`. Always succeeds the same way
+ * regardless of whether the address is registered for anything —
+ * enumerating registered attendees is not this function's business, and a
+ * different response for "known" vs "unknown" emails would let it be used
+ * to do exactly that (same reasoning as requestAdminPasswordReset).
+ */
+function requestAttendeeLoginCode(email) {
+  email = (email || '').trim().toLowerCase();
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(email)) throw new Error('Please enter a valid email address.');
+
+  const cache = CacheService.getScriptCache();
+  if (cache.get(attendeeOtpCooldownKey_(email))) {
+    throw new Error('A code was already sent. Please wait a moment before requesting another.');
+  }
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  cache.put(attendeeOtpCacheKey_(email), JSON.stringify({
+    code: code, attempts: 0, expiresAt: Date.now() + ATTENDEE_OTP_TTL_SECONDS * 1000
+  }), ATTENDEE_OTP_TTL_SECONDS);
+  cache.put(attendeeOtpCooldownKey_(email), '1', ATTENDEE_OTP_COOLDOWN_SECONDS);
+
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Your sign-in code — ' + BRANDING.eventTitle,
+      htmlBody: '<p>Your sign-in code is:</p>' +
+        '<p style="font-size:28px; font-weight:700; letter-spacing:4px;">' + escapeHtml(code) + '</p>' +
+        '<p style="color:#5f6472; font-size:13px;">This code expires in ' + Math.round(ATTENDEE_OTP_TTL_SECONDS / 60) +
+        ' minutes. If you didn\'t request this, you can safely ignore this email.</p>'
+    });
+  } catch (e) {
+    throw new Error('Could not send a sign-in code right now. Please try again shortly.');
+  }
+  return { success: true };
+}
+
+/**
+ * Exchanges a correct, unexpired code for a session token. Same
+ * opaque-token-in-CacheService pattern as the admin session (see
+ * validateAdminToken_) — the token itself carries no information, it's
+ * just a lookup key, so there's nothing to forge.
+ */
+function verifyAttendeeLoginCode(email, code) {
+  email = (email || '').trim().toLowerCase();
+  code = String(code || '').trim();
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get(attendeeOtpCacheKey_(email));
+  if (!raw) throw new Error('This code has expired. Please request a new one.');
+
+  let entry;
+  try { entry = JSON.parse(raw); } catch (e) { throw new Error('This code has expired. Please request a new one.'); }
+  if (Date.now() > entry.expiresAt) {
+    cache.remove(attendeeOtpCacheKey_(email));
+    throw new Error('This code has expired. Please request a new one.');
+  }
+  if (!secureCompare_(entry.code, code)) {
+    entry.attempts = (entry.attempts || 0) + 1;
+    if (entry.attempts >= ATTENDEE_OTP_MAX_ATTEMPTS) {
+      cache.remove(attendeeOtpCacheKey_(email));
+      throw new Error('Too many incorrect attempts. Please request a new code.');
+    }
+    cache.put(attendeeOtpCacheKey_(email), JSON.stringify(entry), ATTENDEE_OTP_TTL_SECONDS);
+    throw new Error('Incorrect code. Please try again.');
+  }
+
+  cache.remove(attendeeOtpCacheKey_(email)); // one-time use
+  const token = Utilities.getUuid();
+  cache.put('attendee_session_' + token, email, ATTENDEE_SESSION_TTL_SECONDS);
+  return { success: true, sessionToken: token, email: email };
+}
+
+function validateAttendeeSessionToken_(token) {
+  if (!token) return null;
+  return CacheService.getScriptCache().get('attendee_session_' + token);
+}
+
+/**
+ * Every attendee-facing server function must call this first, and use
+ * ONLY the email it returns — never a client-supplied one — for anything
+ * read or written on the caller's own behalf.
+ */
+function requireAttendeeSession_(token) {
+  const email = validateAttendeeSessionToken_(token);
+  if (!email) throw new Error('Your session has expired. Please sign in again.');
+  return email;
 }
 
 /* =========================================================================
    ATTENDEE PORTAL: LANDING / LIVE EVENT TILES
    ========================================================================= */
 
-function authenticateUserPortal(email) {
-  email = (email || '').trim().toLowerCase();
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(email)) throw new Error('Please enter a valid email address.');
+function authenticateUserPortal(sessionToken) {
+  const email = requireAttendeeSession_(sessionToken);
 
   const events = getAllEvents_();
   const liveTopLevelEvents = events.filter(e => !e.parentEventId && e.status === 'Live');
@@ -3527,7 +3787,8 @@ function getExtraFieldsForType_(eventType) {
  * and getUmbrellaChildren are left in place, unchanged, for any other
  * caller that still wants them standalone.
  */
-function getRegistrationFormDefinition(eventId, email) {
+function getRegistrationFormDefinition(sessionToken, eventId) {
+  const email = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
 
@@ -3742,13 +4003,13 @@ function submitEventRegistration(payload) {
  *           buildAttendeeRegistrationSummary_() ] } — registrationSummary
  *           is the ready-to-render/ready-to-email receipt data structure.
  */
-function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
+function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
+  const completedBy = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
   if (!attendees || !attendees.length) throw new Error('No attendees to register.');
 
   const currency = getEventCurrency_(event);
-  const completedBy = (completedByEmail || '').trim().toLowerCase();
   // Fast-path check so an obviously-duplicate batch fails immediately
   // without waiting on the lock. NOT sufficient alone to prevent a
   // duplicate — see the authoritative re-check inside the lock below.
@@ -3756,15 +4017,21 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
     getRegistrationsRaw_().filter(r => r.eventId === eventId).map(r => r.email.toLowerCase())
   );
 
-  // Enforce the standalone event's OWN capacity (if limited) up front.
-  // Umbrella Events have no direct Registrations-based capacity concept
-  // here (no registration record of its own). A standalone event using
-  // RANKED allocation (Exhibition booths, or a Curated Event WITH options
+  // Fast-path capacity check so an obviously-over-capacity batch fails
+  // immediately without waiting on the lock. NOT sufficient alone to
+  // prevent two concurrent batches from jointly overshooting a limited
+  // standalone event's capacity — see the authoritative re-check inside
+  // the lock below, which is what actually prevents the race. Umbrella
+  // Events have no direct Registrations-based capacity concept here (no
+  // registration record of its own). A standalone event using RANKED
+  // allocation (Exhibition booths, or a Curated Event WITH options
   // configured) has its capacity enforced PER-OPTION instead, inside
-  // allocateChoice_ — so it's excluded from this whole-event pre-check.
-  // Everything else (e.g. a standalone "Curated Event" with no options,
-  // or a "B2B Pre-scheduled Meetings" event) is checked this way.
-  if (!event.isUmbrella && !entityUsesRankedAllocation_(event)) {
+  // allocateChoice_ — so it's excluded from this whole-event check both
+  // here and in the authoritative re-check. Everything else (e.g. a
+  // standalone "Curated Event" with no options, or a "B2B Pre-scheduled
+  // Meetings" event) is checked this way.
+  const usesWholeEventCapacityCheck = !event.isUmbrella && !entityUsesRankedAllocation_(event);
+  if (usesWholeEventCapacityCheck) {
     const capacityState = getEventCapacityState_(event);
     if (!capacityState.unlimited) {
       const remaining = Math.max(0, capacityState.capacity - capacityState.confirmed);
@@ -3779,7 +4046,7 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
 
   attendees.forEach(a => {
     const email = (a.email || '').trim().toLowerCase();
-    const fullName = (a.fullName || '').trim();
+    const fullName = sanitizeForSheet_((a.fullName || '').trim());
     if (!email || !fullName) throw new Error('Every attendee needs a Full Name and Email.');
     if (existingRegisteredEmails.has(email)) throw new Error(email + ' is already registered for this event.');
     if (seenInBatch.has(email)) throw new Error(email + ' appears more than once in this registration.');
@@ -3795,19 +4062,23 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
     let companyRow = ['', '', '', '', '', ''];
     const c = a.companyData || {};
     if (!c.companyName) throw new Error('Company Name is required for ' + email + '.');
-    companyRow = MEMBERSHIP_COLUMNS.map(col => c[headerToKey_(col)] || '');
+    // sanitizeForSheet_ guards every column here against formula/CSV
+    // injection (see its doc comment) — safe to apply blanket-wide even to
+    // the non-free-text columns since it's a no-op unless a value starts
+    // with =, +, -, or @.
+    companyRow = MEMBERSHIP_COLUMNS.map(col => sanitizeForSheet_(c[headerToKey_(col)] || ''));
     if (a.wasNewCompany) {
       getMembershipSheet_().appendRow(companyRow);
     }
 
     normalizedAttendees.push({
       email: email, fullName: fullName, companyRow: companyRow,
-      firstName: a.firstName || '', surname: a.surname || '', jobTitle: a.jobTitle || '',
-      mobile: a.mobile || '', linkedIn: a.linkedIn || '',
+      firstName: sanitizeForSheet_(a.firstName || ''), surname: sanitizeForSheet_(a.surname || ''), jobTitle: sanitizeForSheet_(a.jobTitle || ''),
+      mobile: sanitizeForSheet_(a.mobile || ''), linkedIn: sanitizeForSheet_(a.linkedIn || ''),
       registrationType: a.registrationType || '',
       extraFields: a.extraFields || {},
       dietaryRequirements: a.dietaryRequirements || [],
-      dietaryOther: a.dietaryOther || '',
+      dietaryOther: sanitizeForSheet_(a.dietaryOther || ''),
       subEventSelections: a.subEventSelections || [],
       registrationId: mintId_('REG')
     });
@@ -3826,6 +4097,7 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
     // acquired this same lock a moment earlier. The pre-lock check above
     // can only catch the common case, not this race.
     _rawDataCache_.registrations = null;
+    _rawDataCache_.registrationCounts = null; // derived from registrations — must be fresh too for the capacity re-check below
     const freshRegisteredEmails = new Set(
       getRegistrationsRaw_().filter(r => r.eventId === eventId).map(r => r.email.toLowerCase())
     );
@@ -3833,6 +4105,22 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
     if (nowDuplicate.length) {
       throw new Error(nowDuplicate.map(a => a.email).join(', ') +
         (nowDuplicate.length > 1 ? ' are already registered' : ' is already registered') + ' for this event.');
+    }
+
+    // AUTHORITATIVE capacity re-check — same reasoning as the duplicate
+    // re-check above: two concurrent batch submissions could both pass
+    // the pre-lock capacity check believing there's room, then both reach
+    // here. Only a fresh read taken INSIDE the lock (registrationCounts
+    // was just invalidated above) can catch that; this is what actually
+    // closes the race, not the pre-lock check.
+    if (usesWholeEventCapacityCheck) {
+      const freshCapacityState = getEventCapacityState_(event);
+      if (!freshCapacityState.unlimited) {
+        const remaining = Math.max(0, freshCapacityState.capacity - freshCapacityState.confirmed);
+        if (attendees.length > remaining) {
+          throw new Error('Only ' + remaining + ' of ' + freshCapacityState.label + ' remain for "' + event.eventName + '".');
+        }
+      }
     }
 
     const pricePerRegistrant_ = getEventPrice_(event); // top-level event's own price, if any (0 for most Umbrella events)
@@ -3891,6 +4179,7 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
   // opt-ins (a Curated Event with no options, or any other type) enforce
   // their own event-level Places/capacity inside recordPlainSubEventOptIn_.
   const allocationsByEmail = {};
+  const allocationErrors = [];
   normalizedAttendees.forEach(a => {
     const companyObj = {};
     MEMBERSHIP_COLUMNS.forEach((col, idx) => { companyObj[headerToKey_(col)] = a.companyRow[idx]; });
@@ -3901,15 +4190,27 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
       const subEntity = getEventById_(sel.subEventId);
       if (!subEntity) return;
 
-      let results;
-      if (subEntity.eventType === EVENT_TYPE_CURATED_EVENT && entityUsesRankedAllocation_(subEntity)) {
-        results = allocateCuratedEventSelections_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {});
-      } else if (entityUsesRankedAllocation_(subEntity)) {
-        results = [allocateChoice_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {})];
-      } else {
-        results = [recordPlainSubEventOptIn_(eventId, subEntity, a.email, a.fullName, sel.extraFields || {})];
+      // The attendee's base registration is already durably committed by
+      // this point (the lock above was released before this loop even
+      // started), so a failure here (a LockService timeout under load, or
+      // a capacity race lost after the client's own check) must NOT blow
+      // up the whole batch response and hide which attendees actually got
+      // registered — collect it and keep going, rather than letting one
+      // exception obscure a half-processed batch after the expensive,
+      // irreversible writes already happened.
+      try {
+        let results;
+        if (subEntity.eventType === EVENT_TYPE_CURATED_EVENT && entityUsesRankedAllocation_(subEntity)) {
+          results = allocateCuratedEventSelections_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {});
+        } else if (entityUsesRankedAllocation_(subEntity)) {
+          results = [allocateChoice_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {})];
+        } else {
+          results = [recordPlainSubEventOptIn_(eventId, subEntity, a.email, a.fullName, sel.extraFields || {})];
+        }
+        results.forEach(result => { allocationsByEmail[a.email].push(Object.assign({ email: a.email }, result)); });
+      } catch (e) {
+        allocationErrors.push({ email: a.email, fullName: a.fullName, subEventId: sel.subEventId, subEventName: subEntity.eventName, error: e.message });
       }
-      results.forEach(result => { allocationsByEmail[a.email].push(Object.assign({ email: a.email }, result)); });
     });
   });
 
@@ -3936,7 +4237,12 @@ function submitEventRegistrationBatch(eventId, attendees, completedByEmail) {
     pricePerRegistrant: pricePerRegistrant,
     totalPrice: pricePerRegistrant * normalizedAttendees.length,
     allocations: allocations,
-    registrationSummary: registrationSummary
+    registrationSummary: registrationSummary,
+    // Every attendee above IS registered — this only lists sub-event/booth
+    // selections that failed to allocate after that (see the try/catch
+    // above), so the client can show "registered, but N sessions need
+    // manual follow-up" instead of silently dropping the failure.
+    allocationErrors: allocationErrors
   };
 }
 
@@ -4014,7 +4320,9 @@ function getDietaryRequirements(eventId, email) {
 function submitDietaryRequirements(payload) {
   const eventId = payload.eventId;
   const email = (payload.email || '').trim().toLowerCase();
-  const fullName = payload.fullName || '';
+  const fullName = sanitizeForSheet_(payload.fullName || '');
+  const requirements = sanitizeForSheet_(payload.requirements || '');
+  const notes = sanitizeForSheet_(payload.notes || '');
   const sheet = getDietarySheet_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -4023,12 +4331,12 @@ function submitDietaryRequirements(payload) {
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][1]) === String(eventId) && String(data[i][2]).trim().toLowerCase() === email) {
-        sheet.getRange(i + 1, 5).setValue(payload.requirements || '');
-        sheet.getRange(i + 1, 6).setValue(payload.notes || '');
+        sheet.getRange(i + 1, 5).setValue(requirements);
+        sheet.getRange(i + 1, 6).setValue(notes);
         return { status: 'ok' };
       }
     }
-    sheet.appendRow([new Date(), eventId, email, fullName, payload.requirements || '', payload.notes || '']);
+    sheet.appendRow([new Date(), eventId, email, fullName, requirements, notes]);
     return { status: 'ok' };
   } finally {
     lock.releaseLock();
@@ -4043,8 +4351,8 @@ function submitDietaryRequirements(payload) {
 
 function updateCompanyDetailsInRegistrations(eventId, payload) {
   const email = (payload.email || '').trim().toLowerCase();
-  const newDesc = (payload.companyDescription || '').trim();
-  const newWebsite = (payload.website || '').trim();
+  const newDesc = sanitizeForSheet_((payload.companyDescription || '').trim());
+  const newWebsite = sanitizeForSheet_((payload.website || '').trim());
 
   const sheet = getRegistrationsSheet_();
   const lock = LockService.getScriptLock();
@@ -4079,8 +4387,8 @@ function updateCompanyDetailsInRegistrations(eventId, payload) {
  * SubEventRegistrations.extraFields answers when entityId is a sub-event
  * (e.g. a Gala Dinner's "Transfer required?" question).
  */
-function getMyDetailsForAttendee(entityId, email) {
-  email = (email || '').trim().toLowerCase();
+function getMyDetailsForAttendee(sessionToken, entityId) {
+  const email = requireAttendeeSession_(sessionToken);
   const entity = getEventById_(entityId);
   if (!entity) throw new Error('Event not found.');
   const topEventId = entity.parentEventId || entity.eventId;
@@ -4117,11 +4425,12 @@ function getMyDetailsForAttendee(entityId, email) {
  * whether entityId is that top-level event itself or one of its
  * sub-events (Registrations rows only ever exist at the top level).
  */
-function updateMyDetailsForAttendee(entityId, payload) {
+function updateMyDetailsForAttendee(sessionToken, entityId, payload) {
+  const email = requireAttendeeSession_(sessionToken);
   const entity = getEventById_(entityId);
   if (!entity) throw new Error('Event not found.');
   const topEventId = entity.parentEventId || entity.eventId;
-  return updateCompanyDetailsInRegistrations(topEventId, payload);
+  return updateCompanyDetailsInRegistrations(topEventId, Object.assign({}, payload, { email: email }));
 }
 
 /**
@@ -4136,8 +4445,8 @@ function updateMyDetailsForAttendee(entityId, payload) {
  * availableSubEvents is always empty there — the panel just shows the
  * read-only summary.
  */
-function getUpdateRegistrationData(eventId, email) {
-  email = (email || '').trim().toLowerCase();
+function getUpdateRegistrationData(sessionToken, eventId) {
+  const email = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
 
@@ -4202,8 +4511,8 @@ function getUpdateRegistrationData(eventId, email) {
  * Silently skips any selection for a subEventId already joined (rather
  * than erroring) so a stale client-side list can't double-allocate.
  */
-function addSubEventSelectionsForAttendee(eventId, email, selections) {
-  email = (email || '').trim().toLowerCase();
+function addSubEventSelectionsForAttendee(sessionToken, eventId, selections) {
+  const email = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
 
@@ -4251,8 +4560,8 @@ function addSubEventSelectionsForAttendee(eventId, email, selections) {
  * exists anywhere else in this codebase either; that's a deliberate
  * follow-up, not an oversight here.
  */
-function withdrawSubEventRegistration(eventId, subEventId, email) {
-  email = (email || '').trim().toLowerCase();
+function withdrawSubEventRegistration(sessionToken, eventId, subEventId) {
+  const email = requireAttendeeSession_(sessionToken);
   const sheet = getSubEventRegSheet_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -4346,8 +4655,8 @@ function getPreferencesRaw_() {
  * than the always-blank flat field, which is a latent bug this fixes for
  * every current B2B event, not just newly-added sub-event support.
  */
-function initializePreferencesSession(eventId, email) {
-  email = (email || '').trim().toLowerCase();
+function initializePreferencesSession(sessionToken, eventId) {
+  const email = requireAttendeeSession_(sessionToken);
   const entity = getEventById_(eventId);
   if (!entity) return { success: false, message: 'Event not found.' };
 
@@ -4404,8 +4713,8 @@ function initializePreferencesSession(eventId, email) {
   };
 }
 
-function savePreferences(eventId, payload) {
-  const email = (payload.email || '').trim().toLowerCase();
+function savePreferences(sessionToken, eventId, payload) {
+  const email = requireAttendeeSession_(sessionToken);
   const prefSheet = getPreferencesSheet_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -4427,7 +4736,7 @@ function savePreferences(eventId, payload) {
 
     const timestamp = new Date();
     (payload.selectedSelections || []).forEach(item => {
-      rowsToKeep.push([timestamp, eventId, email, item.companyName, payload.fullName, item.targetEmail]);
+      rowsToKeep.push([timestamp, eventId, email, sanitizeForSheet_(item.companyName), sanitizeForSheet_(payload.fullName), item.targetEmail]);
     });
 
     prefSheet.clearContents();
@@ -4438,6 +4747,174 @@ function savePreferences(eventId, payload) {
     lock.releaseLock();
   }
   return { status: 'ok' };
+}
+
+/* =========================================================================
+   B2B MATCHING-ENGINE SQL BRIDGE (admin-only, one-off export)
+   ----------------------------------------------------------------------
+   The offline local-MySQL matching engine (attendees + preferences tables)
+   has no network path to this Sheet-backed app, so there's no live sync —
+   an admin instead downloads a generated .sql file of INSERT statements
+   from AdminPortal.html and runs it by hand against their MySQL instance.
+   See generateB2BMatchingSql for the full ID-resolution strategy.
+   ========================================================================= */
+
+/**
+ * Splits a Sheets "Full Name" into { firstName, lastName } on the first
+ * space. Lossy for multi-word first names — the admin can hand-edit the
+ * generated SQL's attendees INSERT before running it.
+ */
+function splitFullName_(fullName) {
+  const trimmed = String(fullName || '').trim();
+  if (!trimmed) return { firstName: '', lastName: '' };
+  const spaceIdx = trimmed.indexOf(' ');
+  if (spaceIdx === -1) return { firstName: trimmed, lastName: '' };
+  return { firstName: trimmed.slice(0, spaceIdx), lastName: trimmed.slice(spaceIdx + 1).trim() };
+}
+
+/** ANSI-safe SQL string literal — doubles embedded single quotes. */
+function sqlStr_(v) {
+  return "'" + String(v == null ? '' : v).replace(/'/g, "''") + "'";
+}
+
+/**
+ * Builds a downloadable .sql script that populates the offline matching
+ * engine's `attendees` + `preferences` tables from this entity's (top-level
+ * B2B event OR B2B sub-event) CONFIRMED SubEventRegistrations and Meeting
+ * Preferences rows. Waitlisted attendees are excluded entirely.
+ *
+ * ID STRATEGY: attendees.ID is left to MySQL AUTO_INCREMENT — this script
+ * never pre-computes IDs. The preferences block is instead generated as
+ * INSERT...SELECT statements that resolve Attendee_ID/Preference_AttID by
+ * joining on Email against the attendees rows the FIRST statement in this
+ * same script just inserted. That only produces a correct 1-row match if
+ * Email is unique in the attendees table at the moment it runs — the
+ * generated header comment calls this out explicitly (recommends a
+ * TRUNCATE + a UNIQUE key on attendees.Email so a stale duplicate fails
+ * loudly instead of silently mismatching a join).
+ *
+ * PreferenceType is deliberately left out of the preferences INSERT so
+ * MySQL applies its own column default — Sheets has no equivalent concept
+ * to source it from today.
+ */
+function generateB2BMatchingSql(token, entityId) {
+  const adminEmail = requireAdmin_(token);
+  const entity = getEventById_(entityId);
+  if (!entity) throw new Error('Event not found.');
+  if (entity.eventType !== EVENT_TYPE_B2B_MEETINGS) {
+    throw new Error('"' + entity.eventName + '" is not a B2B Pre-scheduled Meetings event or sub-event.');
+  }
+
+  // Confirmed allocations for this entity, joined back to the top-level
+  // Registrations row for Organization/MembershipCategory — same join
+  // initializePreferencesSession already does (Registrations' own
+  // RegistrationType is blank for a modern B2B attendee; the allocated
+  // OptionLabel IS the resolved Buyer/Supplier tier).
+  const allocations = getSubEventRegsRaw_().filter(r => r.subEventId === entityId && r.status === 'Confirmed');
+  if (!allocations.length) throw new Error('No confirmed attendees found for "' + entity.eventName + '".');
+
+  const topEventId = entity.parentEventId || entity.eventId;
+  const regByEmail = {};
+  getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => { regByEmail[r.email.toLowerCase()] = r; });
+
+  const attendeesByEmail = {}; // dedupe: last Confirmed allocation per email wins
+  allocations.forEach(a => {
+    const regRow = regByEmail[a.email];
+    const name = splitFullName_(a.fullName || (regRow && regRow.fullName) || '');
+    attendeesByEmail[a.email] = {
+      email: a.email,
+      firstName: name.firstName,
+      lastName: name.lastName,
+      organization: (regRow && regRow.companyName) || a.companyName || '',
+      membershipCategory: (regRow && regRow.membershipCategory) || '',
+      registrationType: a.optionLabel || ''
+    };
+  });
+  const attendees = Object.keys(attendeesByEmail).map(e => attendeesByEmail[e]);
+  const confirmedEmails = new Set(Object.keys(attendeesByEmail));
+
+  // Meeting Preferences rows for this entity, kept only when BOTH sides
+  // are still a confirmed attendee above — everything else is reported
+  // back as "skipped" instead of silently vanishing.
+  const pref = getPreferencesRaw_();
+  const eIdx = pref.idx['eventid'], emailIdx = pref.idx['email'], targetIdx = pref.idx['target email'];
+  const pairs = [];
+  const skipped = [];
+  if (eIdx !== undefined && emailIdx !== undefined && targetIdx !== undefined) {
+    pref.rows.forEach(row => {
+      if (String(row[eIdx]) !== String(entityId)) return;
+      const attendeeEmail = String(row[emailIdx] || '').trim().toLowerCase();
+      const targetEmail = String(row[targetIdx] || '').trim().toLowerCase();
+      if (!attendeeEmail || !targetEmail) return;
+      if (confirmedEmails.has(attendeeEmail) && confirmedEmails.has(targetEmail)) {
+        pairs.push({ attendeeEmail: attendeeEmail, targetEmail: targetEmail });
+      } else {
+        const reason = !confirmedEmails.has(attendeeEmail)
+          ? attendeeEmail + ' is not a confirmed attendee'
+          : targetEmail + ' (target) is not a confirmed attendee';
+        skipped.push(attendeeEmail + ' -> ' + targetEmail + ': ' + reason);
+      }
+    });
+  }
+
+  // ---- Compose SQL ----
+  const now = new Date();
+  const lines = [];
+  lines.push('-- B2B Matching Engine import for "' + entity.eventName + '" (EventID ' + entityId + ')');
+  lines.push('-- Generated ' + now.toISOString() + ' by ' + adminEmail);
+  lines.push('-- Attendees: ' + attendees.length + '  |  Preferences: ' + pairs.length + '  |  Skipped: ' + skipped.length);
+  lines.push('--');
+  lines.push('-- IMPORTANT: the Preferences block below resolves Attendee_ID/Preference_AttID');
+  lines.push('-- by joining on Email against the attendees rows THIS SAME SCRIPT inserts first,');
+  lines.push('-- so it only produces a correct match if Email is unique in the attendees table');
+  lines.push('-- when it runs. Recommended: run this against a table holding just one event at');
+  lines.push('-- a time (uncomment the TRUNCATE pair below), and add a UNIQUE key on');
+  lines.push('-- attendees.Email so a stale duplicate fails loudly instead of silently');
+  lines.push('-- mismatching a join:');
+  lines.push('--   ALTER TABLE attendees MODIFY Email VARCHAR(320);');
+  lines.push('--   ALTER TABLE attendees ADD UNIQUE KEY idx_att_email (Email);');
+  lines.push('-- TRUNCATE TABLE preferences;');
+  lines.push('-- TRUNCATE TABLE attendees;');
+  lines.push('');
+  lines.push('START TRANSACTION;');
+  lines.push('');
+  lines.push('INSERT INTO attendees (FirstName, LastName, Organization, MembershipCategory, RegistrationType, Email) VALUES');
+  lines.push(attendees.map(a =>
+    '  (' + [a.firstName, a.lastName, a.organization, a.membershipCategory, a.registrationType, a.email].map(sqlStr_).join(', ') + ')'
+  ).join(',\n') + ';');
+
+  if (pairs.length) {
+    lines.push('');
+    lines.push('-- Preferences (resolved by Email against the attendees rows inserted above)');
+    pairs.forEach(pair => {
+      lines.push(
+        'INSERT IGNORE INTO preferences (Attendee_ID, Attendee_Org, Attendee_FullName, Preference_AttID, Preference_Org, Preference_FirstName, Preference_LastName) ' +
+        "SELECT a.ID, a.Organization, CONCAT_WS(' ', a.FirstName, a.LastName), p.ID, p.Organization, p.FirstName, p.LastName " +
+        'FROM attendees a JOIN attendees p ON p.Email = ' + sqlStr_(pair.targetEmail) + ' WHERE a.Email = ' + sqlStr_(pair.attendeeEmail) + ';'
+      );
+    });
+  }
+
+  lines.push('');
+  lines.push('COMMIT;');
+
+  if (skipped.length) {
+    lines.push('');
+    lines.push('-- SKIPPED preference rows (attendee or target no longer a confirmed attendee):');
+    skipped.forEach(s => lines.push('--   ' + s));
+  }
+
+  const slug = entity.eventName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'event';
+  const stamp = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+  return {
+    sql: lines.join('\n'),
+    filename: 'b2b_matching_' + slug + '_' + stamp + '.sql',
+    entityName: entity.eventName,
+    attendeeCount: attendees.length,
+    preferenceCount: pairs.length,
+    skippedCount: skipped.length,
+    skipped: skipped
+  };
 }
 
 /* =========================================================================
@@ -4453,6 +4930,75 @@ function getMeetingSheet_(eventId, isBuyer) {
     sheet = ss.getSheetByName(isBuyer ? 'BuyerMeetings' : 'SupplierMeetings');
   }
   return sheet;
+}
+
+// Longer than CROSS_REQUEST_CACHE_SECONDS (60s) — these sheets are
+// populated by an external B2B matching tool, not written anywhere in
+// this codebase, so they change at most a few times per event lifecycle;
+// a 10-minute window is safe and still reflects a re-import within
+// minutes.
+const MEETING_SHEET_CACHE_SECONDS = 600;
+
+/**
+ * Cached read of one Buyer/Supplier meeting sheet — { headers (lowercased
+ * strings), rows (raw values, header row excluded) }. Every Date cell is
+ * normalized to an ISO string up front: getCrossRequestCache_/
+ * putCrossRequestCache_ round-trip through JSON, which would otherwise
+ * silently turn a Date into a plain ISO string on a cache HIT while a
+ * cache MISS still returns a real Date object — normalizing here once
+ * keeps both paths identical so callers never need to care which one they
+ * got (see formatMeetingTime_, the one place that cares about the
+ * distinction between "was a Date" and "was always plain text").
+ * Was previously a bare, uncached sheet.getDataRange().getValues() called
+ * fresh on every itinerary view and every campaign-audience "has meetings"
+ * check — for a 500-attendee B2B event that was 500+ full-sheet reads/day
+ * of data that barely ever changes.
+ */
+function getMeetingSheetRaw_(eventId, isBuyer) {
+  const cacheKeySuffix = eventId + '_' + (isBuyer ? 'buyer' : 'supplier');
+  if (!_rawDataCache_.meetingSheets) _rawDataCache_.meetingSheets = {};
+  if (_rawDataCache_.meetingSheets[cacheKeySuffix]) return _rawDataCache_.meetingSheets[cacheKeySuffix];
+
+  const rawCacheKey = 'meetingSheet_' + cacheKeySuffix;
+  const cached = getCrossRequestCache_(rawCacheKey);
+  if (cached) {
+    _rawDataCache_.meetingSheets[cacheKeySuffix] = cached;
+    return cached;
+  }
+
+  const sheet = getMeetingSheet_(eventId, isBuyer);
+  let out;
+  if (!sheet || sheet.getLastRow() <= 1) {
+    out = { headers: [], rows: [] };
+  } else {
+    const data = sheet.getDataRange().getValues();
+    out = {
+      headers: data[0].map(h => String(h).trim().toLowerCase()),
+      rows: data.slice(1).map(row => row.map(cell => cell instanceof Date ? cell.toISOString() : cell))
+    };
+  }
+  _rawDataCache_.meetingSheets[cacheKeySuffix] = out;
+  putCrossRequestCache_(rawCacheKey, out, MEETING_SHEET_CACHE_SECONDS);
+  return out;
+}
+
+/**
+ * Formats a meeting start/end cell for display. Mirrors the original
+ * inline `instanceof Date` check exactly for a same-execution, never-
+ * cached read; additionally recognizes the ISO-string shape
+ * getMeetingSheetRaw_ normalizes a Date into after a cache round-trip
+ * (matched narrowly via the date-time-shaped regex so a plain text value
+ * that happens to be parseable by `new Date()`, e.g. a bare "14:30", is
+ * never mistaken for one — see getMeetingSheetRaw_'s doc comment).
+ */
+function formatMeetingTime_(raw) {
+  if (raw === null || raw === undefined || raw === '') return '';
+  if (raw instanceof Date) return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'HH:mm');
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'HH:mm');
+  }
+  return String(raw);
 }
 
 function getAttendeeItinerary(eventId, email) {
@@ -4483,13 +5029,11 @@ function getAttendeeItinerary(eventId, email) {
   const registrationType = (allocation && allocation.optionLabel) || userRecord.registrationType;
   const isBuyerSide = regTypes.length > 0 && regTypes[0] === registrationType;
 
-  const mtgSheet = getMeetingSheet_(eventId, isBuyerSide);
+  const mtgRaw = getMeetingSheetRaw_(eventId, isBuyerSide);
   const meetings = [];
 
-  if (mtgSheet && mtgSheet.getLastRow() > 1) {
-    const mtgData = mtgSheet.getDataRange().getValues();
-    const mtgHeaders = mtgData[0].map(h => String(h).trim().toLowerCase());
-
+  if (mtgRaw.rows.length) {
+    const mtgHeaders = mtgRaw.headers;
     const mEmailIdx = mtgHeaders.indexOf('email');
     const apptIdx = mtgHeaders.indexOf('appointment');
     const startIdx = mtgHeaders.indexOf('start');
@@ -4502,15 +5046,13 @@ function getAttendeeItinerary(eventId, email) {
     const compIdx = mtgHeaders.indexOf(compHeaderKey);
     const nameIdx = mtgHeaders.indexOf(nameHeaderKey);
 
-    for (let i = 1; i < mtgData.length; i++) {
-      const row = mtgData[i];
+    for (let i = 0; i < mtgRaw.rows.length; i++) {
+      const row = mtgRaw.rows[i];
       const rowEmail = String(row[mEmailIdx] || '').trim().toLowerCase();
       if (rowEmail !== email) continue;
 
-      const rawStart = row[startIdx];
-      const formattedStart = rawStart instanceof Date ? Utilities.formatDate(rawStart, Session.getScriptTimeZone(), 'HH:mm') : String(rawStart || '');
-      const rawEnd = row[endIdx];
-      const formattedEnd = rawEnd instanceof Date ? Utilities.formatDate(rawEnd, Session.getScriptTimeZone(), 'HH:mm') : String(rawEnd || '');
+      const formattedStart = formatMeetingTime_(row[startIdx]);
+      const formattedEnd = formatMeetingTime_(row[endIdx]);
       const rawAppt = apptIdx !== -1 ? String(row[apptIdx] || '').trim() : '';
       const isSpecialBlock = isNaN(Number(rawAppt)) || rawAppt === '';
 
@@ -4539,22 +5081,35 @@ function getAttendeeItinerary(eventId, email) {
 }
 
 /**
+ * Client-exposed wrapper for getAttendeeItinerary — that function itself
+ * stays a plain (eventId, email) helper because it's also called
+ * internally with a caller-supplied email (emailItinerary below, the
+ * per-recipient itinerary merge-tag block in outgoing campaign emails, and
+ * the "has meetings" campaign audience filter). This wrapper is what
+ * Portal.html's "My Itinerary" page actually calls, deriving the trusted
+ * email from the session token rather than accepting one as an argument.
+ */
+function getMyAttendeeItinerary(sessionToken, eventId) {
+  const email = requireAttendeeSession_(sessionToken);
+  return getAttendeeItinerary(eventId, email);
+}
+
+/**
  * Emails the caller's OWN itinerary to their OWN registered address —
- * deliberately takes only (eventId, email) rather than a recipient +
- * pre-built body from the client. Previously this function accepted an
- * arbitrary recipientEmail AND an arbitrary itineraryData object straight
- * from the browser with no ownership check, which meant any anonymous
- * visitor to this ANYONE_ANONYMOUS web app could make it send arbitrary
- * text to an arbitrary address from the deploying account's mailbox — a
- * spam/quota-drain relay. getAttendeeItinerary(eventId, email) both
+ * deliberately derives the recipient from the verified session rather
+ * than accepting one as a client-supplied argument. Previously this
+ * function accepted an arbitrary recipientEmail AND an arbitrary
+ * itineraryData object straight from the browser with no ownership check,
+ * which meant any anonymous visitor to this ANYONE_ANONYMOUS web app could
+ * make it send arbitrary text to an arbitrary address from the deploying
+ * account's mailbox — a spam/quota-drain relay. getAttendeeItinerary
  * derives the itinerary content server-side AND is itself the ownership
  * check: it throws unless a real Registrations row exists for that
  * eventId+email, so there is no path to sending to/about someone who isn't
  * actually registered.
  */
-function emailItinerary(eventId, email) {
-  email = (email || '').trim().toLowerCase();
-  if (!email) throw new Error('Please specify a recipient email address.');
+function emailItinerary(sessionToken, eventId) {
+  const email = requireAttendeeSession_(sessionToken);
 
   const itineraryData = getAttendeeItinerary(eventId, email); // throws if not registered — this IS the ownership check
 
@@ -4571,7 +5126,8 @@ function emailItinerary(eventId, email) {
   return { status: 'ok' };
 }
 
-function getAttendeeModalDetails(partnerEmail) {
+function getAttendeeModalDetails(sessionToken, partnerEmail) {
+  requireAttendeeSession_(sessionToken); // proves the caller is a signed-in attendee; partnerEmail is the intentional lookup target, not the caller's own identity
   partnerEmail = (partnerEmail || '').trim().toLowerCase();
   const reg = getRegistrationsRaw_().find(r => r.email.toLowerCase() === partnerEmail);
   if (!reg) {
@@ -4724,6 +5280,33 @@ function lookupAttendeeInfo(email) {
 }
 
 /**
+ * Client-exposed wrapper for lookupAttendeeInfo — lookupAttendeeInfo
+ * itself stays a plain (email) function because it's also called
+ * internally with a caller-supplied email (e.g. authenticateUserPortal
+ * resolving the logged-in attendee's own profile after the session is
+ * already verified). This wrapper is what the Portal.html "My Details"
+ * modal actually calls, deriving the trusted email from the session
+ * token itself rather than accepting one as an argument.
+ */
+function getMyAttendeeInfo(sessionToken) {
+  const email = requireAttendeeSession_(sessionToken);
+  return lookupAttendeeInfo(email);
+}
+
+/**
+ * Prefill lookup used while adding an attendee (often a colleague, not the
+ * caller) to a registration form — requires a valid session (proof the
+ * caller is a signed-in portal user, closing the fully-anonymous data-
+ * harvesting path) but the target email is intentionally arbitrary, not
+ * the caller's own, since prefilling a colleague's known company/profile
+ * info while registering them is the whole point of this call.
+ */
+function lookupAttendeeInfoForRegistration(sessionToken, email) {
+  requireAttendeeSession_(sessionToken);
+  return lookupAttendeeInfo(email);
+}
+
+/**
  * Used by the Profile page. Same as lookupAttendeeInfo but also reports
  * whether personal information has already been saved (so the client can
  * decide whether to nudge the user to complete their profile).
@@ -4740,6 +5323,25 @@ function getProfileForEmail(email) {
  *            domain, website }
  */
 function saveProfile(payload) {
+  return saveProfileInternal_(payload);
+}
+
+/**
+ * Client-exposed wrapper for the "My Profile" page — verifies the session
+ * and overrides whatever payload.email the client sent with the verified
+ * one before delegating. saveProfile(payload) itself stays callable with
+ * a caller-supplied email because submitEventRegistrationBatch uses it
+ * internally to save a Profile row for EVERY attendee in a batch (who may
+ * be colleagues the logged-in user is registering, not themselves), which
+ * is a legitimate use this session model doesn't need to (and shouldn't)
+ * restrict.
+ */
+function saveMyProfile(sessionToken, payload) {
+  const email = requireAttendeeSession_(sessionToken);
+  return saveProfileInternal_(Object.assign({}, payload, { email: email }));
+}
+
+function saveProfileInternal_(payload) {
   const email = (payload.email || '').trim().toLowerCase();
   if (!email) throw new Error('Email is required to save a profile.');
 
@@ -4758,7 +5360,7 @@ function saveProfile(payload) {
     const prevVal = key => (existing && existing.idx[key] !== undefined) ? existing.values[existing.idx[key]] : '';
 
     const rowValues = new Array(sheet.getLastColumn()).fill('');
-    const set = (key, val) => { if (idx[key] !== undefined) rowValues[idx[key]] = val; };
+    const set = (key, val) => { if (idx[key] !== undefined) rowValues[idx[key]] = typeof val === 'string' ? sanitizeForSheet_(val) : val; };
 
     set('Email', email);
     set('FirstName', payload.firstName !== undefined ? payload.firstName : prevVal('FirstName'));
@@ -4894,7 +5496,7 @@ function upsertCompanyDirectoryEntry_(email, domain, payload) {
 
   if (rowNum === -1) {
     const row = new Array(raw.headers.length).fill('');
-    const set = (key, val) => { if (idx[key] !== undefined) row[idx[key]] = val; };
+    const set = (key, val) => { if (idx[key] !== undefined) row[idx[key]] = typeof val === 'string' ? sanitizeForSheet_(val) : val; };
     set('Company Name', payload.companyName || '');
     set('Company Description', payload.companyDescription || '');
     set('Membership Type', payload.membershipType || '');
@@ -4910,8 +5512,8 @@ function upsertCompanyDirectoryEntry_(email, domain, payload) {
   const createdBy = String(raw.rows[rowNum - 2][idx['Created By']] || '').trim().toLowerCase();
   if (createdBy !== email) return; // not the owner (or an unclaimed legacy row) — leave the shared record alone
 
-  if (idx['Company Name'] !== undefined) sheet.getRange(rowNum, idx['Company Name'] + 1).setValue(payload.companyName || '');
-  if (idx['Business Type'] !== undefined) sheet.getRange(rowNum, idx['Business Type'] + 1).setValue(payload.membershipCategory || '');
+  if (idx['Company Name'] !== undefined) sheet.getRange(rowNum, idx['Company Name'] + 1).setValue(sanitizeForSheet_(payload.companyName || ''));
+  if (idx['Business Type'] !== undefined) sheet.getRange(rowNum, idx['Business Type'] + 1).setValue(sanitizeForSheet_(payload.membershipCategory || ''));
   _rawDataCache_.membership = null; // invalidate: this execution's cached Membership read is now stale
 }
 
@@ -4927,6 +5529,25 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/**
+ * Defends against formula/CSV injection: Sheets (like Excel) treats a cell
+ * value starting with =, +, -, or @ as a live formula the moment a human
+ * opens it in the Sheets UI — not just literal text — so an attacker-
+ * controlled Full Name / Company Description / dietary note etc. could
+ * otherwise become e.g. an =HYPERLINK(...) or =IMPORTXML(...) call running
+ * inside an admin's own trusted spreadsheet. Prefixing a leading
+ * apostrophe is the same escape Sheets' own UI uses to force plain text,
+ * and Apps Script's setValue/appendRow honor it exactly the same way.
+ * Only applied to free-text fields an attendee directly controls — not to
+ * admin-authored content (admins already have direct edit access to the
+ * underlying sheet) or to JSON-serialized fields (a JSON string always
+ * starts with { or [, so it can't trigger this class of injection).
+ */
+function sanitizeForSheet_(v) {
+  const s = String(v == null ? '' : v);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
 /** Used by HtmlService templates for includes, if ever needed. */
@@ -5940,8 +6561,15 @@ function ensureDailyReminderTrigger_() {
  * ReminderDaysBefore days, sends one reminder — deduped per (milestone,
  * email) via CommunicationsLog so the same person isn't reminded every
  * day the window stays open. Draws on the same daily quota reserve as
- * everything else (getRemainingCommQuota_), so a reminder run on a busy
- * campaign day logs Skipped rather than erroring once quota is gone.
+ * everything else (getRemainingCommQuota_, checked once and decremented
+ * locally rather than re-queried per recipient), so a reminder run on a
+ * busy campaign day logs Skipped rather than erroring once quota is gone.
+ *
+ * Self-throttles against the 6-minute execution cap the same way
+ * drainCommunicationsQueue_ does: once SOFT_LIMIT_MS has elapsed, every
+ * remaining candidate is simply left for tomorrow's 8am run rather than
+ * risking a hard kill mid-scan (which, unlike the queue drain, has no
+ * resumption trigger of its own).
  */
 function sendMilestoneDeadlineReminders_() {
   const automations = getCommAutomationsRaw_().filter(a => a.status === 'Active' && a.triggerType === COMM_TRIGGER_MILESTONE_DEADLINE);
@@ -5950,7 +6578,13 @@ function sendMilestoneDeadlineReminders_() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const REMINDER_SOFT_LIMIT_MS = 4.5 * 60 * 1000;
+  const startTime = Date.now();
+  let quotaRemaining = getRemainingCommQuota_();
+  let timeUp = false;
+
   automations.forEach(automation => {
+    if (timeUp) return;
     const entityId = automation.subEventId || automation.eventId;
     if (!entityId) return;
     const daysBefore = automation.reminderDaysBefore != null ? automation.reminderDaysBefore : 3;
@@ -5973,6 +6607,7 @@ function sendMilestoneDeadlineReminders_() {
     const indexes = buildMergeIndexes_(entityId);
 
     milestonesWithDeadline.forEach(milestone => {
+      if (timeUp) return;
       let dueDate;
       try { dueDate = new Date(milestone.dueDate); } catch (e) { return; }
       if (isNaN(dueDate.getTime())) return;
@@ -5984,6 +6619,9 @@ function sendMilestoneDeadlineReminders_() {
       if (daysUntilDue > daysBefore || daysUntilDue < 0) return;
 
       candidateEmails.forEach(email => {
+        if (timeUp) return;
+        if (Date.now() - startTime > REMINDER_SOFT_LIMIT_MS) { timeUp = true; return; }
+
         if (isOptedOut_(email, topEventId)) return;
         const completion = findMilestoneCompletion_(milestone.milestoneId, email);
         const isDone = milestone.milestoneType === MILESTONE_TYPE_SET_PREFERENCES
@@ -5994,7 +6632,7 @@ function sendMilestoneDeadlineReminders_() {
         const identity = COMM_TRIGGER_MILESTONE_DEADLINE + '::' + milestone.milestoneId + '::' + email;
         if (hasCommLogSentIdentity_(identity)) return;
 
-        if (getRemainingCommQuota_() <= 0) {
+        if (quotaRemaining <= 0) {
           appendCommLogRows_([{
             campaignId: 'trigger:' + identity, templateId: template.templateId, templateName: template.name,
             eventId: topEventId, subEventId: automation.subEventId || '', recipientEmail: email, recipientName: '',
@@ -6015,6 +6653,7 @@ function sendMilestoneDeadlineReminders_() {
           result = { ok: false, error: e.message };
           rendered = { subject: '(render failed)' };
         }
+        if (result.ok) quotaRemaining--;
         appendCommLogRows_([{
           campaignId: 'trigger:' + identity, templateId: template.templateId, templateName: template.name,
           eventId: topEventId, subEventId: automation.subEventId || '', recipientEmail: email,
@@ -6163,13 +6802,58 @@ function getCommSettings(token) {
    and the number of emails sent can never drift apart.
    ========================================================================= */
 
-function queueHasSentStatus_(campaignId, email) {
-  if (!campaignId) return false;
+/**
+ * Batched "who has this campaign already been sent to" lookup — one
+ * CommunicationsQueue read for the whole audience resolution (see
+ * resolveCommunicationAudience's excludeAlreadySentCampaignId filter)
+ * instead of one full-sheet read per candidate, which for a 1,000-
+ * candidate resend meant 1,000 reads inside one synchronous request.
+ */
+function getQueueSentEmailSet_(campaignId) {
+  const result = new Set();
+  if (!campaignId) return result;
   const sheet = getCommQueueSheet_();
-  if (sheet.getLastRow() <= 1) return false;
+  if (sheet.getLastRow() <= 1) return result;
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMM_QUEUE_HEADERS_.length).getValues();
-  const em = String(email).trim().toLowerCase();
-  return data.some(row => String(row[1]) === String(campaignId) && String(row[2]).trim().toLowerCase() === em && String(row[4]) === COMM_QUEUE_STATUS_SENT);
+  data.forEach(row => {
+    if (String(row[1]) === String(campaignId) && String(row[4]) === COMM_QUEUE_STATUS_SENT) {
+      result.add(String(row[2]).trim().toLowerCase());
+    }
+  });
+  return result;
+}
+
+/**
+ * Batched "who has at least one real (non-special-block) meeting"
+ * lookup for one entity — reads each of the Buyer/Supplier meeting
+ * sheets exactly ONCE and returns a Set of emails, instead of the
+ * per-candidate getAttendeeItinerary() calls resolveCommunicationAudience
+ * used to make (each of which re-read the whole sheet from scratch — see
+ * that filter for why this matters at scale). A buyer-side and
+ * supplier-side attendee can never share an email, so merging both
+ * sheets' emails into one Set is safe and avoids replicating the
+ * per-attendee buyer/supplier side resolution getAttendeeItinerary does.
+ * "isSpecialBlock" mirrors getAttendeeItinerary's own definition exactly:
+ * a row only counts as a real meeting if its Appointment column is a
+ * non-empty number.
+ */
+function getEmailsWithMeetings_(eventId) {
+  const result = new Set();
+  [true, false].forEach(isBuyer => {
+    const mtgRaw = getMeetingSheetRaw_(eventId, isBuyer); // shares the same cache getAttendeeItinerary uses
+    if (!mtgRaw.rows.length) return;
+    const emailIdx = mtgRaw.headers.indexOf('email');
+    const apptIdx = mtgRaw.headers.indexOf('appointment');
+    if (emailIdx === -1) return;
+    mtgRaw.rows.forEach(row => {
+      const rawAppt = apptIdx !== -1 ? String(row[apptIdx] || '').trim() : '';
+      const isSpecialBlock = isNaN(Number(rawAppt)) || rawAppt === '';
+      if (isSpecialBlock) return;
+      const email = String(row[emailIdx] || '').trim().toLowerCase();
+      if (email) result.add(email);
+    });
+  });
+  return result;
 }
 
 /**
@@ -6219,9 +6903,9 @@ function resolveCommunicationAudience(token, audienceSpec) {
   }
   if (filters.hasMeetings === true || filters.hasMeetings === false) {
     const entityForMeetings = spec.scope === 'subEvent' ? spec.subEventId : eventId;
+    const emailsWithMeetings = getEmailsWithMeetings_(entityForMeetings); // one read per sheet, not one per candidate
     candidates = candidates.filter(r => {
-      let hasM = false;
-      try { hasM = getAttendeeItinerary(entityForMeetings, r.email).meetings.some(m => !m.isSpecialBlock); } catch (e) { hasM = false; }
+      const hasM = emailsWithMeetings.has(String(r.email).trim().toLowerCase());
       return filters.hasMeetings ? hasM : !hasM;
     });
   }
@@ -6239,10 +6923,13 @@ function resolveCommunicationAudience(token, audienceSpec) {
 
   let invalidCount = 0, optedOutCount = 0, alreadySentCount = 0;
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // One CommunicationsQueue read for the whole resolution (see
+  // getQueueSentEmailSet_) rather than one per candidate.
+  const alreadySentEmails = spec.excludeAlreadySentCampaignId ? getQueueSentEmailSet_(spec.excludeAlreadySentCampaignId) : null;
   const finalList = candidates.filter(r => {
     if (!emailRe.test(r.email)) { invalidCount++; return false; }
     if (spec.templateCategory && spec.templateCategory !== COMM_CATEGORY_TRANSACTIONAL && isOptedOut_(r.email, topEventId)) { optedOutCount++; return false; }
-    if (spec.excludeAlreadySentCampaignId && queueHasSentStatus_(spec.excludeAlreadySentCampaignId, r.email)) { alreadySentCount++; return false; }
+    if (alreadySentEmails && alreadySentEmails.has(String(r.email).trim().toLowerCase())) { alreadySentCount++; return false; }
     return true;
   });
 
