@@ -109,6 +109,13 @@
     .type-config-row input { flex: 1; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; min-width: 0; }
     .type-config-row .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
     .add-row-btn { background: #eef1f5; color: var(--text-dark); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    /* Settings panel: same remove-button look, not scoped to .type-config-row (used in rows with a different layout — Registration Fields' multi-input row). */
+    .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
+    .settings-field-row input[type="text"], .settings-field-row select { padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
+    .nav-tabs { display: flex; gap: 8px; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
+    .tab-btn { background: none; border: none; padding: 10px 16px; font-size: 13px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+    .tab-btn:hover { color: var(--primary-color); }
+    .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
 
     /* Dashboard */
     .tiles-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -203,7 +210,7 @@
   <div class="admin-screen">
     <div class="admin-header">
       <h1>Admin Portal</h1>
-      <div class="who"><?= adminEmail ?> <a class="exit-link" href="<?= portalUrl ?>">Exit to Main Portal</a></div>
+      <div class="who"><?= adminEmail ?> <a class="exit-link" href="#" onclick="adminLogoutClick(); return false;">Log out</a> <a class="exit-link" href="<?= portalUrl ?>">Exit to Main Portal</a></div>
     </div>
 
     <div class="admin-body">
@@ -212,6 +219,7 @@
         <div class="admin-nav-item" id="admin-nav-dashboard">Dashboard</div>
         <div class="admin-nav-item" id="admin-nav-comms">✉️ Communications</div>
         <div class="admin-nav-item" id="admin-nav-databridge">🔗 Matching Engine Export</div>
+        <div class="admin-nav-item" id="admin-nav-settings">⚙️ Settings</div>
       </div>
 
       <div class="admin-main">
@@ -437,6 +445,61 @@
           </div>
         </div>
 
+        <!-- ============ SETTINGS ============ -->
+        <div id="admin-panel-settings" class="admin-panel">
+          <div class="panel-header-row">
+            <h2>Settings</h2>
+          </div>
+          <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
+            These used to require editing the underlying spreadsheet directly. Changes here take effect for
+            every event using the affected Event Type — double-check before saving.
+          </p>
+
+          <div class="nav-tabs" style="margin-bottom:16px;">
+            <button type="button" class="tab-btn active" id="settings-tab-budgetcats" onclick="switchSettingsTab('budgetcats')">Budget Categories</button>
+            <button type="button" class="tab-btn" id="settings-tab-formfields" onclick="switchSettingsTab('formfields')">Registration Fields</button>
+            <button type="button" class="tab-btn" id="settings-tab-onboarding" onclick="switchSettingsTab('onboarding')">Event Types</button>
+          </div>
+
+          <!-- ---- Budget Categories ---- -->
+          <div id="settings-panel-budgetcats" class="tab-content active section">
+            <h3>Cost Categories</h3>
+            <div id="budgetCostCategoryRows"></div>
+            <button type="button" class="add-row-btn" onclick="addBudgetCategoryRow('cost', '')">+ Add Cost Category</button>
+            <button type="button" class="btn" style="margin-top:10px;" onclick="saveBudgetCategoryList('cost')">Save Cost Categories</button>
+            <div id="budgetCostCategoryMsg" style="display:none; padding:8px; border-radius:6px; margin-top:8px; font-size:12.5px;"></div>
+
+            <h3 style="margin-top:24px;">Income Categories</h3>
+            <div id="budgetIncomeCategoryRows"></div>
+            <button type="button" class="add-row-btn" onclick="addBudgetCategoryRow('income', '')">+ Add Income Category</button>
+            <button type="button" class="btn" style="margin-top:10px;" onclick="saveBudgetCategoryList('income')">Save Income Categories</button>
+            <div id="budgetIncomeCategoryMsg" style="display:none; padding:8px; border-radius:6px; margin-top:8px; font-size:12.5px;"></div>
+          </div>
+
+          <!-- ---- Registration Fields ---- -->
+          <div id="settings-panel-formfields" class="tab-content section" style="display:none;">
+            <div class="form-group">
+              <label>Event Type</label>
+              <select id="formFieldsTypePicker" onchange="renderFormFieldsForSelectedType()"></select>
+            </div>
+            <div id="formFieldRows"></div>
+            <button type="button" class="add-row-btn" onclick="addFormFieldRow(null)">+ Add Field</button>
+            <button type="button" class="btn" style="margin-top:10px;" onclick="saveFormFieldsForSelectedType()">Save Fields</button>
+            <div id="formFieldsMsg" style="display:none; padding:8px; border-radius:6px; margin-top:8px; font-size:12.5px;"></div>
+          </div>
+
+          <!-- ---- Event Types (ClientOnboarding) ---- -->
+          <div id="settings-panel-onboarding" class="tab-content section" style="display:none;">
+            <p class="type-config-hint">
+              Each Event Type needs at least one Registration Type to be usable anywhere in the app (Event Type
+              dropdown, registration form, etc.).
+            </p>
+            <div id="onboardingTypeRows"></div>
+            <button type="button" class="add-row-btn" onclick="addOnboardingTypeBlock(null)">+ Add Event Type</button>
+            <div id="onboardingMsg" style="display:none; padding:8px; border-radius:6px; margin-top:8px; font-size:12.5px;"></div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -564,6 +627,18 @@
           </p>
           <div id="b2bMeetingsOptionRows"></div>
           <button type="button" class="add-row-btn" onclick="addB2BMeetingsOptionRow()">+ Add Option</button>
+          <div class="checkbox-row" style="margin-top:14px;">
+            <input type="checkbox" id="showChosenByField">
+            <label for="showChosenByField" style="font-weight:normal;">Let attendees see which companies chose them</label>
+          </div>
+          <p class="type-config-hint" style="margin:0;">
+            Off by default. When on, a confirmed attendee can view a report of every other confirmed attendee who
+            selected them in Meeting Preferences — worth considering carefully, since it reveals one company's
+            specific interest in another. Admins can always see this regardless of this setting.
+          </p>
+          <button type="button" class="btn secondary" id="viewChosenByBtn" style="margin-top:10px;" onclick="openChosenByReport()" disabled>📊 View Chosen-By Report</button>
+          <p id="chosenByReportHint" class="type-config-hint" style="margin:4px 0 0;">Save this event first to view its Chosen-By Report.</p>
+          <div id="chosenByReportWrap" style="display:none; margin-top:10px;"></div>
         </div>
       </div>
 
@@ -608,6 +683,16 @@
           </select>
           <p class="type-config-hint" style="margin:6px 0 0;">Applies to this event and every sub-event beneath it.</p>
         </div>
+        <div class="form-group">
+          <label>Allowed Email Domains (optional)</label>
+          <input type="text" id="allowedDomainsField" placeholder="e.g. acmecorp.com, partnerco.com — blank = open to anyone">
+          <p class="type-config-hint" style="margin:6px 0 0;">
+            When set, only attendees signing in with an email at one of these domains can see or register for this
+            event (and every sub-event beneath it) — everyone else won't see it in their event list at all. Leave
+            blank to keep it open to any email address, same as every event today. Attendees who already registered
+            keep their access even if you change this list afterward.
+          </p>
+        </div>
       </div>
       <p id="subEventHint" style="display:none; font-size:12px; color:#5f6368; margin:-6px 0 14px;">
         Sub-events are only allowed under an "Umbrella Event". Choose this sub-event's own Event Type above — the
@@ -626,7 +711,7 @@
         <button type="button" class="add-row-btn" onclick="addMilestoneRow()">+ Add Milestone</button>
       </div>
 
-      <button class="btn" style="width:100%;" onclick="saveEvent()">Save Event</button>
+      <button id="btnSaveEvent" class="btn" style="width:100%;" onclick="saveEvent()">Save Event</button>
     </div>
   </div>
 
@@ -774,8 +859,26 @@
 <? } ?>
 
 <script>
-  var ADMIN_TOKEN = '<?= token ?>';
-  var PORTAL_URL = '<?= portalUrl ?>';
+  // JSON.stringify (server-side) for consistency with the same fix applied
+  // to AdminResetPassword.html/Unsubscribe.html/AdminFloorPlan.html — token
+  // here is only ever echoed after already passing validateAdminToken_, so
+  // this one was not exploitable, but there's no reason for it to be the
+  // one place in the app relying on that distinction to stay safe.
+  var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
+  var PORTAL_URL = <?!= JSON.stringify(portalUrl) ?>;
+
+  // Explicitly ends the session server-side (revokes the cached token)
+  // before returning to login, rather than just navigating away and
+  // leaving the token live until its 6-hour TTL expires on its own.
+  // Redirects regardless of whether the revoke call succeeds — from the
+  // admin's point of view, clicking "Log out" should always end the
+  // session locally even if the server round-trip has a problem.
+  function adminLogoutClick() {
+    google.script.run
+      .withSuccessHandler(function() { top.location.href = PORTAL_URL; })
+      .withFailureHandler(function() { top.location.href = PORTAL_URL; })
+      .adminLogout(ADMIN_TOKEN);
+  }
   var onboardingData = {};
   var eventTypeOptions = { topLevelTypes: [], subEventTypes: [] };
   var currentParentForModal = null;
@@ -817,6 +920,7 @@
     document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
     document.getElementById('admin-nav-comms').addEventListener('click', function() { switchAdminPanel('comms'); });
     document.getElementById('admin-nav-databridge').addEventListener('click', function() { switchAdminPanel('databridge'); });
+    document.getElementById('admin-nav-settings').addEventListener('click', function() { switchAdminPanel('settings'); });
     loadOnboardingData();
     loadEventsList();
   });
@@ -829,6 +933,251 @@
     if (panelId === 'dashboard') loadDashboardPanel();
     if (panelId === 'comms') loadCommPanel();
     if (panelId === 'databridge') populateDataBridgeEntityPicker();
+    if (panelId === 'settings') loadSettingsPanel();
+  }
+
+  /* ================= SETTINGS: Budget Categories / Registration Fields / Event Types =================
+   * These three sheets (BudgetCategories, RegistrationFormFields,
+   * ClientOnboarding) previously required editing the spreadsheet
+   * directly — this panel gives them the same in-app CRUD every other
+   * admin-editable list already has (Milestones, Budget Lines).
+   */
+  var settingsBudgetCategories = { cost: [], income: [] };
+  var settingsFormFieldsByType = {};
+  var settingsOnboardingData = {};
+
+  function switchSettingsTab(tabId) {
+    ['budgetcats', 'formfields', 'onboarding'].forEach(function(id) {
+      document.getElementById('settings-tab-' + id).classList.toggle('active', id === tabId);
+      document.getElementById('settings-panel-' + id).style.display = id === tabId ? 'block' : 'none';
+    });
+  }
+
+  function loadSettingsPanel() {
+    google.script.run
+      .withSuccessHandler(function(cats) {
+        settingsBudgetCategories = { cost: [], income: [] };
+        (cats || []).forEach(function(c) {
+          var bucket = c.lineType === 'income' ? settingsBudgetCategories.income : settingsBudgetCategories.cost;
+          bucket.push(c.categoryName);
+        });
+        renderBudgetCategoryRows('cost');
+        renderBudgetCategoryRows('income');
+      })
+      .getBudgetCategories(ADMIN_TOKEN);
+
+    google.script.run
+      .withSuccessHandler(function(byType) {
+        settingsFormFieldsByType = byType || {};
+        populateFormFieldsTypePicker();
+      })
+      .getRegistrationFormFieldsAdmin(ADMIN_TOKEN);
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        settingsOnboardingData = data || {};
+        renderOnboardingTypeBlocks();
+      })
+      .getEventTypesAndRegTypes(ADMIN_TOKEN);
+  }
+
+  /* ---- Budget Categories ---- */
+
+  function renderBudgetCategoryRows(lineType) {
+    var wrap = document.getElementById(lineType === 'income' ? 'budgetIncomeCategoryRows' : 'budgetCostCategoryRows');
+    wrap.innerHTML = '';
+    (settingsBudgetCategories[lineType] || []).forEach(function(name) { addBudgetCategoryRow(lineType, name); });
+  }
+
+  function addBudgetCategoryRow(lineType, value) {
+    var wrap = document.getElementById(lineType === 'income' ? 'budgetIncomeCategoryRows' : 'budgetCostCategoryRows');
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    row.innerHTML = '<input type="text" class="budgetcat-name" value="' + escapeHtml(value || '') + '">' +
+      '<button type="button" class="remove-row-btn" onclick="this.parentNode.remove()">&times;</button>';
+    wrap.appendChild(row);
+  }
+
+  function saveBudgetCategoryList(lineType) {
+    var wrap = document.getElementById(lineType === 'income' ? 'budgetIncomeCategoryRows' : 'budgetCostCategoryRows');
+    var names = Array.prototype.slice.call(wrap.querySelectorAll('.budgetcat-name')).map(function(el) { return el.value.trim(); }).filter(Boolean);
+    var msgEl = document.getElementById(lineType === 'income' ? 'budgetIncomeCategoryMsg' : 'budgetCostCategoryMsg');
+    google.script.run
+      .withSuccessHandler(function() {
+        msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+        msgEl.textContent = 'Saved.'; msgEl.style.display = 'block';
+        setTimeout(function() { msgEl.style.display = 'none'; }, 2500);
+      })
+      .withFailureHandler(function(err) {
+        msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
+        msgEl.textContent = err.message; msgEl.style.display = 'block';
+      })
+      .saveBudgetCategories(ADMIN_TOKEN, lineType, names);
+  }
+
+  /* ---- Registration Fields ---- */
+
+  function populateFormFieldsTypePicker() {
+    var select = document.getElementById('formFieldsTypePicker');
+    var current = select.value;
+    select.innerHTML = '';
+    Object.keys(settingsFormFieldsByType).sort().forEach(function(type) {
+      var opt = document.createElement('option');
+      opt.value = type; opt.textContent = type;
+      select.appendChild(opt);
+    });
+    if (current && settingsFormFieldsByType[current]) select.value = current;
+    renderFormFieldsForSelectedType();
+  }
+
+  function renderFormFieldsForSelectedType() {
+    var type = document.getElementById('formFieldsTypePicker').value;
+    var wrap = document.getElementById('formFieldRows');
+    wrap.innerHTML = '';
+    (settingsFormFieldsByType[type] || []).forEach(function(f) { addFormFieldRow(f); });
+  }
+
+  function addFormFieldRow(field) {
+    var wrap = document.getElementById('formFieldRows');
+    var row = document.createElement('div');
+    row.className = 'settings-field-row';
+    row.style.cssText = 'display:flex; gap:6px; margin-bottom:8px; align-items:flex-start; flex-wrap:wrap; border:1px solid var(--border-color); border-radius:8px; padding:8px;';
+    var typeOptionsHtml = ['text', 'textarea', 'email', 'tel', 'date', 'select'].map(function(t) {
+      return '<option value="' + t + '"' + (field && field.fieldType === t ? ' selected' : '') + '>' + t + '</option>';
+    }).join('');
+    row.innerHTML =
+      '<input type="text" class="ff-name" placeholder="Field Name (e.g. dietaryNotes)" style="width:170px;" value="' + escapeHtml(field ? field.fieldName : '') + '">' +
+      '<input type="text" class="ff-label" placeholder="Label shown to attendees" style="width:170px;" value="' + escapeHtml(field ? field.fieldLabel : '') + '">' +
+      '<select class="ff-type" onchange="toggleFormFieldOptionsVisibility(this)">' + typeOptionsHtml + '</select>' +
+      '<input type="text" class="ff-options" placeholder="Options (comma-separated, Select only)" style="width:200px; display:' + (field && field.fieldType === 'select' ? 'inline-block' : 'none') + ';" value="' + escapeHtml(field && field.options ? field.options.split('|').join(', ') : '') + '">' +
+      '<label style="font-size:12px; font-weight:normal; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="ff-required"' + (field && field.required ? ' checked' : '') + '> Required</label>' +
+      '<button type="button" class="remove-row-btn" onclick="this.parentNode.remove()">&times;</button>';
+    wrap.appendChild(row);
+  }
+
+  function toggleFormFieldOptionsVisibility(selectEl) {
+    var optsInput = selectEl.parentNode.querySelector('.ff-options');
+    optsInput.style.display = selectEl.value === 'select' ? 'inline-block' : 'none';
+  }
+
+  function saveFormFieldsForSelectedType() {
+    var type = document.getElementById('formFieldsTypePicker').value;
+    var msgEl = document.getElementById('formFieldsMsg');
+    if (!type) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Select an Event Type first.'; msgEl.style.display = 'block'; return; }
+    var rows = Array.prototype.slice.call(document.getElementById('formFieldRows').children);
+    var fields = rows.map(function(row) {
+      return {
+        fieldName: row.querySelector('.ff-name').value.trim(),
+        fieldLabel: row.querySelector('.ff-label').value.trim(),
+        fieldType: row.querySelector('.ff-type').value,
+        options: row.querySelector('.ff-options').value,
+        required: row.querySelector('.ff-required').checked
+      };
+    });
+    google.script.run
+      .withSuccessHandler(function() {
+        msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+        msgEl.textContent = 'Saved.'; msgEl.style.display = 'block';
+        setTimeout(function() { msgEl.style.display = 'none'; }, 2500);
+      })
+      .withFailureHandler(function(err) {
+        msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
+        msgEl.textContent = err.message; msgEl.style.display = 'block';
+      })
+      .saveRegistrationFormFieldsForType(ADMIN_TOKEN, type, fields);
+  }
+
+  /* ---- Event Types (ClientOnboarding) ---- */
+
+  function renderOnboardingTypeBlocks() {
+    var wrap = document.getElementById('onboardingTypeRows');
+    wrap.innerHTML = '';
+    Object.keys(settingsOnboardingData).sort().forEach(function(type) {
+      addOnboardingTypeBlock({ eventType: type, isB2B: settingsOnboardingData[type].isB2B, registrationTypes: settingsOnboardingData[type].registrationTypes });
+    });
+  }
+
+  function addOnboardingRegTypeRow(btnEl) {
+    var wrap = btnEl.previousElementSibling; // .ob-regtypes-wrap, sits right before the "+ Add" button
+    var row = document.createElement('div');
+    row.className = 'type-config-row';
+    row.innerHTML = '<input type="text" class="ob-regtype" placeholder="Registration Type">' +
+      '<button type="button" class="remove-row-btn" onclick="this.parentNode.remove()">&times;</button>';
+    wrap.appendChild(row);
+  }
+
+  function addOnboardingTypeBlock(typeData) {
+    var wrap = document.getElementById('onboardingTypeRows');
+    var block = document.createElement('div');
+    block.className = 'section';
+    block.style.marginBottom = '14px';
+    var isExisting = !!(typeData && typeData.eventType);
+    var regTypesHtml = ((typeData && typeData.registrationTypes) || ['']).map(function(rt) {
+      return '<div class="type-config-row"><input type="text" class="ob-regtype" value="' + escapeHtml(rt) + '" placeholder="Registration Type">' +
+        '<button type="button" class="remove-row-btn" onclick="this.parentNode.remove()">&times;</button></div>';
+    }).join('');
+
+    block.innerHTML =
+      '<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">' +
+        '<input type="text" class="ob-eventtype" placeholder="Event Type name" style="flex:1; min-width:180px; font-weight:700;" value="' + escapeHtml(isExisting ? typeData.eventType : '') + '"' + (isExisting ? ' readonly' : '') + '>' +
+        '<label style="font-size:12px; font-weight:normal; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="ob-isb2b"' + (typeData && typeData.isB2B ? ' checked' : '') + '> Is B2B</label>' +
+      '</div>' +
+      '<div class="ob-regtypes-wrap" style="margin-top:10px;">' + regTypesHtml + '</div>' +
+      '<button type="button" class="add-row-btn" onclick="addOnboardingRegTypeRow(this)">+ Add Registration Type</button>' +
+      '<div style="margin-top:10px; display:flex; gap:8px;">' +
+        '<button type="button" class="btn" onclick="saveOnboardingTypeBlock(this)">Save</button>' +
+        (isExisting
+          ? '<button type="button" class="btn secondary" onclick="deleteOnboardingTypeBlock(this, false)">Delete</button>'
+          : '<button type="button" class="btn secondary" onclick="this.closest(\'.section\').remove()">Cancel</button>') +
+      '</div>';
+    wrap.appendChild(block);
+  }
+
+  function saveOnboardingTypeBlock(btnEl) {
+    var block = btnEl.closest('.section');
+    var eventType = block.querySelector('.ob-eventtype').value.trim();
+    var isB2B = block.querySelector('.ob-isb2b').checked;
+    var regTypes = Array.prototype.slice.call(block.querySelectorAll('.ob-regtype')).map(function(el) { return el.value.trim(); }).filter(Boolean);
+    var msgEl = document.getElementById('onboardingMsg');
+    if (!eventType) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Event Type name is required.'; msgEl.style.display = 'block'; return; }
+
+    google.script.run
+      .withSuccessHandler(function() {
+        msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+        msgEl.textContent = 'Saved "' + eventType + '".'; msgEl.style.display = 'block';
+        loadSettingsPanel(); // refresh this panel's own lists
+        loadOnboardingData(); // refresh the cached onboarding data the main Event modal's dropdowns use
+      })
+      .withFailureHandler(function(err) {
+        msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
+        msgEl.textContent = err.message; msgEl.style.display = 'block';
+      })
+      .saveClientOnboardingType(ADMIN_TOKEN, eventType, { isB2B: isB2B, registrationTypes: regTypes });
+  }
+
+  /** force=true is a deliberate re-submission after the admin confirmed the USAGE_COUNT warning below — see deleteClientOnboardingType's own doc comment for why this isn't a hard block. */
+  function deleteOnboardingTypeBlock(btnEl, force) {
+    var block = btnEl.closest('.section');
+    var eventType = block.querySelector('.ob-eventtype').value.trim();
+    var msgEl = document.getElementById('onboardingMsg');
+
+    google.script.run
+      .withSuccessHandler(function() {
+        block.remove();
+        loadOnboardingData();
+      })
+      .withFailureHandler(function(err) {
+        var m = /^USAGE_COUNT:(\d+)/.exec(err.message || '');
+        if (m && !force) {
+          if (confirm(m[1] + ' event(s) currently use "' + eventType + '". Delete anyway? Those events will keep this Event Type on their own row, but it won\'t be re-selectable if you edit them afterward.')) {
+            deleteOnboardingTypeBlock(btnEl, true);
+          }
+          return;
+        }
+        msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
+        msgEl.textContent = err.message; msgEl.style.display = 'block';
+      })
+      .deleteClientOnboardingType(ADMIN_TOKEN, eventType, !!force);
   }
 
   function loadOnboardingData() {
@@ -974,6 +1323,8 @@
     document.getElementById('eventStatusField').value = existingEvent ? existingEvent.status : 'Draft';
     document.getElementById('dietaryReqField').checked = existingEvent ? existingEvent.dietaryRequirements : false;
     document.getElementById('detailsPageUrlField').value = existingEvent ? (existingEvent.detailsPageUrl || '') : '';
+    document.getElementById('allowedDomainsField').value = existingEvent && existingEvent.allowedDomains ? existingEvent.allowedDomains.join(', ') : '';
+    document.getElementById('showChosenByField').checked = existingEvent ? !!existingEvent.showChosenByToAttendees : false;
     // Price/Places now apply to ANY row (top-level or sub-event).
     document.getElementById('priceField').value = existingEvent ? (existingEvent.price || 0) : '';
     document.getElementById('placesField').value = existingEvent && existingEvent.places !== null && existingEvent.places !== undefined ? existingEvent.places : '';
@@ -1090,6 +1441,13 @@
     if (isB2BMeetings && !document.getElementById('b2bMeetingsOptionRows').children.length) {
       addB2BMeetingsOptionRow();
     }
+    if (isB2BMeetings) {
+      var chosenByEventId = document.getElementById('eventIdField').value;
+      document.getElementById('viewChosenByBtn').disabled = !chosenByEventId;
+      document.getElementById('chosenByReportHint').style.display = chosenByEventId ? 'none' : 'block';
+      document.getElementById('chosenByReportWrap').style.display = 'none';
+      document.getElementById('chosenByReportWrap').innerHTML = '';
+    }
 
     // Price/Places apply to every EventType except "Umbrella Event" (no
     // registration record of its own), Curated Event, and B2B
@@ -1125,6 +1483,44 @@
     var eventId = document.getElementById('eventIdField').value;
     if (!eventId) { showModalMsg('Please save this event first, then reopen it to access the Floor Plan Designer.', true); return; }
     launchFloorPlanDesigner(eventId);
+  }
+
+  /**
+   * Admin-only view of who chose whom, for this B2B entity — always
+   * available to admins regardless of the "let attendees see" checkbox
+   * above, which only ever gates the attendee-facing version of the same
+   * data (see getMyChosenByReport on the server).
+   */
+  function openChosenByReport() {
+    var eventId = document.getElementById('eventIdField').value;
+    if (!eventId) return;
+    var wrap = document.getElementById('chosenByReportWrap');
+    wrap.style.display = 'block';
+    wrap.innerHTML = '<p class="type-config-hint">Loading…</p>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var rows = res.chosenBySummary || [];
+        if (!rows.length) {
+          wrap.innerHTML = '<p class="type-config-hint">No confirmed attendees yet for this event.</p>';
+          return;
+        }
+        var html = '<table style="width:100%; font-size:13px; border-collapse:collapse;">' +
+          '<thead><tr><th style="text-align:left; padding:6px;">Attendee</th><th style="text-align:left; padding:6px;">Company</th>' +
+          '<th style="text-align:left; padding:6px;">Chosen By</th></tr></thead><tbody>';
+        rows.forEach(function(r) {
+          var chooserNames = (r.chosenBy || []).map(function(c) { return escapeHtml(c.companyName || c.fullName || c.email); }).join(', ') || '—';
+          html += '<tr style="border-top:1px solid #eee;"><td style="padding:6px;">' + escapeHtml(r.fullName || r.email) +
+            '</td><td style="padding:6px;">' + escapeHtml(r.companyName || '') +
+            '</td><td style="padding:6px;"><strong>' + r.chosenByCount + '</strong> — ' + chooserNames + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+      })
+      .withFailureHandler(function(err) {
+        wrap.innerHTML = '<p class="type-config-hint" style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>';
+      })
+      .getSubEventAllocationSummary(ADMIN_TOKEN, eventId);
   }
 
   /** Adds one Curated Event option row (Label / Price / Places, with "Unlimited" supported via a blank or literal "Unlimited" Places value). */
@@ -1367,6 +1763,10 @@
 
   function saveEvent() {
     var eventType = document.getElementById('eventTypeField').value;
+    // Read raw, don't fall back to 0 here — a non-numeric value should be
+    // rejected below, not silently saved as free (same fix applied
+    // server-side; see createOrUpdateEvent).
+    var priceFieldValue = document.getElementById('priceField').value.trim();
     var payload = {
       eventId: document.getElementById('eventIdField').value,
       parentEventId: document.getElementById('parentEventIdField').value,
@@ -1380,9 +1780,11 @@
       eventType: eventType,
       dietaryRequirements: document.getElementById('dietaryReqField').checked,
       detailsPageUrl: document.getElementById('detailsPageUrlField').value.trim(),
-      price: parseFloat(document.getElementById('priceField').value) || 0,
+      price: priceFieldValue === '' ? 0 : parseFloat(priceFieldValue),
       places: document.getElementById('placesField').value.trim(), // '' = Unlimited
       currency: document.getElementById('currencyField').value, // top-level only; ignored for sub-events
+      allowedDomains: document.getElementById('allowedDomainsField').value, // top-level only; ignored for sub-events; server normalizes/splits
+      showChosenByToAttendees: document.getElementById('showChosenByField').checked, // any entity level; only meaningful for B2B Pre-scheduled Meetings
       typeConfig: collectTypeConfig(eventType), // options for Curated Event / B2B Pre-scheduled Meetings (now REQUIRED, >=1); Asset Types for Exhibition (OPTIONAL) — see validateOptionsRequired below; '[]' for every other type
       // Curated Event only: caps how many options one attendee may select; '' = unlimited (default). Ignored for every other EventType.
       maxOptionsPerAttendee: eventType === CURATED_EVENT_TYPE ? document.getElementById('curatedEventMaxOptionsField').value.trim() : '',
@@ -1394,6 +1796,7 @@
 
     if (!payload.eventName) { showModalMsg('Event Name is required.', true); return; }
     if (!payload.eventType) { showModalMsg('Please select an Event Type for this event.', true); return; }
+    if (priceFieldValue !== '' && isNaN(parseFloat(priceFieldValue))) { showModalMsg('Please enter a valid price.', true); return; }
 
     var optionsError = validateOptionsRequired(eventType, payload.typeConfig);
     if (optionsError) { showModalMsg(optionsError, true); return; }
@@ -1402,12 +1805,28 @@
       showModalMsg('Max options per attendee must be a whole number of 1 or more (or blank for unlimited).', true); return;
     }
 
+    // Disabled only after every validation check above has passed (not at
+    // the top of the function) so a validation error's early `return`
+    // never leaves the button stuck disabled — same guard pattern already
+    // used for the attendee checkout button and the admin/attendee
+    // sign-in buttons elsewhere in this app.
+    var btn = document.getElementById('btnSaveEvent');
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
     google.script.run
       .withSuccessHandler(function() {
+        btn.disabled = false;
+        btn.textContent = originalText;
         closeEventModal();
         loadEventsList();
       })
-      .withFailureHandler(function(err) { showModalMsg(err.message, true); })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        showModalMsg(err.message, true);
+      })
       .createOrUpdateEvent(ADMIN_TOKEN, payload);
   }
 

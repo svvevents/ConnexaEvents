@@ -266,8 +266,11 @@
 <? } ?>
 
 <script>
-  var ADMIN_TOKEN = '<?= token ?>';
-  var INITIAL_EVENT_ID = '<?= eventId ?>';
+  // JSON.stringify (server-side), not the HTML-escaped print scriptlet —
+  // INITIAL_EVENT_ID in particular is an unvalidated URL param at render
+  // time (see the same note in AdminResetPassword.html).
+  var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
+  var INITIAL_EVENT_ID = <?!= JSON.stringify(eventId) ?>;
 
   // Mirrors the backend's FLOORPLAN_CANVAS_WIDTH / HEIGHT / GRID_SIZE
   // constants (Code.gs) — the server re-validates and re-snaps everything
@@ -477,6 +480,14 @@
     document.getElementById('seatGenOverlay').style.display = 'none';
   }
 
+  // Soft advisory only (Generate stays enabled above this) — large grids
+  // are a legitimate use of this tool (theatre-style assigned seating for
+  // a big venue), not just a fat-fingered rows/columns value, so this
+  // isn't a hard cap. It's just a heads-up that a grid this size means
+  // that many individually-interactive DOM elements on the canvas at
+  // once, which can get sluggish to edit further.
+  var SEAT_GEN_WARN_THRESHOLD = 500;
+
   /** Computes the grid's required footprint from the modal's current inputs and shows a live seat-count/fit preview, disabling Generate if it overflows the canvas. */
   function updateSeatGenPreview() {
     var g = readSeatGenInputs();
@@ -488,6 +499,9 @@
     if (fits) {
       preview.className = 'type-config-hint';
       preview.textContent = 'Will place ' + seatCount + ' seat(s), labeled A1–' + rowLetterForIndex(g.rows - 1) + g.seatsPerRow + ', using ' + totalWidth + ' × ' + totalHeight + 'px of the ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + ' canvas.';
+      if (seatCount > SEAT_GEN_WARN_THRESHOLD) {
+        preview.textContent += ' That\'s a large number of seats to edit at once — the canvas may feel sluggish afterward.';
+      }
     } else {
       preview.className = 'type-config-hint fp-modal-hint-error';
       preview.textContent = 'Doesn\'t fit: needs ' + totalWidth + ' × ' + totalHeight + 'px but the canvas is only ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + 'px. Reduce seat size/rows/columns, or pick a larger Canvas Size on the event\'s edit form.';
@@ -814,8 +828,19 @@
       .withSuccessHandler(function(res) {
         btn.disabled = false;
         btn.textContent = 'Save Layout';
-        showFpMsg('Saved ' + res.savedCount + ' element(s).', false);
-        loadFloorPlan(currentEventId); // reload so server-assigned IDs/snapping are reflected
+        var protectedEls = res.protectedElements || [];
+        if (protectedEls.length) {
+          // Kept on screen (isError styling, but not an error) rather than
+          // auto-hiding after 4s like a plain success message — the admin
+          // needs a real chance to read which booth(s) survived a delete
+          // attempt because they have a confirmed booking.
+          var names = protectedEls.map(function(p) { return p.label || p.elementId; }).join(', ');
+          showFpMsg('Saved ' + res.savedCount + ' element(s). ' + protectedEls.length +
+            ' booth(s) with a confirmed booking could not be removed and were kept: ' + names + '.', true);
+        } else {
+          showFpMsg('Saved ' + res.savedCount + ' element(s).', false);
+        }
+        loadFloorPlan(currentEventId); // reload so server-assigned IDs/snapping (and any protected elements) are reflected
       })
       .withFailureHandler(function(err) {
         btn.disabled = false;

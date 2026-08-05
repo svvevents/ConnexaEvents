@@ -47,9 +47,11 @@
   </div>
 
   <script>
-    var email = '<?= email ?>';
-    var scope = '<?= scope ?>';
-    var token = '<?= token ?>';
+    // JSON.stringify (server-side), not the HTML-escaped print scriptlet —
+    // see the same note in AdminResetPassword.html.
+    var email = <?!= JSON.stringify(email) ?>;
+    var scope = <?!= JSON.stringify(scope) ?>;
+    var token = <?!= JSON.stringify(token) ?>;
     var btn = document.getElementById('btnUnsub');
     if (btn) {
       btn.addEventListener('click', function() {

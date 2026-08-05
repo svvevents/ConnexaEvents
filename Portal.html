@@ -750,6 +750,60 @@
     var DIETARY_OPTIONS = ['Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-Free', 'Dairy-Free', 'Nut Allergy'];
 
     var portalState = { email: '', sessionToken: '', tiles: [], profile: null, businessTypeOptions: [], currentEvent: null, isRegistered: false };
+
+    // Attendee session persistence — the server issues a 6-hour session
+    // token (see ATTENDEE_SESSION_TTL_SECONDS in Code.js), but until now
+    // nothing survived a page reload: portalState lived only in memory, so
+    // an accidental refresh (common on mobile at a live event) forced a
+    // full OTP re-verification even though the server-side session was
+    // still perfectly valid. sessionStorage (not localStorage) is
+    // deliberate — it survives a reload but clears when the tab closes,
+    // matching "stay signed in for this visit" rather than persisting
+    // indefinitely on a shared/public device.
+    var ATTENDEE_SESSION_STORAGE_KEY = 'connexaAttendeeSession';
+
+    function saveAttendeeSessionToStorage_(sessionToken, email) {
+      try {
+        sessionStorage.setItem(ATTENDEE_SESSION_STORAGE_KEY, JSON.stringify({ sessionToken: sessionToken, email: email }));
+      } catch (e) { /* sessionStorage unavailable (private browsing, etc.) — session just won't survive a reload, same as before this change */ }
+    }
+
+    function clearAttendeeSessionStorage_() {
+      try { sessionStorage.removeItem(ATTENDEE_SESSION_STORAGE_KEY); } catch (e) { /* no-op */ }
+    }
+
+    /**
+     * Called once on page load. If a saved session exists, attempts a
+     * silent authenticateUserPortal with it and, on success, skips
+     * straight to the portal shell — the attendee never sees the landing/
+     * OTP screen at all. On failure (expired/invalid token), clears the
+     * stale entry and falls through to the landing screen that's already
+     * showing by default, with no error shown — an expired background
+     * session isn't a mistake the attendee made.
+     */
+    function tryRestoreAttendeeSession_() {
+      var raw;
+      try { raw = sessionStorage.getItem(ATTENDEE_SESSION_STORAGE_KEY); } catch (e) { raw = null; }
+      if (!raw) return;
+      var saved;
+      try { saved = JSON.parse(raw); } catch (e) { saved = null; }
+      if (!saved || !saved.sessionToken) { clearAttendeeSessionStorage_(); return; }
+
+      portalState.sessionToken = saved.sessionToken;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          portalState.email = res.email;
+          portalState.tiles = res.tiles || [];
+          portalState.profile = res.profile || null;
+          portalState.businessTypeOptions = res.businessTypeOptions || [];
+          showPortalShell();
+        })
+        .withFailureHandler(function() {
+          clearAttendeeSessionStorage_();
+          portalState.sessionToken = '';
+        })
+        .authenticateUserPortal(portalState.sessionToken);
+    }
     var expandedRegisterKey = null;
     var regCart = { eventId: null, event: null, formDef: null, attendees: [], umbrellaChildren: [] };
     // Client-side cache of getRegistrationFormDefinition results, keyed by
@@ -819,6 +873,7 @@
       document.getElementById('drawerOverlay').addEventListener('click', function(e) {
         if (e.target.id === 'drawerOverlay') closeDrawer(); // backdrop click, not the panel itself
       });
+      tryRestoreAttendeeSession_();
     });
 
     /* ================= ADMIN TOGGLE / LOGIN ================= */
@@ -983,6 +1038,7 @@
           portalState.tiles = res.tiles || [];
           portalState.profile = res.profile || null;
           portalState.businessTypeOptions = res.businessTypeOptions || [];
+          saveAttendeeSessionToStorage_(portalState.sessionToken, portalState.email);
           showPortalShell();
         })
         .withFailureHandler(function(err) {
@@ -1046,6 +1102,7 @@
     }
 
     function logout() {
+      clearAttendeeSessionStorage_();
       portalState = { email: '', sessionToken: '', tiles: [], profile: null, currentEvent: null, isRegistered: false };
       regCart = { eventId: null, event: null, formDef: null, attendees: [] };
       regFormDefCache = {}; // prefetched form defs were fetched for the outgoing user's email — must not leak to the next login
@@ -1542,6 +1599,12 @@
           html += '<button type="button" class="btn-secondary ea-preferences-btn">Preferences</button>';
         }
         html += '<button type="button" class="btn-secondary ea-itinerary-btn">My Itinerary</button>';
+        // Always rendered for a B2B entity — getMyChosenByReport is the
+        // real gate (it throws if the admin hasn't turned this report on
+        // for this specific event), so a click when it's off just shows
+        // that message rather than the button needing its own separate
+        // visibility flag threaded through every caller of this function.
+        html += '<button type="button" class="btn-secondary ea-chosenby-btn">Who Chose Me</button>';
       }
       if (hasFileUpload) {
         html += '<button type="button" class="btn-secondary ea-uploads-btn">My Uploads</button>';
@@ -1562,6 +1625,8 @@
         if (prefsBtn) prefsBtn.addEventListener('click', function() { openPreferencesDrawer(entityId, entityName, null); });
         var itinBtn = row.querySelector('.ea-itinerary-btn');
         if (itinBtn) itinBtn.addEventListener('click', function() { openItineraryDrawer(entityId, entityName); });
+        var chosenByBtn = row.querySelector('.ea-chosenby-btn');
+        if (chosenByBtn) chosenByBtn.addEventListener('click', function() { openChosenByDrawer(entityId, entityName); });
         var uploadsBtn = row.querySelector('.ea-uploads-btn');
         if (uploadsBtn) uploadsBtn.addEventListener('click', function() { openMyUploadsDrawer(entityId, entityName, getMilestonesForEntityClient_(data, entityId)); });
       });
@@ -2630,6 +2695,16 @@
       var jobTitle = document.getElementById('regAttJobTitle').value.trim();
       var fullName = (firstName + ' ' + surname).trim();
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showRegFormError('Please enter a valid email address.'); return null; }
+      // Same-company-only, checked client-side too for immediate feedback
+      // — submitEventRegistrationBatch enforces this authoritatively
+      // server-side regardless, so this is purely a faster "you made a
+      // typo" signal, not the real gate.
+      var myDomain = (portalState.email.split('@')[1] || '').toLowerCase();
+      var attendeeDomain = email.split('@')[1] || '';
+      if (attendeeDomain !== myDomain) {
+        showRegFormError('You can only register colleagues at your own company (' + myDomain + '). This person will need to register themselves.');
+        return null;
+      }
       if (!firstName || !surname || !jobTitle) { showRegFormError('First Name, Surname, and Job Title are required.'); return null; }
       if (regCart.attendees.some(function(a) { return a.email === email; })) {
         showRegFormError('This email has already been added to this registration.'); return null;
@@ -3363,9 +3438,15 @@
       var payload = { fullName: prefAppState.user.fullName, selectedSelections: selectedSelections };
 
       google.script.run
-        .withSuccessHandler(function() {
+        .withSuccessHandler(function(res) {
           msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
-          msgEl.textContent = 'Your meeting preferences have been updated successfully!'; msgEl.style.display = 'block';
+          // droppedCount is normally 0 — the selection list only ever
+          // offers eligible candidates in the first place — so this only
+          // ever shows up if the saved list changed underneath the
+          // attendee between opening this drawer and clicking Save.
+          msgEl.textContent = 'Your meeting preferences have been updated successfully!' +
+            (res && res.droppedCount ? ' (' + res.droppedCount + ' selection(s) were no longer eligible and were not saved.)' : '');
+          msgEl.style.display = 'block';
           btn.disabled = false;
           // A successful save IS what makes a SetPreferences milestone
           // "done" (see hasSubmittedPreferences_ on the server) — update
@@ -3388,6 +3469,43 @@
     function openItineraryDrawer(entityId, entityName) {
       portalState.currentEvent = { eventId: entityId, eventName: entityName };
       openDrawer('My Itinerary — ' + entityName, renderItineraryDrawerContent);
+    }
+
+    /**
+     * "Who Chose Me" — only available when an admin has explicitly turned
+     * it on for this specific event (see the checkbox in the admin edit
+     * form / ShowChosenByToAttendees); getMyChosenByReport is the actual
+     * gate, this drawer just displays whatever it returns or the error if
+     * it's off.
+     */
+    function openChosenByDrawer(entityId, entityName) {
+      openDrawer('Who Chose Me — ' + entityName, function(body) { renderChosenByDrawerContent(body, entityId); });
+    }
+
+    function renderChosenByDrawerContent(body, entityId) {
+      body.innerHTML = '<p>Loading…</p>';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var chosenBy = (res && res.chosenBy) || [];
+          if (!chosenBy.length) {
+            body.innerHTML = '<p style="color:#5f6368;">No one has chosen you yet — check back later as more preferences are submitted.</p>';
+            return;
+          }
+          var html = '<p style="color:#5f6368; margin-bottom:14px;">' + chosenBy.length +
+            ' compan' + (chosenBy.length === 1 ? 'y has' : 'ies have') + ' selected you as a meeting preference:</p>';
+          chosenBy.forEach(function(c) {
+            html += '<div class="subevent-card" style="margin-bottom:10px;">' +
+              '<div class="subevent-card-name">' + escapeHtml(c.companyName || c.fullName || c.email) + '</div>' +
+              (c.fullName ? '<div class="subevent-card-meta">' + escapeHtml(c.fullName) + '</div>' : '') +
+              (c.companyDescription ? '<div class="subevent-card-meta">' + escapeHtml(c.companyDescription) + '</div>' : '') +
+              '</div>';
+          });
+          body.innerHTML = html;
+        })
+        .withFailureHandler(function(err) {
+          body.innerHTML = '<div class="msg-error">' + escapeHtml(err.message) + '</div>';
+        })
+        .getMyChosenByReport(portalState.sessionToken, entityId);
     }
 
     /**
