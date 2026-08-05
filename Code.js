@@ -542,6 +542,7 @@ function doGet(e) {
     tpl.adminEmail = adminEmail || '';
     tpl.token = adminEmail ? params.token : '';
     tpl.portalUrl = getWebAppUrl_();
+    tpl.openEventId = params.openEvent || '';
     return tpl.evaluate()
       .setTitle('Admin Portal')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -3138,6 +3139,7 @@ function getFloorPlanLayout(token, eventId) {
     eventType: event.eventType,
     canvasWidth: canvasSize.width,
     canvasHeight: canvasSize.height,
+    floorPlanSize: normalizeFloorPlanSize_(event.floorPlanSize),
     gridSize: FLOORPLAN_GRID_SIZE,
     elements: elements,
     // Asset Types (from this event's own TypeConfig — see
@@ -3894,6 +3896,19 @@ const ATTENDEE_OTP_MAX_ATTEMPTS = 5;              // wrong-code attempts before 
 const ATTENDEE_OTP_WINDOW_SECONDS = 21600;
 const ATTENDEE_OTP_WINDOW_MAX_REQUESTS = 8;
 
+// Testing/QA escape hatch: with made-up test emails there's no real inbox
+// to receive a code, so when the ATTENDEE_OTP_BYPASS script property is
+// set to 'true', requestAttendeeLoginCode skips MailApp entirely and
+// always issues this fixed code instead of a random one — the rest of the
+// flow (cooldown/rate-limit bookkeeping, code entry screen, expiry,
+// verifyAttendeeLoginCode) is untouched. Off by default; toggle via
+// Project Settings > Script Properties in the Apps Script editor, no
+// deploy needed either way.
+const ATTENDEE_OTP_TESTING_CODE = '000000';
+function attendeeOtpBypassEnabled_() {
+  return PropertiesService.getScriptProperties().getProperty('ATTENDEE_OTP_BYPASS') === 'true';
+}
+
 function attendeeOtpCacheKey_(email) { return 'attendee_otp_' + email; }
 function attendeeOtpCooldownKey_(email) { return 'attendee_otp_cooldown_' + email; }
 function attendeeOtpWindowCountKey_(email) { return 'attendee_otp_windowcount_' + email; }
@@ -3921,12 +3936,17 @@ function requestAttendeeLoginCode(email) {
     throw new Error('Too many sign-in codes requested for this address recently. Please try again later.');
   }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const bypass = attendeeOtpBypassEnabled_();
+  const code = bypass ? ATTENDEE_OTP_TESTING_CODE : String(Math.floor(100000 + Math.random() * 900000));
   cache.put(attendeeOtpCacheKey_(email), JSON.stringify({
     code: code, attempts: 0, expiresAt: Date.now() + ATTENDEE_OTP_TTL_SECONDS * 1000
   }), ATTENDEE_OTP_TTL_SECONDS);
   cache.put(attendeeOtpCooldownKey_(email), '1', ATTENDEE_OTP_COOLDOWN_SECONDS);
   cache.put(windowKey, String(windowCount + 1), ATTENDEE_OTP_WINDOW_SECONDS);
+
+  // Bypass mode: no real inbox to deliver to, so skip MailApp — the
+  // attendee just enters ATTENDEE_OTP_TESTING_CODE on the next screen.
+  if (bypass) return { success: true };
 
   try {
     MailApp.sendEmail({

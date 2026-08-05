@@ -64,18 +64,21 @@
     .admin-entry-link:hover { color: var(--primary-color); }
 
     /* ---------- PERSISTENT PORTAL SHELL ---------- */
-    .shell-screen { display: none; min-height: 100vh; flex-direction: column; }
+    /* height (not min-height): the shell fills exactly one viewport and
+       only .shell-main scrolls internally, so .shell-sidebar stays fixed
+       in place instead of scrolling away with a long registration form. */
+    .shell-screen { display: none; height: 100vh; flex-direction: column; }
     .shell-topbar {
       background: white; border-bottom: 3px solid var(--navy-color); display: flex; align-items: center;
-      justify-content: space-between; padding: 14px 24px; position: sticky; top: 0; z-index: 50;
+      justify-content: space-between; padding: 14px 24px; position: sticky; top: 0; z-index: 50; flex-shrink: 0;
     }
     .shell-topbar-left img.shell-logo { height: 38px; width: auto; display: block; cursor: pointer; }
     .shell-topbar-right { display: flex; align-items: center; gap: 14px; }
     .shell-topbar-right .user-chip { font-size: 13px; color: var(--text-muted); background: var(--bg-color); padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border-color); }
     .logout-link { font-size: 13px; color: var(--primary-color); cursor: pointer; text-decoration: underline; white-space: nowrap; font-weight: 600; }
 
-    .shell-body { display: flex; flex: 1; }
-    .shell-sidebar { width: 224px; flex-shrink: 0; background: var(--navy-color); padding: 12px; }
+    .shell-body { display: flex; flex: 1; overflow: hidden; }
+    .shell-sidebar { width: 224px; flex-shrink: 0; background: var(--navy-color); padding: 12px; overflow-y: auto; }
     .shell-nav-item {
       display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 14px; font-weight: 600;
       color: #b9c2d0; cursor: pointer; border-radius: 10px; margin-bottom: 4px; transition: background .12s ease, color .12s ease;
@@ -84,7 +87,19 @@
     .shell-nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
     .shell-nav-item.active { background: var(--primary-color); color: #fff; }
 
-    .shell-main { flex: 1; padding: 28px; max-width: 1180px; }
+    /* Live order summary, mirrored into the fixed sidebar so subtotals/
+       totals stay visible while scrolling a long registration form. Same
+       markup as .reg-order-summary (see REGISTRATION CART / CHECKOUT
+       below) but restyled for the dark sidebar background. */
+    .reg-order-summary-sidebar {
+      margin-top: 16px; padding: 14px; border-radius: 10px; background: rgba(255,255,255,0.06);
+      border-left: 4px solid var(--primary-color);
+    }
+    .reg-order-summary-sidebar h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: #b9c2d0; }
+    .reg-order-summary-sidebar .reg-order-line { color: #dfe3ea; }
+    .reg-order-summary-sidebar .reg-order-total { color: #fff; border-top-color: rgba(255,255,255,0.15); }
+
+    .shell-main { flex: 1; padding: 28px; max-width: 1180px; overflow-y: auto; }
     .shell-panel { display: none; }
     .shell-panel.active { display: block; }
     .shell-panel h2 { margin: 0 0 6px; font-weight: 800; }
@@ -229,6 +244,11 @@
     .reg-actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
     .reg-actions .btn-secondary { background: #eef1f5; color: var(--text-dark); border: none; padding: 10px 20px; font-size: 14px; font-weight: 700; border-radius: 8px; cursor: pointer; }
 
+    /* .reg-order-summary-mobile: below 860px the sidebar (and its own
+       order-summary copy) is hidden entirely in favor of the bottom nav,
+       so this fallback renders inline above the form like it always has.
+       Above 860px it's hidden — see the desktop override in the MOBILE
+       RESPONSIVE block below. */
     .reg-order-summary {
       position: sticky; top: 0; z-index: 6; background: white; border: 1px solid var(--border-color);
       border-left: 4px solid var(--primary-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;
@@ -474,8 +494,14 @@
     .pref-table td { padding: 10px 12px; border-bottom: 1px solid #f1f3f4; }
     .pref-table tbody tr:hover { background: var(--bg-color); }
     .btn-more-details { background: none; border: none; color: var(--primary-color); text-decoration: underline; cursor: pointer; font-family: inherit; font-size: 13px; }
+    /* Resets native <button> chrome so a real, keyboard-operable button can be styled identically to the plain-text links it replaces (see .admin-entry-link, .forgot-link, .logout-link, .reg-cart-remove, .checkout-line-remove — each keeps its own color/size, this only strips the button box). */
+    .text-link-btn { background: none; border: none; padding: 0; margin: 0; font: inherit; text-align: inherit; }
 
     /* ---------- MOBILE RESPONSIVE ---------- */
+    @media (min-width: 861px) {
+      /* Desktop has the sidebar copy (.reg-order-summary-sidebar) instead. */
+      .reg-order-summary-mobile { display: none !important; }
+    }
     @media (max-width: 860px) {
       .shell-sidebar { display: none; }
       .shell-main { padding: 18px 16px 90px; }
@@ -530,7 +556,7 @@
         <small id="landingEmailHelp" class="field-help">Enter the email you registered with — we'll send a sign-in code</small>
 
         <button id="btnLandingContinue">Send Code</button>
-        <span class="admin-entry-link" onclick="showAdminLogin()">Are you an event admin?</span>
+        <button type="button" class="admin-entry-link text-link-btn" onclick="showAdminLogin()">Are you an event admin?</button>
       </div>
 
       <div id="landingCodeStep" style="display:none;">
@@ -539,8 +565,8 @@
         <small class="field-help">Enter the 6-digit code we emailed you. It expires in 10 minutes.</small>
 
         <button id="btnLandingVerify">Verify &amp; Continue</button>
-        <span class="admin-entry-link" onclick="resendLandingCode()">Resend code</span>
-        <span class="admin-entry-link" onclick="backToLandingEmailStep()">Use a different email</span>
+        <button type="button" class="admin-entry-link text-link-btn" onclick="resendLandingCode()">Resend code</button>
+        <button type="button" class="admin-entry-link text-link-btn" onclick="backToLandingEmailStep()">Use a different email</button>
       </div>
     </div>
   </div>
@@ -561,15 +587,15 @@
 
       <label class="field-label" for="adminPasswordInput">Password</label>
       <input type="password" id="adminPasswordInput" placeholder="••••••••">
-      <span class="forgot-link" onclick="showForgotPassword()">Forgot password?</span>
+      <button type="button" class="forgot-link text-link-btn" onclick="showForgotPassword()">Forgot password?</button>
 
       <div id="forgotPasswordBlock" style="display:none; margin-bottom:14px;">
         <label class="field-label">We'll email a reset link to the address above.</label>
-        <button type="button" class="btn-secondary-action" onclick="sendPasswordReset()">Send Reset Link</button>
+        <button type="button" class="btn-secondary-action" id="btnSendPasswordReset" onclick="sendPasswordReset()">Send Reset Link</button>
       </div>
 
       <button id="btnAdminSignIn">Sign In</button>
-      <span class="admin-entry-link" onclick="showAttendeeLogin()">&larr; Back to attendee login</span>
+      <button type="button" class="admin-entry-link text-link-btn" onclick="showAttendeeLogin()">&larr; Back to attendee login</button>
     </div>
   </div>
 
@@ -583,7 +609,7 @@
       </div>
       <div class="shell-topbar-right">
         <span class="user-chip" id="shellUserChip"></span>
-        <span class="logout-link" onclick="logout()">Log Out</span>
+        <button type="button" class="logout-link text-link-btn" onclick="logout()">Log Out</button>
       </div>
     </div>
 
@@ -601,9 +627,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><line x1="12" y1="14" x2="12" y2="18"></line><line x1="10" y1="16" x2="14" y2="16"></line></svg>
           Register for an Event
         </div>
+
+        <!-- Live order summary during an in-progress registration — see
+             renderOrderSummary(); hidden whenever there's nothing to show. -->
+        <div id="regOrderSummarySidebar" class="reg-order-summary-sidebar" style="display:none;"></div>
       </div>
 
-      <div class="shell-main">
+      <div class="shell-main" id="shellMain">
 
         <!-- PANEL: MY PROFILE -->
         <div id="shellPanel-profile" class="shell-panel">
@@ -614,16 +644,16 @@
           <div class="profile-section">
             <h3>Personal Details</h3>
             <div class="form-row">
-              <div class="form-group"><label>First Name *</label><input type="text" id="profileFirstName" placeholder="e.g. Jane"></div>
-              <div class="form-group"><label>Surname *</label><input type="text" id="profileSurname" placeholder="e.g. Doe"></div>
+              <div class="form-group"><label for="profileFirstName">First Name *</label><input type="text" id="profileFirstName" placeholder="e.g. Jane"></div>
+              <div class="form-group"><label for="profileSurname">Surname *</label><input type="text" id="profileSurname" placeholder="e.g. Doe"></div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>Job Title *</label><input type="text" id="profileJobTitle" placeholder="e.g. Marketing Manager"></div>
-              <div class="form-group"><label>Email</label><input type="email" id="profileEmail" readonly></div>
+              <div class="form-group"><label for="profileJobTitle">Job Title *</label><input type="text" id="profileJobTitle" placeholder="e.g. Marketing Manager"></div>
+              <div class="form-group"><label for="profileEmail">Email</label><input type="email" id="profileEmail" readonly></div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>Mobile</label><input type="tel" id="profileMobile" placeholder="e.g. +27 82 123 4567"></div>
-              <div class="form-group"><label>LinkedIn</label><input type="text" id="profileLinkedIn" placeholder="e.g. linkedin.com/in/janedoe"></div>
+              <div class="form-group"><label for="profileMobile">Mobile</label><input type="tel" id="profileMobile" placeholder="e.g. +27 82 123 4567"></div>
+              <div class="form-group"><label for="profileLinkedIn">LinkedIn</label><input type="text" id="profileLinkedIn" placeholder="e.g. linkedin.com/in/janedoe"></div>
             </div>
             <div class="form-group">
               <label>Dietary Requirements</label>
@@ -640,17 +670,17 @@
             <h3>Company Details</h3>
             <div class="form-row">
               <div class="form-group">
-                <label>Company Name</label>
+                <label for="profileCompanyName">Company Name</label>
                 <input type="text" id="profileCompanyName" placeholder="e.g. Acme Events Ltd">
                 <div id="profileCompanyLockNote" class="field-lock-note" style="display:none;">Set by a colleague at your company — contact them to change it.</div>
               </div>
-              <div class="form-group"><label>Website</label><input type="text" id="profileWebsite" placeholder="e.g. www.acmeevents.com"></div>
+              <div class="form-group"><label for="profileWebsite">Website</label><input type="text" id="profileWebsite" placeholder="e.g. www.acmeevents.com"></div>
             </div>
-            <div class="form-group"><label>Company Description</label><textarea id="profileCompanyDescription" rows="2" placeholder="e.g. A brief description of what your company does"></textarea></div>
-            <div class="form-group"><label>Business Type</label><select id="profileMembershipCategory"></select></div>
+            <div class="form-group"><label for="profileCompanyDescription">Company Description</label><textarea id="profileCompanyDescription" rows="2" placeholder="e.g. A brief description of what your company does"></textarea></div>
+            <div class="form-group"><label for="profileMembershipCategory">Business Type</label><select id="profileMembershipCategory"></select></div>
             <div class="form-row form-row-hidden">
-              <div class="form-group"><label>Membership Type</label><input type="text" id="profileMembershipType"></div>
-              <div class="form-group"><label>Domain</label><input type="text" id="profileDomain" readonly></div>
+              <div class="form-group"><label for="profileMembershipType">Membership Type</label><input type="text" id="profileMembershipType"></div>
+              <div class="form-group"><label for="profileDomain">Domain</label><input type="text" id="profileDomain" readonly></div>
             </div>
           </div>
 
@@ -741,8 +771,21 @@
       <span class="modal-close" onclick="closeEmailItineraryModal()">&times;</span>
       <h3 style="margin-top:0;">Email Itinerary</h3>
       <p style="font-size:14px; color:#5f6368;">We'll send a copy of this itinerary to your registered email address.</p>
-      <div class="form-group"><label>Recipient Email</label><input type="email" id="sendItinEmailInput" disabled></div>
+      <div class="form-group"><label for="sendItinEmailInput">Recipient Email</label><input type="email" id="sendItinEmailInput" disabled></div>
       <button class="btn-submit" id="btnConfirmSendEmail" style="width:100%;">Send Email</button>
+    </div>
+  </div>
+
+  <!-- Modal: Confirm Registration — clicking "Complete Registration" opens
+       this overlay instead of swapping the main panel in place, so it's
+       unmistakable that this final summary still needs the attendee's
+       (client's) review/approval before it's submitted. The registration
+       form underneath is left intact, so closing it without confirming
+       preserves whatever was filled in. -->
+  <div id="checkoutConfirmModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:560px;">
+      <span class="modal-close" onclick="closeCheckoutConfirmModal()">&times;</span>
+      <div id="checkoutConfirmBody"></div>
     </div>
   </div>
 
@@ -876,6 +919,19 @@
       tryRestoreAttendeeSession_();
     });
 
+    // Escape closes whichever drawer/modal is currently open — mirrors the
+    // backdrop-click-to-close handlers above, just from the keyboard.
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') return;
+      if (document.getElementById('drawerOverlay').classList.contains('open')) { closeDrawer(); return; }
+      var modalIds = ['prefDetailsModal', 'itinProfileModal', 'itinEmailModal', 'checkoutConfirmModal'];
+      var closers = { prefDetailsModal: closePrefModal, itinProfileModal: closeItinProfileModal, itinEmailModal: closeEmailItineraryModal, checkoutConfirmModal: closeCheckoutConfirmModal };
+      for (var i = 0; i < modalIds.length; i++) {
+        var el = document.getElementById(modalIds[i]);
+        if (el && el.style.display === 'flex') { closers[modalIds[i]](); return; }
+      }
+    });
+
     /* ================= ADMIN TOGGLE / LOGIN ================= */
     /**
      * Admin sign-in lives on its own screen (adminLoginScreen), reached via a
@@ -909,12 +965,18 @@
 
       if (!email) { errEl.textContent = 'Please enter your email address first.'; errEl.style.display = 'block'; return; }
 
+      var btn = document.getElementById('btnSendPasswordReset');
+      var originalText = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Sending…';
+
       google.script.run
         .withSuccessHandler(function(res) {
+          btn.disabled = false; btn.textContent = originalText;
           okEl.textContent = res.message;
           okEl.style.display = 'block';
         })
         .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = originalText;
           errEl.textContent = err.message;
           errEl.style.display = 'block';
         })
@@ -1093,7 +1155,20 @@
       document.getElementById('shellNav-' + panelId).classList.add('active');
       document.getElementById('mobileNav-' + panelId).classList.add('active');
       document.getElementById('shellPanel-' + panelId).classList.add('active');
-      window.scrollTo(0, 0);
+      // .shell-main is its own scroll container (so .shell-sidebar can stay
+      // fixed in place) — window.scrollTo no longer reaches it.
+      var shellMain = document.getElementById('shellMain');
+      if (shellMain) shellMain.scrollTop = 0; else window.scrollTo(0, 0);
+
+      // The fixed-sidebar order summary only makes sense while the
+      // Register panel's in-progress cart (regCart) is what's on screen —
+      // hide it elsewhere so it doesn't linger while browsing My Events,
+      // and refresh it on the way back in case it was cleared meanwhile.
+      var orderSummarySidebar = document.getElementById('regOrderSummarySidebar');
+      if (orderSummarySidebar) {
+        if (panelId === 'register') { renderOrderSummary(); }
+        else { orderSummarySidebar.style.display = 'none'; }
+      }
     }
 
     /** Clicking the logo from anywhere in the portal returns to the My Events landing view. */
@@ -1204,14 +1279,20 @@
         website: document.getElementById('profileWebsite').value.trim()
       };
 
+      var btn = document.getElementById('btnSaveProfile');
+      var originalText = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving…';
+
       google.script.run
         .withSuccessHandler(function() {
+          btn.disabled = false; btn.textContent = originalText;
           portalState.profile = Object.assign({ exists: true }, payload);
           msgEl.className = 'msg-success';
           msgEl.textContent = 'Profile saved successfully!';
           msgEl.style.display = 'block';
         })
         .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = originalText;
           msgEl.className = 'msg-error';
           msgEl.textContent = 'Error saving profile: ' + err.message;
           msgEl.style.display = 'block';
@@ -1652,7 +1733,7 @@
           '<div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">' +
             statusBadge +
             renderEntityActionButtonsHtml(sub.eventId, sub.eventName, sub.eventType, sub.milestones, !!sub.detailsPageUrl) +
-            (showLeave ? '<span class="reg-cart-remove session-leave-btn" data-leave-session="' + escapeHtml(sub.eventId) + '" data-session-name="' + escapeHtml(sub.eventName) + '">Leave session</span>' : '') +
+            (showLeave ? '<button type="button" class="reg-cart-remove session-leave-btn text-link-btn" data-leave-session="' + escapeHtml(sub.eventId) + '" data-session-name="' + escapeHtml(sub.eventName) + '">Leave session</button>' : '') +
           '</div>' +
         '</div>' +
         (sub.description ? '<div class="agenda-desc" style="margin-top:6px;">' + escapeHtml(sub.description) + '</div>' : '') +
@@ -1834,10 +1915,10 @@
     function paintConfirmInfoDrawer(milestone, container, body, info) {
       body.innerHTML =
         (milestone.description ? '<p style="color:#5f6368; font-size:13px;">' + escapeHtml(milestone.description) + '</p>' : '') +
-        '<div class="form-group"><label>Company Name</label><input type="text" class="ms-ci-companyName" value="' + escapeHtml(info.companyName || '') + '"></div>' +
-        '<div class="form-group"><label>Business Type</label><input type="text" class="ms-ci-membershipCategory" value="' + escapeHtml(info.membershipCategory || '') + '"></div>' +
-        '<div class="form-group"><label>Company Description</label><textarea class="ms-ci-companyDescription" rows="3">' + escapeHtml(info.companyDescription || '') + '</textarea></div>' +
-        '<div class="form-group"><label>Website</label><input type="text" class="ms-ci-website" value="' + escapeHtml(info.website || '') + '"></div>' +
+        '<div class="form-group"><label for="msCiCompanyName">Company Name</label><input type="text" id="msCiCompanyName" class="ms-ci-companyName" value="' + escapeHtml(info.companyName || '') + '"></div>' +
+        '<div class="form-group"><label for="msCiMembershipCategory">Business Type</label><input type="text" id="msCiMembershipCategory" class="ms-ci-membershipCategory" value="' + escapeHtml(info.membershipCategory || '') + '"></div>' +
+        '<div class="form-group"><label for="msCiCompanyDescription">Company Description</label><textarea id="msCiCompanyDescription" class="ms-ci-companyDescription" rows="3">' + escapeHtml(info.companyDescription || '') + '</textarea></div>' +
+        '<div class="form-group"><label for="msCiWebsite">Website</label><input type="text" id="msCiWebsite" class="ms-ci-website" value="' + escapeHtml(info.website || '') + '"></div>' +
         '<button type="button" class="btn-submit ms-confirm-submit-btn">Confirm</button>' +
         '<div class="ms-action-msg" style="display:none; font-size:12px; margin-top:8px;"></div>';
 
@@ -2076,6 +2157,9 @@
       attendeeOptIns = {};
       attendeeRankState = {};
       document.querySelectorAll('#registerGrid .event-tile').forEach(function(t) { t.classList.remove('expanded'); });
+      var orderSummarySidebar = document.getElementById('regOrderSummarySidebar');
+      if (orderSummarySidebar) { orderSummarySidebar.style.display = 'none'; orderSummarySidebar.innerHTML = ''; }
+      closeCheckoutConfirmModal();
     }
 
     /** 'details' mode body: DetailsPageUrl iframe if configured, else a built-in summary + agenda. */
@@ -2159,7 +2243,7 @@
       if (regCart.ownerAlreadyRegistered) {
         html += '<div class="reg-already-note">You\'re already registered for this event. You can still register colleagues below.</div>';
       }
-      html += '<div id="regOrderSummary" class="reg-order-summary" style="display:none;"></div>';
+      html += '<div id="regOrderSummaryMobile" class="reg-order-summary reg-order-summary-mobile" style="display:none;"></div>';
       html += '<div id="regCartWrap" class="reg-cart-wrap" style="display:none;"><h4>Attendees added so far</h4><div id="regCartList"></div></div>';
       html += '<div id="regFormMsg" style="display:none;" class="msg-error"></div>';
       html += '<div id="regAttendeeFields"></div>';
@@ -2196,20 +2280,20 @@
       var html = '<div class="profile-section">' +
         '<h3>Personal Details</h3>' +
         '<div class="form-row">' +
-          '<div class="form-group"><label>First Name *</label><input type="text" id="regAttFirstName" placeholder="e.g. Jane"></div>' +
-          '<div class="form-group"><label>Surname *</label><input type="text" id="regAttSurname" placeholder="e.g. Doe"></div>' +
+          '<div class="form-group"><label for="regAttFirstName">First Name *</label><input type="text" id="regAttFirstName" placeholder="e.g. Jane"></div>' +
+          '<div class="form-group"><label for="regAttSurname">Surname *</label><input type="text" id="regAttSurname" placeholder="e.g. Doe"></div>' +
         '</div>' +
         '<div class="form-row">' +
-          '<div class="form-group"><label>Job Title *</label><input type="text" id="regAttJobTitle" placeholder="e.g. Marketing Manager"></div>' +
-          '<div class="form-group"><label>Email *</label><input type="email" id="regAttEmail" placeholder="e.g. you@company.com" aria-describedby="regAttEmailHelp"><small id="regAttEmailHelp" class="field-help">We\'ll pre-fill this attendee\'s details if they\'ve registered before</small></div>' +
+          '<div class="form-group"><label for="regAttJobTitle">Job Title *</label><input type="text" id="regAttJobTitle" placeholder="e.g. Marketing Manager"></div>' +
+          '<div class="form-group"><label for="regAttEmail">Email *</label><input type="email" id="regAttEmail" placeholder="e.g. you@company.com" aria-describedby="regAttEmailHelp"><small id="regAttEmailHelp" class="field-help">We\'ll pre-fill this attendee\'s details if they\'ve registered before</small></div>' +
         '</div>' +
         '<div class="form-row">' +
-          '<div class="form-group"><label>Mobile</label><input type="tel" id="regAttMobile" placeholder="e.g. +27 82 123 4567"></div>' +
-          '<div class="form-group"><label>LinkedIn</label><input type="text" id="regAttLinkedIn" placeholder="e.g. linkedin.com/in/janedoe"></div>' +
+          '<div class="form-group"><label for="regAttMobile">Mobile</label><input type="tel" id="regAttMobile" placeholder="e.g. +27 82 123 4567"></div>' +
+          '<div class="form-group"><label for="regAttLinkedIn">LinkedIn</label><input type="text" id="regAttLinkedIn" placeholder="e.g. linkedin.com/in/janedoe"></div>' +
         '</div>';
 
       if (formDef.registrationTypes && formDef.registrationTypes.length && !b2bUsesRankedOptions) {
-        html += '<div class="form-group"><label>Registration Type *</label><select id="regAttType"><option value="">-- Select --</option>' +
+        html += '<div class="form-group"><label for="regAttType">Registration Type *</label><select id="regAttType"><option value="">-- Select --</option>' +
           formDef.registrationTypes.map(function(t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('') +
           '</select></div>';
       }
@@ -2243,15 +2327,15 @@
         '<div id="companyLookupMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>' +
         '<div class="form-row">' +
           '<div class="form-group">' +
-            '<label>Company Name *</label><input type="text" id="regAttCompanyName" placeholder="e.g. Acme Corp">' +
+            '<label for="regAttCompanyName">Company Name *</label><input type="text" id="regAttCompanyName" placeholder="e.g. Acme Corp">' +
             '<div id="regAttCompanyLockNote" class="field-lock-note" style="display:none;">Set by a colleague at your company — contact them to change it.</div>' +
           '</div>' +
-          '<div class="form-group"><label>Website</label><input type="text" id="regAttWebsite" placeholder="e.g. www.acmecorp.com"></div>' +
+          '<div class="form-group"><label for="regAttWebsite">Website</label><input type="text" id="regAttWebsite" placeholder="e.g. www.acmecorp.com"></div>' +
         '</div>' +
-        '<div class="form-group"><label>Company Description</label><textarea id="regAttCompanyDescription" rows="2" placeholder="e.g. A brief description of what your company does"></textarea></div>' +
-        '<div class="form-group"><label>Business Type</label><select id="regAttMembershipCategory"></select></div>';
+        '<div class="form-group"><label for="regAttCompanyDescription">Company Description</label><textarea id="regAttCompanyDescription" rows="2" placeholder="e.g. A brief description of what your company does"></textarea></div>' +
+        '<div class="form-group"><label for="regAttMembershipCategory">Business Type</label><select id="regAttMembershipCategory"></select></div>';
       if (formDef.isB2B && formDef.registrationTypes && formDef.registrationTypes.length) {
-        html += '<div class="form-group"><label>Membership Type *</label><select id="regAttMembershipType"><option value="">-- Select --</option>' +
+        html += '<div class="form-group"><label for="regAttMembershipType">Membership Type *</label><select id="regAttMembershipType"><option value="">-- Select --</option>' +
           formDef.registrationTypes.map(function(t) { return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>'; }).join('') + '</select></div>';
       }
       html += '</div>'; // close Company Details profile-section
@@ -2801,7 +2885,7 @@
       regCart.attendees.forEach(function(a, idx) {
         var row = document.createElement('div');
         row.className = 'reg-cart-row';
-        row.innerHTML = '<span>' + escapeHtml(a.fullName) + ' (' + escapeHtml(a.email) + ')</span><span class="reg-cart-remove">Remove</span>';
+        row.innerHTML = '<span>' + escapeHtml(a.fullName) + ' (' + escapeHtml(a.email) + ')</span><button type="button" class="reg-cart-remove text-link-btn">Remove</button>';
         row.querySelector('.reg-cart-remove').addEventListener('click', function() {
           regCart.attendees.splice(idx, 1);
           renderCartList();
@@ -2895,8 +2979,14 @@
      * so the two never disagree.
      */
     function renderOrderSummary() {
-      var el = document.getElementById('regOrderSummary');
-      if (!el || !regCart.formDef) return;
+      // Rendered into both the fixed sidebar (desktop) and an inline
+      // fallback (mobile, where the sidebar is hidden — see the
+      // .reg-order-summary-mobile media query) with identical content;
+      // CSS decides which one is actually visible for the viewport.
+      var targets = [document.getElementById('regOrderSummarySidebar'), document.getElementById('regOrderSummaryMobile')].filter(Boolean);
+      if (!targets.length || !regCart.formDef) return;
+      function hideAll() { targets.forEach(function(el) { el.style.display = 'none'; el.innerHTML = ''; }); }
+
       var evt = regCart.event;
       var currency = evt.currency || 'USD';
       var pricePer = Number(evt.price) || 0;
@@ -2904,7 +2994,7 @@
       var showsSummary = pricePer > 0 || formDef.isUmbrella ||
         (formDef.curatedEventOptions && formDef.curatedEventOptions.length) ||
         (formDef.exhibitionTables && formDef.exhibitionTables.length);
-      if (!showsSummary) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      if (!showsSummary) { hideAll(); return; }
 
       var lineItems = [];
       var total = 0;
@@ -2936,20 +3026,27 @@
       var draftLabel = (firstNameEl && firstNameEl.value.trim()) ? firstNameEl.value.trim() : 'This attendee';
       addAttendeeLines(draftLabel, buildDraftSubEventSelections());
 
-      if (!lineItems.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      if (!lineItems.length) { hideAll(); return; }
 
-      el.style.display = 'block';
-      el.innerHTML = '<h4>Order Summary</h4>' +
+      var html = '<h4>Order Summary</h4>' +
         '<div class="reg-order-lines">' +
           lineItems.map(function(li) {
             return '<div class="reg-order-line"><span>' + escapeHtml(li.label) + '</span><span>' + li.text + '</span></div>';
           }).join('') +
         '</div>' +
         '<div class="reg-order-total"><span>Running Total</span><span>' + formatMoney(total, currency) + '</span></div>';
+
+      targets.forEach(function(el) { el.style.display = 'block'; el.innerHTML = html; });
     }
 
     function renderCheckoutSummary(finalList) {
-      var body = document.getElementById('expandBody');
+      // Renders into the checkoutConfirmModal overlay rather than the main
+      // panel — this is the client-facing "does this look right before I
+      // submit it" moment, so it needs to read as a distinct approval
+      // step rather than just another step of the form. The registration
+      // form underneath is left untouched; "Back to Edit" simply closes
+      // the overlay instead of re-rendering it, so nothing typed is lost.
+      var body = document.getElementById('checkoutConfirmBody');
       var evt = regCart.event;
       var currency = evt.currency || 'USD';
       var pricePer = Number(evt.price) || 0;
@@ -2997,7 +3094,7 @@
             // Edit" instead.
             var removable = e.child !== evt;
             html += '<li>' + escapeHtml(e.child.eventName) + ' — ' + e.priceInfo.text +
-              (removable ? ' <span class="checkout-line-remove" data-attendee-idx="' + attIdx + '" data-subevent-id="' + escapeHtml(e.child.eventId) + '" title="Remove this selection">&times;</span>' : '') +
+              (removable ? ' <button type="button" class="checkout-line-remove text-link-btn" data-attendee-idx="' + attIdx + '" data-subevent-id="' + escapeHtml(e.child.eventId) + '" aria-label="Remove this selection" title="Remove this selection">&times;</button>' : '') +
               '</li>';
           });
           html += '</ul>';
@@ -3020,7 +3117,8 @@
       '</div>';
 
       body.innerHTML = html;
-      document.getElementById('btnBackToEdit').addEventListener('click', function() { renderRegistrationFormStep(''); });
+      document.getElementById('checkoutConfirmModal').style.display = 'flex';
+      document.getElementById('btnBackToEdit').addEventListener('click', closeCheckoutConfirmModal);
       body.querySelectorAll('.checkout-line-remove').forEach(function(btn) {
         btn.addEventListener('click', function() {
           var attendee = finalList[Number(btn.dataset.attendeeIdx)];
@@ -3047,7 +3145,7 @@
           delete regFormDefCache[regCart.eventId];
 
           var html = '<div class="msg-success">Registration complete! ' + res.registeredCount +
-            ' attendee(s) registered — total billed: ' + formatMoney(res.totalPrice, res.currency) + '.</div>';
+            ' attendee(s) registered — total due: ' + formatMoney(res.totalPrice, res.currency) + ' (the event organizer will follow up separately with payment/invoicing).</div>';
 
           // Registration itself always succeeded by the time this handler
           // runs — allocationErrors only lists sub-event/booth selections
@@ -3065,6 +3163,7 @@
 
           html += renderRegistrationSummaryHtml(res.registrationSummary || []);
 
+          closeCheckoutConfirmModal();
           document.getElementById('expandBody').innerHTML = html;
 
           renderMyEventsGrid();
@@ -3242,7 +3341,7 @@
         '<div class="form-row">' +
           '<div class="form-group"><label>🔒 Company Name</label><input type="text" value="' + escapeHtml(data.companyName || '') + '" readonly>' +
             '<div class="field-lock-note">Locked after registration</div></div>' +
-          '<div class="form-group"><label>Website</label><input type="text" id="myDetailsWebsite" value="' + escapeHtml(data.website || '') + '"></div>' +
+          '<div class="form-group"><label for="myDetailsWebsite">Website</label><input type="text" id="myDetailsWebsite" value="' + escapeHtml(data.website || '') + '"></div>' +
         '</div>' +
         '<div class="form-row">' +
           '<div class="form-group"><label>🔒 Membership Type</label><input type="text" value="' + escapeHtml(data.membershipType || '') + '" readonly>' +
@@ -3250,7 +3349,7 @@
           '<div class="form-group"><label>🔒 Business Type</label><input type="text" value="' + escapeHtml(data.membershipCategory || '') + '" readonly>' +
             '<div class="field-lock-note">Locked after registration</div></div>' +
         '</div>' +
-        '<div class="form-group"><label>Company Description</label><textarea id="myDetailsCompanyDescription" rows="3">' + escapeHtml(data.companyDescription || '') + '</textarea></div>' +
+        '<div class="form-group"><label for="myDetailsCompanyDescription">Company Description</label><textarea id="myDetailsCompanyDescription" rows="3">' + escapeHtml(data.companyDescription || '') + '</textarea></div>' +
         '<button type="button" class="btn-submit" id="myDetailsSaveBtn">Save changes</button>' +
         '<div class="ms-action-msg" id="myDetailsMsg" style="display:none; font-size:13px; margin-top:8px;"></div>' +
       '</div>';
@@ -3640,6 +3739,11 @@
       document.getElementById('itinEmailModal').style.display = 'flex';
     }
     function closeEmailItineraryModal() { document.getElementById('itinEmailModal').style.display = 'none'; }
+
+    function closeCheckoutConfirmModal() {
+      var modal = document.getElementById('checkoutConfirmModal');
+      if (modal) modal.style.display = 'none';
+    }
 
     function confirmSendEmailItinerary() {
       // Always sent to the logged-in attendee's own registered address —

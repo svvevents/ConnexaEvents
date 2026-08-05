@@ -99,7 +99,7 @@
     </div>
 
     <div class="nav-tabs">
-      <button class="tab-btn active" onclick="switchTab('tab-registration', this)">Registration Summary</button>
+      <button class="tab-btn active" id="regTabBtn" onclick="switchTab('tab-registration', this)">Registration Summary</button>
       <button class="tab-btn" id="prefTabBtn" onclick="switchTab('tab-preferences', this)">Preferences Summary</button>
     </div>
 
@@ -128,7 +128,7 @@
     </div>
 
     <div class="refresh-row">
-      <button onclick="loadDashboard()">Refresh</button>
+      <button id="btnRefreshDashboard" onclick="loadDashboard()">Refresh</button>
       <span class="last-updated" id="last-updated"></span>
     </div>
   </div>
@@ -161,19 +161,33 @@
       var eventId = picker.value;
       var selectedOption = picker.options[picker.selectedIndex];
       selectedEventIsB2B = eventId === '' ? true : selectedOption.dataset.isb2b === '1';
-      document.getElementById('prefTabBtn').style.display = selectedEventIsB2B ? '' : 'none';
+      var prefBtn = document.getElementById('prefTabBtn');
+      prefBtn.style.display = selectedEventIsB2B ? '' : 'none';
+      if (!selectedEventIsB2B && prefBtn.classList.contains('active')) {
+        switchTab('tab-registration', document.getElementById('regTabBtn'));
+      }
+
+      var refreshBtn = document.getElementById('btnRefreshDashboard');
+      var pendingCalls = selectedEventIsB2B ? 2 : 1;
+      refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing…';
+      function callDone() {
+        pendingCalls--;
+        if (pendingCalls <= 0) { refreshBtn.disabled = false; refreshBtn.textContent = 'Refresh'; }
+      }
 
       google.script.run
-        .withSuccessHandler(renderRegistrationData)
+        .withSuccessHandler(function(data) { callDone(); renderRegistrationData(data); })
         .withFailureHandler(function(err) {
+          callDone();
           document.getElementById('reg-type-chart').innerHTML = '<p class="empty-state">Error loading registration data: ' + escapeHtml(err.message) + '</p>';
         })
         .getDashboardData(DASHBOARD_KEY, eventId);
 
       if (selectedEventIsB2B) {
         google.script.run
-          .withSuccessHandler(renderPreferencesData)
+          .withSuccessHandler(function(data) { callDone(); renderPreferencesData(data); })
           .withFailureHandler(function(err) {
+            callDone();
             document.getElementById('pending-table').innerHTML = '<p class="empty-state">Error loading preferences summary: ' + escapeHtml(err.message) + '</p>';
           })
           .getPreferencesDashboardData(DASHBOARD_KEY, eventId);

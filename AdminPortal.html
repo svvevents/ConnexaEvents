@@ -215,11 +215,11 @@
 
     <div class="admin-body">
       <div class="admin-sidebar">
-        <div class="admin-nav-item active" id="admin-nav-events">My Events</div>
-        <div class="admin-nav-item" id="admin-nav-dashboard">Dashboard</div>
-        <div class="admin-nav-item" id="admin-nav-comms">✉️ Communications</div>
-        <div class="admin-nav-item" id="admin-nav-databridge">🔗 Matching Engine Export</div>
-        <div class="admin-nav-item" id="admin-nav-settings">⚙️ Settings</div>
+        <div class="admin-nav-item active" id="admin-nav-events" role="button" tabindex="0">My Events</div>
+        <div class="admin-nav-item" id="admin-nav-dashboard" role="button" tabindex="0">Dashboard</div>
+        <div class="admin-nav-item" id="admin-nav-comms" role="button" tabindex="0">✉️ Communications</div>
+        <div class="admin-nav-item" id="admin-nav-databridge" role="button" tabindex="0">🔗 Matching Engine Export</div>
+        <div class="admin-nav-item" id="admin-nav-settings" role="button" tabindex="0">⚙️ Settings</div>
       </div>
 
       <div class="admin-main">
@@ -263,10 +263,10 @@
           </div>
 
           <div class="comm-tabs">
-            <div class="comm-tab active" id="comm-tab-templates" onclick="switchCommTab('templates')">Templates</div>
-            <div class="comm-tab" id="comm-tab-send" onclick="switchCommTab('send')">New Campaign</div>
-            <div class="comm-tab" id="comm-tab-campaigns" onclick="switchCommTab('campaigns')">Campaigns &amp; Log</div>
-            <div class="comm-tab" id="comm-tab-settings" onclick="switchCommTab('settings')">Settings</div>
+            <div class="comm-tab active" id="comm-tab-templates" role="tab" tabindex="0" onclick="switchCommTab('templates')">Templates</div>
+            <div class="comm-tab" id="comm-tab-send" role="tab" tabindex="0" onclick="switchCommTab('send')">New Campaign</div>
+            <div class="comm-tab" id="comm-tab-campaigns" role="tab" tabindex="0" onclick="switchCommTab('campaigns')">Campaigns &amp; Log</div>
+            <div class="comm-tab" id="comm-tab-settings" role="tab" tabindex="0" onclick="switchCommTab('settings')">Settings</div>
           </div>
 
           <!-- ---- TEMPLATES ---- -->
@@ -284,27 +284,27 @@
               <h4>1. Pick a template</h4>
               <div class="form-row">
                 <div class="form-group">
-                  <label>Template</label>
+                  <label for="commSendTemplatePicker">Template</label>
                   <select id="commSendTemplatePicker" onchange="onCommSendTemplateChange()">
                     <option value="">-- Select a template --</option>
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>Event</label>
+                  <label for="commSendEventPicker">Event</label>
                   <select id="commSendEventPicker" onchange="onCommSendEventChange()">
                     <option value="">-- Select an event --</option>
                   </select>
                 </div>
               </div>
               <div class="form-group" id="commSendSubEventWrap" style="display:none;">
-                <label>Send to</label>
+                <label for="commSendScopeField">Send to</label>
                 <select id="commSendScopeField" onchange="onCommSendScopeChange()">
                   <option value="event">Whole event</option>
                   <option value="subEvent">One sub-event</option>
                 </select>
               </div>
               <div class="form-group" id="commSendSubEventPickerWrap" style="display:none;">
-                <label>Sub-event</label>
+                <label for="commSendSubEventPicker">Sub-event</label>
                 <select id="commSendSubEventPicker" onchange="refreshCommAudience()"></select>
               </div>
             </div>
@@ -312,13 +312,13 @@
             <div class="comm-card">
               <h4>2. Audience</h4>
               <div class="form-group">
-                <label>Registration type (leave empty for all)</label>
-                <div id="commRegTypeChips" class="hint">Select an event to see registration types.</div>
+                <label id="commRegTypeChipsLabel">Registration type (leave empty for all)</label>
+                <div id="commRegTypeChips" class="hint" aria-labelledby="commRegTypeChipsLabel">Select an event to see registration types.</div>
               </div>
               <div class="form-group" id="commSubEventStatusWrap" style="display:none;">
-                <label>Sub-event status</label>
-                <div class="comm-filter-chip selected" data-status="Confirmed" onclick="toggleCommStatusChip(this)">Confirmed</div>
-                <div class="comm-filter-chip" data-status="Waitlisted" onclick="toggleCommStatusChip(this)">Waitlisted</div>
+                <label id="commSubEventStatusLabel">Sub-event status</label>
+                <div class="comm-filter-chip selected" data-status="Confirmed" aria-labelledby="commSubEventStatusLabel" role="button" tabindex="0" onclick="toggleCommStatusChip(this)">Confirmed</div>
+                <div class="comm-filter-chip" data-status="Waitlisted" aria-labelledby="commSubEventStatusLabel" role="button" tabindex="0" onclick="toggleCommStatusChip(this)">Waitlisted</div>
               </div>
               <div class="checkbox-row">
                 <input type="checkbox" id="commHasMeetingsFilter" onchange="refreshCommAudience()">
@@ -337,7 +337,7 @@
             <div class="comm-card">
               <h4>3. Preview &amp; send</h4>
               <div class="form-group">
-                <label>Preview as</label>
+                <label for="commPreviewSampleEmail">Preview as</label>
                 <select id="commPreviewSampleEmail" onchange="refreshCommPreview()"></select>
               </div>
               <div id="commPreviewWarnings"></div>
@@ -350,7 +350,7 @@
 
               <div class="form-row" style="align-items:flex-end; margin-top:10px;">
                 <div class="form-group" style="flex:2;">
-                  <label>Send a test to</label>
+                  <label for="commTestRecipientField">Send a test to</label>
                   <input type="text" id="commTestRecipientField">
                 </div>
                 <div class="form-group" style="flex:0 0 auto;">
@@ -360,11 +360,11 @@
 
               <div class="form-row" style="align-items:flex-end; margin-top:6px;">
                 <div class="form-group">
-                  <label>Campaign name</label>
+                  <label for="commCampaignNameField">Campaign name</label>
                   <input type="text" id="commCampaignNameField" placeholder="e.g. Itinerary Ready — Sept 2026">
                 </div>
                 <div class="form-group" style="flex:0 0 auto;">
-                  <button class="btn" onclick="confirmSendCommCampaign()">Send Campaign</button>
+                  <button class="btn" id="btnSendCampaign" onclick="confirmSendCommCampaign()">Send Campaign</button>
                 </div>
               </div>
               <div id="commSendMsg" style="display:none; padding:10px; border-radius:8px; margin-top:10px; font-size:13px;"></div>
@@ -388,18 +388,18 @@
             <div class="comm-card">
               <h4>Sending settings</h4>
               <div class="form-row">
-                <div class="form-group"><label>From name</label><input type="text" id="commSettingFromName"></div>
-                <div class="form-group"><label>Reply-to</label><input type="text" id="commSettingReplyTo"></div>
+                <div class="form-group"><label for="commSettingFromName">From name</label><input type="text" id="commSettingFromName"></div>
+                <div class="form-group"><label for="commSettingReplyTo">Reply-to</label><input type="text" id="commSettingReplyTo"></div>
               </div>
               <div class="form-row">
-                <div class="form-group"><label>Footer org name</label><input type="text" id="commSettingFooterOrg"></div>
-                <div class="form-group"><label>Footer postal address</label><input type="text" id="commSettingFooterAddress"></div>
+                <div class="form-group"><label for="commSettingFooterOrg">Footer org name</label><input type="text" id="commSettingFooterOrg"></div>
+                <div class="form-group"><label for="commSettingFooterAddress">Footer postal address</label><input type="text" id="commSettingFooterAddress"></div>
               </div>
-              <div class="form-group"><label>Footer text</label><input type="text" id="commSettingFooterText"></div>
+              <div class="form-group"><label for="commSettingFooterText">Footer text</label><input type="text" id="commSettingFooterText"></div>
               <div class="form-row">
-                <div class="form-group"><label>Daily send cap</label><input type="number" id="commSettingDailyCap" min="0"></div>
+                <div class="form-group"><label for="commSettingDailyCap">Daily send cap</label><input type="number" id="commSettingDailyCap" min="0"></div>
                 <div class="form-group">
-                  <label>Admin password reset template</label>
+                  <label for="commSettingResetTemplate">Admin password reset template</label>
                   <select id="commSettingResetTemplate" onchange="saveAdminResetTemplateBinding()"><option value="">Use built-in default</option></select>
                 </div>
               </div>
@@ -425,10 +425,10 @@
               it yourself against your database.
             </p>
             <div class="form-group">
-              <label>B2B Event / Sub-Event</label>
+              <label for="dataBridgeEntityPicker">B2B Event / Sub-Event</label>
               <select id="dataBridgeEntityPicker"><option value="">-- Select a B2B event --</option></select>
             </div>
-            <button class="btn" onclick="generateDataBridgeSql()">Generate SQL</button>
+            <button class="btn" id="btnGenerateDataBridgeSql" onclick="generateDataBridgeSql()">Generate SQL</button>
             <div id="dataBridgeMsg" style="display:none; padding:10px; border-radius:8px; margin-top:14px; font-size:13px;"></div>
 
             <div id="dataBridgeResult" style="display:none; margin-top:18px;">
@@ -479,7 +479,7 @@
           <!-- ---- Registration Fields ---- -->
           <div id="settings-panel-formfields" class="tab-content section" style="display:none;">
             <div class="form-group">
-              <label>Event Type</label>
+              <label for="formFieldsTypePicker">Event Type</label>
               <select id="formFieldsTypePicker" onchange="renderFormFieldsForSelectedType()"></select>
             </div>
             <div id="formFieldRows"></div>
@@ -515,33 +515,33 @@
       <input type="hidden" id="parentEventIdField">
 
       <div class="form-group">
-        <label>Event Name *</label>
+        <label for="eventNameField">Event Name *</label>
         <input type="text" id="eventNameField" placeholder="e.g. Annual Convention">
       </div>
       <div class="form-group">
-        <label>Description</label>
+        <label for="eventDescField">Description</label>
         <textarea id="eventDescField" rows="3"></textarea>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Event Date</label>
+          <label for="eventDateField">Event Date</label>
           <input type="date" id="eventDateField">
         </div>
         <div class="form-group" id="eventTimeGroup">
-          <label>Event Time</label>
+          <label for="eventTimeField">Event Time</label>
           <input type="time" id="eventTimeField">
         </div>
       </div>
       <div class="form-group">
-        <label>Location</label>
+        <label for="eventLocationField">Location</label>
         <input type="text" id="eventLocationField">
       </div>
       <div class="form-group">
-        <label>Website</label>
+        <label for="eventWebsiteField">Website</label>
         <input type="text" id="eventWebsiteField">
       </div>
       <div class="form-group">
-        <label>Status</label>
+        <label for="eventStatusField">Status</label>
         <select id="eventStatusField">
           <option value="Draft">Draft</option>
           <option value="Live">Live</option>
@@ -551,7 +551,7 @@
 
       <div id="eventTypeFields">
         <div class="form-group">
-          <label>Event Type *</label>
+          <label for="eventTypeField">Event Type *</label>
           <select id="eventTypeField" onchange="onEventTypeChange()">
             <option value="">-- Select Event Type --</option>
           </select>
@@ -566,11 +566,11 @@
           </p>
           <div class="form-row" style="margin-bottom:10px;">
             <div class="form-group">
-              <label>Roughly how many assets/seats will this need?</label>
+              <label for="exhibitionAssetCountField">Roughly how many assets/seats will this need?</label>
               <input type="number" id="exhibitionAssetCountField" min="0" step="1" placeholder="e.g. 300" oninput="suggestFloorPlanSize()">
             </div>
             <div class="form-group">
-              <label>Floor Plan Canvas Size</label>
+              <label for="exhibitionFloorPlanSizeField">Floor Plan Canvas Size</label>
               <select id="exhibitionFloorPlanSizeField">
                 <option value="small">Small — up to ~40 (800 × 600)</option>
                 <option value="medium">Medium — up to ~150 (1400 × 900)</option>
@@ -611,7 +611,7 @@
           <div id="curatedEventOptionRows"></div>
           <button type="button" class="add-row-btn" onclick="addCuratedEventOptionRow()">+ Add Option</button>
           <div class="form-group" style="margin-top:12px;">
-            <label>Max options per attendee</label>
+            <label for="curatedEventMaxOptionsField">Max options per attendee</label>
             <input type="number" id="curatedEventMaxOptionsField" min="1" step="1" placeholder="Blank = unlimited" style="max-width:150px;">
           </div>
         </div>
@@ -652,11 +652,11 @@
         <p class="type-config-hint" id="pricingFieldsHint">A single price and place count for the whole event (e.g. a Curated Event). Leave Places blank for no limit.</p>
         <div class="form-row">
           <div class="form-group">
-            <label id="priceFieldLabel">Price per Registrant<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span></label>
+            <label id="priceFieldLabel" for="priceField">Price per Registrant<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span></label>
             <input type="number" id="priceField" min="0" step="0.01" placeholder="0.00">
           </div>
           <div class="form-group" id="placesFieldWrap">
-            <label>Places / Capacity</label>
+            <label for="placesField">Places / Capacity</label>
             <input type="text" id="placesField" placeholder="Blank = Unlimited">
           </div>
         </div>
@@ -668,11 +668,11 @@
           <label for="dietaryReqField" style="font-weight:normal;">Capture Dietary Requirements for this event</label>
         </div>
         <div class="form-group">
-          <label>Details Page URL (optional)</label>
+          <label for="detailsPageUrlField">Details Page URL (optional)</label>
           <input type="text" id="detailsPageUrlField" placeholder="https://... (internal or external page shown when a tile is expanded)">
         </div>
         <div class="form-group">
-          <label>Currency</label>
+          <label for="currencyField">Currency</label>
           <select id="currencyField" onchange="updatePriceCurrencySuffix()">
             <option value="USD">USD ($)</option>
             <option value="EUR">EUR (€)</option>
@@ -684,7 +684,7 @@
           <p class="type-config-hint" style="margin:6px 0 0;">Applies to this event and every sub-event beneath it.</p>
         </div>
         <div class="form-group">
-          <label>Allowed Email Domains (optional)</label>
+          <label for="allowedDomainsField">Allowed Email Domains (optional)</label>
           <input type="text" id="allowedDomainsField" placeholder="e.g. acmecorp.com, partnerco.com — blank = open to anyone">
           <p class="type-config-hint" style="margin:6px 0 0;">
             When set, only attendees signing in with an email at one of these domains can see or register for this
@@ -735,9 +735,9 @@
       <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:20px; align-items:start;">
         <div>
           <div class="form-row">
-            <div class="form-group"><label>Template name</label><input type="text" id="commTplName"></div>
+            <div class="form-group"><label for="commTplName">Template name</label><input type="text" id="commTplName"></div>
             <div class="form-group">
-              <label>Category</label>
+              <label for="commTplCategory">Category</label>
               <select id="commTplCategory">
                 <option value="Transactional">Transactional</option>
                 <option value="Announcement">Announcement</option>
@@ -747,14 +747,14 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label>Layout</label>
+              <label for="commTplLayout">Layout</label>
               <select id="commTplLayout">
                 <option value="Default">Default — logo &amp; banner</option>
                 <option value="Plain">Plain — no banner</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Body mode</label>
+              <label for="commTplBodyMode">Body mode</label>
               <select id="commTplBodyMode" onchange="onCommTplBodyModeChange()">
                 <option value="Fragment">Fragment — uses the layout above</option>
                 <option value="FullHtml">Full HTML — pasted from an external design tool</option>
@@ -762,13 +762,13 @@
             </div>
           </div>
           <div class="form-group">
-            <label>Scope (leave blank for all events)</label>
+            <label for="commTplEventId">Scope (leave blank for all events)</label>
             <select id="commTplEventId"><option value="">All events</option></select>
           </div>
-          <div class="form-group"><label>Subject</label><input type="text" id="commTplSubject"></div>
-          <div class="form-group"><label>Preheader text</label><input type="text" id="commTplPreheader"></div>
+          <div class="form-group"><label for="commTplSubject">Subject</label><input type="text" id="commTplSubject"></div>
+          <div class="form-group"><label for="commTplPreheader">Preheader text</label><input type="text" id="commTplPreheader"></div>
           <div class="form-group">
-            <label>Body</label>
+            <label for="commTplBody">Body</label>
             <p class="hint" id="commTplBodyHint">HTML fragment — the layout above supplies the header/footer/unsubscribe link automatically.</p>
             <textarea id="commTplBody" class="comm-body-editor"></textarea>
           </div>
@@ -799,6 +799,7 @@
       <h3 id="commAutomationModalTitle" style="margin-top:0;">Automated Emails</h3>
       <p class="hint" style="font-size:12px; color:var(--text-muted); margin-top:-8px;">Sent automatically to one attendee the moment they take the matching action — separate from Communications campaigns sent to a whole audience.</p>
       <div id="commAutomationRowsWrap"><p style="color:var(--text-muted);">Loading...</p></div>
+      <div id="commAutomationModalMsg" style="display:none; margin-top:10px; padding:8px 10px; border-radius:8px; font-size:12.5px;"></div>
     </div>
   </div>
 
@@ -824,35 +825,48 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Category *</label>
+        <label for="budgetLineCategoryField">Category *</label>
         <select id="budgetLineCategoryField"></select>
       </div>
       <div class="form-group">
-        <label>Label *</label>
+        <label for="budgetLineLabelField">Label *</label>
         <input type="text" id="budgetLineLabelField" placeholder="e.g. Venue deposit">
       </div>
       <div class="form-group">
-        <label>Sub-Event</label>
+        <label for="budgetLineSubEventField">Sub-Event</label>
         <select id="budgetLineSubEventField">
           <option value="">(whole event)</option>
         </select>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Planned Amount *</label>
+          <label for="budgetLinePlannedField">Planned Amount *</label>
           <input type="number" step="0.01" min="0" id="budgetLinePlannedField">
         </div>
         <div class="form-group" id="budgetLineActualGroup">
-          <label>Actual Amount</label>
+          <label for="budgetLineActualField">Actual Amount</label>
           <input type="number" step="0.01" min="0" id="budgetLineActualField">
         </div>
       </div>
       <div class="form-group">
-        <label>Notes</label>
+        <label for="budgetLineNotesField">Notes</label>
         <textarea id="budgetLineNotesField" rows="2"></textarea>
       </div>
 
-      <button class="btn" style="width:100%;" onclick="saveBudgetLineClient()">Save Line</button>
+      <button class="btn" style="width:100%;" id="btnSaveBudgetLine" onclick="saveBudgetLineClient()">Save Line</button>
+    </div>
+  </div>
+
+  <!-- Send Campaign confirmation — styled replacement for a bare confirm(), since sending is the one irreversible, potentially-large-audience action in this panel -->
+  <div id="commSendConfirmModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeCommSendConfirmModal()">&times;</span>
+      <h3 style="margin-top:0;">Send this campaign?</h3>
+      <p id="commSendConfirmBody" style="font-size:14px; line-height:1.6;"></p>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">
+        <button type="button" class="btn secondary" onclick="closeCommSendConfirmModal()">Cancel</button>
+        <button type="button" class="btn" id="btnConfirmSendCampaign" onclick="executeSendCampaign()">Send Campaign</button>
+      </div>
     </div>
   </div>
 
@@ -866,6 +880,10 @@
   // one place in the app relying on that distinction to stay safe.
   var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
   var PORTAL_URL = <?!= JSON.stringify(portalUrl) ?>;
+  // Set when this page was reached via a "change canvas size" link from the
+  // Floor Plan Designer (?openEvent=<id>) — auto-opens that event's edit
+  // modal once the events list has loaded, see loadEventsList().
+  var OPEN_EVENT_ID = <?!= JSON.stringify(openEventId) ?>;
 
   // Explicitly ends the session server-side (revokes the cached token)
   // before returning to login, rather than just navigating away and
@@ -923,6 +941,30 @@
     document.getElementById('admin-nav-settings').addEventListener('click', function() { switchAdminPanel('settings'); });
     loadOnboardingData();
     loadEventsList();
+  });
+
+  // Keyboard support for the div-based controls above (nav items, comm
+  // tabs, event-card headers, filter chips) that only have a mouse
+  // onclick — Enter/Space fires the same click a mouse would, one
+  // listener covers every instance instead of wiring each individually.
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'Enter' || e.key === ' ') &&
+        e.target.matches('[role="button"], [role="tab"]') && e.target.tagName !== 'BUTTON') {
+      e.preventDefault();
+      e.target.click();
+    }
+  });
+
+  // Escape closes whichever .modal-overlay is currently open, via its own
+  // .modal-close control — mirrors clicking the × in the corner.
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+      if (overlay.style.display === 'flex') {
+        var closeBtn = overlay.querySelector('.modal-close');
+        if (closeBtn) closeBtn.click();
+      }
+    });
   });
 
   function switchAdminPanel(panelId) {
@@ -1208,9 +1250,33 @@
   var allEventsTreeCache = []; // last getAdminEventsTree result — reused by the Communications panel's event/sub-event pickers and by the Automated Emails modal's milestone lookup, so it doesn't need its own separate fetch.
   function loadEventsList() {
     google.script.run
-      .withSuccessHandler(function(events) { allEventsTreeCache = events; renderEventsList(events); })
+      .withSuccessHandler(function(events) {
+        allEventsTreeCache = events;
+        renderEventsList(events);
+        if (OPEN_EVENT_ID) {
+          openDeepLinkedEvent_();
+          OPEN_EVENT_ID = ''; // one-shot — don't reopen on a later silent refresh of this same page load
+        }
+      })
       .withFailureHandler(function(err) { document.getElementById('eventsListWrap').innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
       .getAdminEventsTree(ADMIN_TOKEN);
+  }
+
+  /** Auto-opens the Edit modal for OPEN_EVENT_ID (arrived via ?openEvent=... from the Floor Plan Designer's "change canvas size" link) and focuses the Floor Plan Canvas Size field. */
+  function openDeepLinkedEvent_() {
+    for (var i = 0; i < allEventsTreeCache.length; i++) {
+      var evt = allEventsTreeCache[i];
+      if (evt.eventId === OPEN_EVENT_ID) { openEventModal(evt); focusFloorPlanSizeField_(); return; }
+      var subs = evt.subEvents || [];
+      for (var j = 0; j < subs.length; j++) {
+        if (subs[j].eventId === OPEN_EVENT_ID) { openEventModal(subs[j], evt); focusFloorPlanSizeField_(); return; }
+      }
+    }
+  }
+
+  function focusFloorPlanSizeField_() {
+    var field = document.getElementById('exhibitionFloorPlanSizeField');
+    if (field) { field.scrollIntoView({ block: 'center' }); field.focus(); }
   }
 
   function renderEventsList(events) {
@@ -1226,6 +1292,8 @@
 
       var header = document.createElement('div');
       header.className = 'event-card-header';
+      header.setAttribute('role', 'button');
+      header.setAttribute('tabindex', '0');
       var statusClass = evt.status === 'Live' ? 'live' : (evt.status === 'Closed' ? 'closed' : 'draft');
       var isUmbrella = evt.eventType === UMBRELLA_TYPE;
       var currency = evt.effectiveCurrency || 'USD';
@@ -1238,7 +1306,7 @@
           (evt.isB2B ? '<span class="tag type" style="margin-right:6px;">B2B</span>' : '') +
           (evt.dietaryRequirements ? '<span class="tag type" style="margin-right:6px;">Dietary</span>' : '') +
           evt.totalRegistrations + ' registration(s) · ' + evt.subEvents.length + ' sub-event(s)' +
-          (curatedOptionsBadge ? ' · ' + curatedOptionsBadge : (evt.price ? ' · ' + escapeHtml(currency) + ' ' + Number(evt.price).toFixed(2) + '/registrant' : '')) +
+          (curatedOptionsBadge ? ' · ' + curatedOptionsBadge : (evt.price ? ' · ' + escapeHtml(currency) + ' ' + Number(evt.price).toFixed(2) + (evt.eventType === EXHIBITION_TYPE ? '/booth' : '/registrant') : '')) +
           (capBadge ? ' · ' + capBadge : '') +
           (evt.eventDate ? ' · ' + escapeHtml(evt.eventDate) : '') +
         '</div></div>' +
@@ -2287,9 +2355,13 @@
       notes: document.getElementById('budgetLineNotesField').value.trim()
     };
 
+    var btn = document.getElementById('btnSaveBudgetLine');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving…';
+
     google.script.run
-      .withSuccessHandler(function() { closeBudgetLineModal(); loadBudgetModal(eventId); })
-      .withFailureHandler(function(err) { showBudgetLineModalMsg(err.message, true); })
+      .withSuccessHandler(function() { btn.disabled = false; btn.textContent = originalText; closeBudgetLineModal(); loadBudgetModal(eventId); })
+      .withFailureHandler(function(err) { btn.disabled = false; btn.textContent = originalText; showBudgetLineModalMsg(err.message, true); })
       .saveBudgetLine(ADMIN_TOKEN, eventId, payload);
   }
 
@@ -2430,8 +2502,14 @@
       return;
     }
     msg.style.display = 'none';
+
+    var btn = document.getElementById('btnGenerateDataBridgeSql');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating…';
+
     google.script.run
       .withSuccessHandler(function(data) {
+        btn.disabled = false; btn.textContent = originalText;
         dataBridgeSqlCache = data.sql;
         dataBridgeFilenameCache = data.filename;
         document.getElementById('dataBridgeSummary').textContent =
@@ -2449,6 +2527,7 @@
         result.style.display = 'block';
       })
       .withFailureHandler(function(err) {
+        btn.disabled = false; btn.textContent = originalText;
         msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = err.message;
       })
       .generateB2BMatchingSql(ADMIN_TOKEN, entityId);
@@ -2554,6 +2633,7 @@
     commState.automationEntity = { eventId: eventId, subEventId: subEventId || '' };
     document.getElementById('commAutomationModalTitle').textContent = 'Automated Emails — ' + entityName;
     document.getElementById('commAutomationRowsWrap').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+    document.getElementById('commAutomationModalMsg').style.display = 'none';
     document.getElementById('commAutomationModal').style.display = 'flex';
 
     var milestones = findEntityMilestones(eventId, subEventId);
@@ -2612,10 +2692,19 @@
     document.getElementById('commAutomationRowsWrap').innerHTML = html;
   }
 
+  function showCommAutomationMsg(text, isError) {
+    var el = document.getElementById('commAutomationModalMsg');
+    el.style.background = isError ? '#F9EBEA' : '#EAF2EF';
+    el.style.color = isError ? 'var(--error-color)' : 'var(--success-color)';
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
   function saveAutomationRowFromSelect(selectEl, triggerType) {
     var entity = commState.automationEntity;
     google.script.run
-      .withFailureHandler(function(err) { alert(err.message); })
+      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); })
+      .withFailureHandler(function(err) { showCommAutomationMsg(err.message, true); })
       .saveCommAutomationBinding(ADMIN_TOKEN, { scope: 'Event', eventId: entity.eventId, subEventId: entity.subEventId, triggerType: triggerType, templateId: selectEl.value });
   }
 
@@ -2624,7 +2713,8 @@
     var templateId = document.getElementById('commReminderTpl').value;
     var days = Number(document.getElementById('commReminderDays').value) || 0;
     google.script.run
-      .withFailureHandler(function(err) { alert(err.message); })
+      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); })
+      .withFailureHandler(function(err) { showCommAutomationMsg(err.message, true); })
       .saveCommAutomationBinding(ADMIN_TOKEN, { scope: 'Event', eventId: entity.eventId, subEventId: entity.subEventId, triggerType: 'MilestoneDeadlineReminder', reminderDaysBefore: days, templateId: templateId });
   }
 
@@ -2690,7 +2780,7 @@
     if (!targetEntity) targetEntity = evt;
     var regTypes = (onboardingData[targetEntity.eventType] && onboardingData[targetEntity.eventType].registrationTypes) || [];
     if (!regTypes.length) { wrap.innerHTML = '<span class="hint">No fixed registration types for this event type — all registrants match.</span>'; return; }
-    wrap.innerHTML = regTypes.map(function(rt) { return '<span class="comm-filter-chip" data-type="' + escapeHtml(rt) + '" onclick="toggleCommRegTypeChip(this)">' + escapeHtml(rt) + '</span>'; }).join('');
+    wrap.innerHTML = regTypes.map(function(rt) { return '<span class="comm-filter-chip" data-type="' + escapeHtml(rt) + '" role="button" tabindex="0" onclick="toggleCommRegTypeChip(this)">' + escapeHtml(rt) + '</span>'; }).join('');
   }
 
   function toggleCommRegTypeChip(el) {
@@ -2813,22 +2903,59 @@
       .sendTestCommunication(ADMIN_TOKEN, templateId, spec, sampleEmail, to ? [to] : []);
   }
 
+  /**
+   * Opens the styled confirmation modal instead of a bare confirm() —
+   * sending a campaign is the one irreversible, potentially-large-audience
+   * action in this panel, so it gets a confirmation that actually names
+   * what's about to be sent (template + audience), not just a count.
+   */
   function confirmSendCommCampaign() {
     var templateId = document.getElementById('commSendTemplatePicker').value;
     if (!templateId) { alert('Pick a template first.'); return; }
     if (!commState.audience || !commState.audience.count) { alert('No recipients match this audience.'); return; }
-    if (!confirm('Send to ' + commState.audience.count + ' recipients?')) return;
 
+    var tpl = commState.templates.find(function(t) { return t.templateId === templateId; });
+    var eventPicker = document.getElementById('commSendEventPicker');
+    var eventName = eventPicker.selectedOptions[0] ? eventPicker.selectedOptions[0].textContent : '';
+    var scope = document.getElementById('commSendScopeField').value || 'event';
+    var subEventPicker = document.getElementById('commSendSubEventPicker');
+    var audienceDesc = eventName;
+    if (scope === 'subEvent' && subEventPicker.value && subEventPicker.selectedOptions[0]) {
+      audienceDesc += ' — ' + subEventPicker.selectedOptions[0].textContent;
+    }
+
+    document.getElementById('commSendConfirmBody').innerHTML =
+      'Template: <strong>' + escapeHtml(tpl ? tpl.name : '(unknown template)') + '</strong><br>' +
+      'Audience: <strong>' + escapeHtml(audienceDesc) + '</strong><br>' +
+      'Recipients: <strong>' + commState.audience.count + '</strong>';
+    document.getElementById('commSendConfirmModal').style.display = 'flex';
+  }
+
+  function closeCommSendConfirmModal() {
+    document.getElementById('commSendConfirmModal').style.display = 'none';
+  }
+
+  function executeSendCampaign() {
+    var templateId = document.getElementById('commSendTemplatePicker').value;
     var name = document.getElementById('commCampaignNameField').value.trim();
     var spec = buildCommAudienceSpec();
     var msgEl = document.getElementById('commSendMsg');
+
+    var btn = document.getElementById('btnConfirmSendCampaign');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Sending…';
+
     google.script.run
       .withSuccessHandler(function(res) {
+        btn.disabled = false; btn.textContent = originalText;
+        closeCommSendConfirmModal();
         msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
         msgEl.textContent = 'Campaign started — ' + res.recipientCount + ' recipients queued.'; msgEl.style.display = 'block';
         switchCommTab('campaigns');
       })
       .withFailureHandler(function(err) {
+        btn.disabled = false; btn.textContent = originalText;
+        closeCommSendConfirmModal();
         msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
         msgEl.textContent = err.message; msgEl.style.display = 'block';
       })

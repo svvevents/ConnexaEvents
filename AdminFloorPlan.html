@@ -83,6 +83,7 @@
     .fp-modal h3 { margin: 0 0 8px; font-size: 16px; }
     .fp-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
     .fp-modal-hint-error { color: var(--error-color); font-weight: 700; }
+    .text-link-btn { background: none; border: none; padding: 0; margin: 0; font: inherit; text-align: inherit; }
 
     .btn { background: var(--primary-color); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; white-space: nowrap; }
     .btn:hover { background: var(--navy-color); }
@@ -133,6 +134,7 @@
       overflow: hidden;
     }
     .fp-element.selected { outline: 3px solid var(--accent-color); outline-offset: 2px; z-index: 5; }
+    .fp-element:focus { outline: 3px solid var(--accent-color); outline-offset: 2px; } /* focusing an element selects it (see the focus listener in addElementToCanvas), so this matches .selected rather than doubling up with the browser default ring */
     .fp-element .fp-label-text { outline: none; max-width: 100%; word-break: break-word; }
     .fp-element .fp-label-text:focus { background: rgba(255,255,255,0.15); border-radius: 3px; }
     .fp-element .fp-remove-btn {
@@ -193,7 +195,7 @@
         <p>Only events (or sub-events) with Event Type "Exhibition" can have a floor plan.</p>
         <div id="pickerMsg" class="fp-msg"></div>
         <select id="eventPickerSelect"><option value="">Loading events…</option></select>
-        <button class="btn" style="width:100%;" onclick="loadChosenEvent()">Open Floor Plan</button>
+        <button class="btn" style="width:100%;" id="btnOpenFloorPlan" onclick="loadChosenEvent()">Open Floor Plan</button>
       </div>
 
       <!-- Builder: shown once an event is loaded -->
@@ -237,20 +239,20 @@
             then Balcony) — each seat stays individually movable/resizable afterward.
           </p>
           <div class="form-group">
-            <label>Asset Type (price tier)</label>
+            <label for="seatGenAssetType">Asset Type (price tier)</label>
             <select id="seatGenAssetType"></select>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Rows</label><input type="number" id="seatGenRows" min="1" step="1" value="10" oninput="updateSeatGenPreview()"></div>
-            <div class="form-group"><label>Seats per row</label><input type="number" id="seatGenSeatsPerRow" min="1" step="1" value="20" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenRows">Rows</label><input type="number" id="seatGenRows" min="1" step="1" value="10" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenSeatsPerRow">Seats per row</label><input type="number" id="seatGenSeatsPerRow" min="1" step="1" value="20" oninput="updateSeatGenPreview()"></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Seat width (px)</label><input type="number" id="seatGenWidth" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
-            <div class="form-group"><label>Seat height (px)</label><input type="number" id="seatGenHeight" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenWidth">Seat width (px)</label><input type="number" id="seatGenWidth" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenHeight">Seat height (px)</label><input type="number" id="seatGenHeight" min="20" step="20" value="40" oninput="updateSeatGenPreview()"></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Start X (px)</label><input type="number" id="seatGenStartX" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
-            <div class="form-group"><label>Start Y (px)</label><input type="number" id="seatGenStartY" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenStartX">Start X (px)</label><input type="number" id="seatGenStartX" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
+            <div class="form-group"><label for="seatGenStartY">Start Y (px)</label><input type="number" id="seatGenStartY" min="0" step="20" value="20" oninput="updateSeatGenPreview()"></div>
           </div>
           <p class="type-config-hint" id="seatGenPreview"></p>
           <div class="fp-modal-actions">
@@ -271,6 +273,7 @@
   // time (see the same note in AdminResetPassword.html).
   var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
   var INITIAL_EVENT_ID = <?!= JSON.stringify(eventId) ?>;
+  var PORTAL_URL = <?!= JSON.stringify(portalUrl) ?>;
 
   // Mirrors the backend's FLOORPLAN_CANVAS_WIDTH / HEIGHT / GRID_SIZE
   // constants (Code.gs) — the server re-validates and re-snaps everything
@@ -279,6 +282,17 @@
   var CANVAS_WIDTH = 800;
   var CANVAS_HEIGHT = 600;
   var GRID_SIZE = 20;
+  var CURRENT_FLOORPLAN_SIZE_KEY = 'small';
+  // Mirrors the backend's FLOORPLAN_SIZES (Code.gs) — used only to name the
+  // current/needed size in the Generate Seats overflow message and to offer
+  // a "change canvas size" link; the server is still the source of truth
+  // for the actual pixel dimensions (CANVAS_WIDTH/HEIGHT above).
+  var FLOORPLAN_SIZES = {
+    small:  { width: 800,  height: 600,  label: 'Small' },
+    medium: { width: 1400, height: 900,  label: 'Medium' },
+    large:  { width: 2000, height: 1300, label: 'Large' }
+  };
+  var FLOORPLAN_SIZE_ORDER = ['small', 'medium', 'large'];
 
   // The canvas' own W x H is now per-event (Small/Medium/Large — see
   // getFloorPlanCanvasSize_ in Code.gs), so the caption's leading
@@ -351,7 +365,10 @@
   function loadChosenEvent() {
     var eventId = document.getElementById('eventPickerSelect').value;
     if (!eventId) { showPickerMsg('Please select an event.', true); return; }
-    loadFloorPlan(eventId);
+    var btn = document.getElementById('btnOpenFloorPlan');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Loading…';
+    loadFloorPlan(eventId, function() { btn.disabled = false; btn.textContent = originalText; });
   }
 
   function showEventPicker() {
@@ -377,9 +394,10 @@
 
   /* ---------------- Load / render ---------------- */
 
-  function loadFloorPlan(eventId) {
+  function loadFloorPlan(eventId, onDone) {
     google.script.run
       .withSuccessHandler(function(data) {
+        if (onDone) onDone();
         if (data.eventType !== 'Exhibition') {
           showPickerMsg('"' + data.eventName + '" is not an Exhibition event.', true);
           return;
@@ -387,6 +405,7 @@
         currentEventId = data.eventId;
         CANVAS_WIDTH = data.canvasWidth || CANVAS_WIDTH;
         CANVAS_HEIGHT = data.canvasHeight || CANVAS_HEIGHT;
+        CURRENT_FLOORPLAN_SIZE_KEY = data.floorPlanSize || CURRENT_FLOORPLAN_SIZE_KEY;
         GRID_SIZE = data.gridSize || GRID_SIZE;
         EXHIBITION_ASSET_TYPES = data.assetTypes || [];
         EXHIBITION_FLAT_PRICE = data.flatPrice || 0;
@@ -410,7 +429,7 @@
         (data.elements || []).forEach(function(el) { addElementToCanvas(el, false); });
         renderFpMenus();
       })
-      .withFailureHandler(function(err) { showPickerMsg(err.message, true); })
+      .withFailureHandler(function(err) { if (onDone) onDone(); showPickerMsg(err.message, true); })
       .getFloorPlanLayout(ADMIN_TOKEN, eventId);
   }
 
@@ -480,6 +499,25 @@
     document.getElementById('seatGenOverlay').style.display = 'none';
   }
 
+  /**
+   * Sends the admin back to this event's edit form (Admin Portal), with
+   * ?openEvent=... so it auto-opens the Edit modal on the Floor Plan
+   * Canvas Size field — reached from the Generate Seats overflow message.
+   * This tab was itself opened via window.open from the Admin Portal (see
+   * launchFloorPlanDesigner), so reuse that still-open opener tab instead
+   * of spawning a third one if it's still around.
+   */
+  function requestCanvasSizeChange() {
+    if (!currentEventId) return;
+    var url = PORTAL_URL + '?admin=1&token=' + encodeURIComponent(ADMIN_TOKEN) + '&openEvent=' + encodeURIComponent(currentEventId);
+    if (window.opener && !window.opener.closed) {
+      window.opener.location.href = url;
+      window.opener.focus();
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
   // Soft advisory only (Generate stays enabled above this) — large grids
   // are a legitimate use of this tool (theatre-style assigned seating for
   // a big venue), not just a fat-fingered rows/columns value, so this
@@ -504,7 +542,16 @@
       }
     } else {
       preview.className = 'type-config-hint fp-modal-hint-error';
-      preview.textContent = 'Doesn\'t fit: needs ' + totalWidth + ' × ' + totalHeight + 'px but the canvas is only ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + 'px. Reduce seat size/rows/columns, or pick a larger Canvas Size on the event\'s edit form.';
+      var currentSize = FLOORPLAN_SIZES[CURRENT_FLOORPLAN_SIZE_KEY] || FLOORPLAN_SIZES.small;
+      var fittingKey = FLOORPLAN_SIZE_ORDER.filter(function(k) {
+        return k !== CURRENT_FLOORPLAN_SIZE_KEY && FLOORPLAN_SIZES[k].width >= totalWidth && FLOORPLAN_SIZES[k].height >= totalHeight;
+      })[0];
+      var fitMsg = fittingKey
+        ? 'Switch to ' + FLOORPLAN_SIZES[fittingKey].label + ' (' + FLOORPLAN_SIZES[fittingKey].width + ' × ' + FLOORPLAN_SIZES[fittingKey].height + 'px)'
+        : 'No canvas size is large enough for this grid';
+      preview.innerHTML = 'Doesn\'t fit at this event\'s current canvas size (' + escapeHtml(currentSize.label) + ' — ' + CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + 'px) — needs ' + totalWidth + ' × ' + totalHeight + 'px. ' +
+        fitMsg + ' on the event\'s edit form, or reduce seat size/rows/columns.' +
+        (currentEventId ? ' <button type="button" class="text-link-btn" style="text-decoration:underline; color:inherit; font:inherit; cursor:pointer;" onclick="requestCanvasSizeChange()">Change canvas size on the event\'s edit form &rarr;</button>' : '');
     }
     document.getElementById('btnGenerateSeats').disabled = !fits;
   }
@@ -657,6 +704,7 @@
     var div = document.createElement('div');
     div.className = 'fp-element fp-type-' + el.type + (el.cssClass ? ' ' + el.cssClass : '');
     div.dataset.id = el.elementId;
+    div.tabIndex = 0;
     div.style.left = el.x + 'px';
     div.style.top = el.y + 'px';
     div.style.width = el.width + 'px';
@@ -673,6 +721,11 @@
       removeElement(el.elementId);
     });
     div.addEventListener('click', function() {
+      selectElement(el.elementId);
+    });
+    // Tabbing to an element selects it too, same as a click — so keyboard
+    // users get the same visible ".selected" outline before nudging/resizing it.
+    div.addEventListener('focus', function() {
       selectElement(el.elementId);
     });
 
@@ -746,6 +799,38 @@
     var isPaste = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'v';
     if (isCopy) { evt.preventDefault(); copySelectedElement(); }
     if (isPaste) { evt.preventDefault(); pasteClipboardElement(); }
+
+    // Keyboard equivalent of the mouse drag/resize below: arrows nudge the
+    // selected element by one grid step, Shift+arrow resizes it on the
+    // Right/Down (grow) or Left/Up (shrink) edge — same GRID_SIZE increment
+    // and canvas bounds the mouse path already snaps/clamps to.
+    var isArrow = evt.key === 'ArrowUp' || evt.key === 'ArrowDown' || evt.key === 'ArrowLeft' || evt.key === 'ArrowRight';
+    if (isArrow && selectedElementId) {
+      var el = elementsById[selectedElementId];
+      var div = document.querySelector('.fp-element[data-id="' + selectedElementId + '"]');
+      if (el && div) {
+        evt.preventDefault();
+        var dx = evt.key === 'ArrowLeft' ? -GRID_SIZE : (evt.key === 'ArrowRight' ? GRID_SIZE : 0);
+        var dy = evt.key === 'ArrowUp' ? -GRID_SIZE : (evt.key === 'ArrowDown' ? GRID_SIZE : 0);
+        if (evt.shiftKey) {
+          el.width = Math.min(Math.max(GRID_SIZE, snap(el.width + dx)), CANVAS_WIDTH - el.x);
+          el.height = Math.min(Math.max(GRID_SIZE, snap(el.height + dy)), CANVAS_HEIGHT - el.y);
+          div.style.width = el.width + 'px';
+          div.style.height = el.height + 'px';
+        } else {
+          el.x = Math.min(Math.max(0, snap(el.x + dx)), CANVAS_WIDTH - el.width);
+          el.y = Math.min(Math.max(0, snap(el.y + dy)), CANVAS_HEIGHT - el.height);
+          div.style.left = el.x + 'px';
+          div.style.top = el.y + 'px';
+        }
+      }
+      return;
+    }
+
+    if ((evt.key === 'Delete' || evt.key === 'Backspace') && selectedElementId) {
+      evt.preventDefault();
+      removeElement(selectedElementId);
+    }
   });
 
   /* ---------------- interact.js: drag + resize with 20px grid snap ---------------- */
