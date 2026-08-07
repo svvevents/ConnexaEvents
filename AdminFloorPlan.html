@@ -47,7 +47,7 @@
     .fp-picker-box select { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
 
     /* ---- Toolbar ---- */
-    .fp-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .fp-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; background: #fff; border: 1px solid var(--border-color); border-radius: 14px; padding: 12px 16px; }
     .fp-toolbar .fp-event-name { font-weight: 800; font-size: 16px; margin-right: 6px; }
     .fp-toolbar .fp-event-type-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; background: rgba(28,114,147,0.12); color: var(--primary-color); padding: 3px 8px; border-radius: 10px; margin-right: 12px; }
     .fp-spacer { flex: 1; }
@@ -165,6 +165,8 @@
       .fp-canvas-wrap { padding: 12px; }
     }
   </style>
+
+  <?!= include('SharedStyles'); ?>
 </head>
 <body>
 
@@ -203,7 +205,7 @@
         <div class="fp-toolbar">
           <div>
             <span class="fp-event-name" id="fpEventName"></span>
-            <span class="fp-event-type-tag">Exhibition</span>
+            <span class="fp-event-type-tag" id="fpEventTypeTag">Exhibition</span>
           </div>
           <a href="javascript:void(0)" onclick="showEventPicker()" style="font-size:12px; color:var(--primary-color); text-decoration:underline;">Change event</a>
           <div class="fp-spacer"></div>
@@ -398,8 +400,8 @@
     google.script.run
       .withSuccessHandler(function(data) {
         if (onDone) onDone();
-        if (data.eventType !== 'Exhibition') {
-          showPickerMsg('"' + data.eventName + '" is not an Exhibition event.', true);
+        if (!data.isExhibition) {
+          showPickerMsg('"' + data.eventName + '" is not an Exhibition-flagged event.', true);
           return;
         }
         currentEventId = data.eventId;
@@ -412,6 +414,8 @@
         EXHIBITION_CURRENCY = data.currency || 'USD';
 
         document.getElementById('fpEventName').textContent = data.eventName;
+        // The Exhibition-flagged type's own admin-chosen name, not always literally "Exhibition" anymore.
+        document.getElementById('fpEventTypeTag').textContent = data.eventType;
         document.getElementById('eventPickerBox').style.display = 'none';
         document.getElementById('builderBox').style.display = 'block';
 

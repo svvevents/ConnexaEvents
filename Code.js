@@ -283,6 +283,14 @@ const MILESTONE_TYPES = [MILESTONE_TYPE_CONFIRM_INFO, MILESTONE_TYPE_FILE_UPLOAD
 // completeConfirmInfoMilestone_. Not admin-configurable in v1.
 const MILESTONE_CONFIRM_INFO_FIELDS = ['companyName', 'companyDescription', 'website', 'membershipCategory'];
 const MILESTONE_UPLOAD_ROOT_FOLDER_NAME = 'Milestone Uploads';
+// Flat (not per-event) Drive folder for event cover images — see
+// getOrCreateEventBannerFolder_/uploadEventBannerImage. Flat because
+// filenames already embed the eventId (collision-proof) and there's at
+// most one banner per top-level event, unlike milestone uploads which can
+// have many submissions per event.
+const EVENT_BANNER_FOLDER_NAME = 'Event Banners';
+const EVENT_BANNER_MAX_SIZE_MB = 5;
+const EVENT_BANNER_ACCEPTED_TYPES = ['jpg', 'jpeg', 'png', 'webp'];
 
 // Reserved, built-in EventType values (not sourced from ClientOnboarding).
 const EVENT_TYPE_UMBRELLA      = 'Umbrella Event';
@@ -367,7 +375,7 @@ const RESET_TOKEN_TTL_MINUTES = 60;
 // AdminResetPassword.html via CSS variables, so changing them here
 // re-themes the whole app in one place.
 const BRANDING = {
-  logoUrl: 'https://raw.githubusercontent.com/svvevents/b2bMeetingMatching/main/Connexa_Logo.png',
+  logoUrl: 'https://raw.githubusercontent.com/svvevents/b2bMeetingMatching/main/ConnexaEventsLogo_noBackground.png',
   bannerUrl: 'https://raw.githubusercontent.com/svvevents/b2bMeetingMatching/main/banner-1900x600.jpg',
   primaryColor: '#1C7293',   // teal — primary actions, active nav states, links
   navyColor: '#1B2A4A',      // navy — sidebars, dark surfaces, headings
@@ -866,6 +874,205 @@ function resetAdminPassword(email, token, newPassword) {
   throw new Error('No admin account found for that email address.');
 }
 
+/**
+ * TEMPORARY DEBUG HELPER — delete once the login issue is confirmed
+ * fixed. Not wired to the web app or google.script.run in any way; only
+ * runnable by someone with edit access to this script, via the Apps
+ * Script editor's Run menu. Exists for testing with an admin email that
+ * can't receive the "Forgot password" reset link. Edit the two constants
+ * below to a real email/password before running.
+ */
+function debugSetAdminPassword_() {
+  const email = 'CHANGE_ME@example.com'.trim().toLowerCase();
+  const newPassword = 'CHANGE_ME_new_password';
+
+  if (email.indexOf('CHANGE_ME') > -1 || email.indexOf('@') === -1) {
+    throw new Error('Edit the "email" constant in debugSetAdminPassword_ to a real admin email first.');
+  }
+  if (newPassword.indexOf('CHANGE_ME') > -1 || newPassword.length < 8) {
+    throw new Error('Edit the "newPassword" constant in debugSetAdminPassword_ to a real password (8+ chars) first.');
+  }
+
+  const sheet = getAdminsSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim().toLowerCase() === email) {
+      sheet.getRange(i + 1, 2).setValue(hashPassword_(newPassword));
+      sheet.getRange(i + 1, 3, 1, 2).setValue('');
+      CacheService.getScriptCache().remove(adminLoginAttemptsCacheKey_(email));
+      Logger.log('Password updated for ' + email + ' and lockout counter cleared.');
+      return;
+    }
+  }
+  throw new Error('No admin account found for ' + email + ' — check the Email column in the Admins sheet.');
+}
+
+/* =========================================================================
+   ONE-TIME MIGRATION: Event Type flags + per-Umbrella scoping
+   ----------------------------------------------------------------------
+   Two functions, each with a DryRun and a Commit entry point, run
+   manually from the Apps Script editor's Run menu — never wired to the
+   web app or google.script.run. Always run BOTH DryRun functions first,
+   ideally against a COPY of the production spreadsheet (Sheets > File >
+   Make a copy), and read the returned report in the execution log (View
+   > Logs) before running either Commit function for real. Both are
+   idempotent — safe to re-run.
+
+   Order matters: run backfillEventTypeFlags_Commit() before
+   backfillClientOnboardingScope_Commit() — the second one reads
+   getAllEvents_() to figure out which Umbrella owns each EventType, and
+   that reasoning doesn't depend on the flags themselves, so the order is
+   actually not strict, but keeping it EventTypeFlags-then-Scope mirrors
+   the plan's phase order and is easiest to reason about if something
+   looks wrong midway.
+
+   Changes made by these functions become visible to the rest of the app
+   within CROSS_REQUEST_CACHE_SECONDS (60s) — no explicit cache
+   invalidation is done here since this is a one-time, low-frequency,
+   manually-run operation, not a hot path.
+   ========================================================================= */
+
+function backfillEventTypeFlags_DryRun() { Logger.log(backfillEventTypeFlags_impl_(false)); }
+function backfillEventTypeFlags_Commit() { Logger.log(backfillEventTypeFlags_impl_(true)); }
+
+/**
+ * Sets IsExhibition / IsCuratedEvent / IsB2B on every existing Events row
+ * from its current EventType string (via normalizeEventType_, so a
+ * legacy "Excursion" row correctly backfills as Curated Event). This is
+ * also where sub-event rows get a REAL IsB2B value for the first time —
+ * previously always false regardless of their actual type, per the old
+ * top-level-only write convention createOrUpdateEvent no longer follows
+ * (see Phase 2 of the Event Type flags plan).
+ */
+function backfillEventTypeFlags_impl_(commit) {
+  const sheet = getEventsSheet_();
+  const col = getEventsColumnIndex_(sheet);
+  const data = sheet.getDataRange().getValues();
+  const typeIdx = col.EventType - 1, idIdx = col.EventID - 1;
+  const exhibitionIdx = col.IsExhibition - 1, curatedIdx = col.IsCuratedEvent - 1, b2bIdx = col.IsB2B - 1;
+  const bool_ = function(v) { return v === true || String(v).toUpperCase() === 'TRUE'; };
+
+  const lines = [];
+  let changedCount = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const type = normalizeEventType_(row[typeIdx]);
+    const wantExhibition = type === EVENT_TYPE_EXHIBITION;
+    const wantCurated = type === EVENT_TYPE_CURATED_EVENT;
+    const wantB2B = type === EVENT_TYPE_B2B_MEETINGS;
+    const curExhibition = bool_(row[exhibitionIdx]);
+    const curCurated = bool_(row[curatedIdx]);
+    const curB2B = bool_(row[b2bIdx]);
+
+    if (curExhibition !== wantExhibition || curCurated !== wantCurated || curB2B !== wantB2B) {
+      changedCount++;
+      lines.push('EventID ' + row[idIdx] + ' (type "' + type + '"): IsExhibition ' + curExhibition + '→' + wantExhibition +
+        ', IsCuratedEvent ' + curCurated + '→' + wantCurated + ', IsB2B ' + curB2B + '→' + wantB2B);
+      if (commit) {
+        row[exhibitionIdx] = wantExhibition;
+        row[curatedIdx] = wantCurated;
+        row[b2bIdx] = wantB2B;
+      }
+    }
+  }
+
+  if (commit && changedCount > 0) {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      sheet.getDataRange().setValues(data);
+      _rawDataCache_.events = null;
+      invalidateCrossRequestCache_(EVENTS_CACHE_KEY_);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  return (commit ? 'COMMITTED — ' : 'DRY RUN (nothing written) — ') + changedCount + ' row(s) ' +
+    (commit ? 'updated' : 'would be updated') + ' of ' + (data.length - 1) + ' total.\n' + lines.join('\n');
+}
+
+function backfillClientOnboardingScope_DryRun() { Logger.log(backfillClientOnboardingScope_impl_(false)); }
+function backfillClientOnboardingScope_Commit() { Logger.log(backfillClientOnboardingScope_impl_(true)); }
+
+/**
+ * For each distinct EventType name currently in ClientOnboarding (today
+ * global, unscoped), finds every Events row using it and resolves the
+ * "owning" Umbrella as row.parentEventId || row.eventId for each. Three
+ * outcomes per type:
+ *   - exactly one distinct owning Umbrella found  -> auto-assign ParentEventID
+ *   - zero events use it yet                      -> UNRESOLVED, left blank
+ *   - more than one distinct owning Umbrella       -> CONFLICT, left blank
+ * Blank ParentEventID rows stay visible to every scope (see
+ * getOnboardingData_'s own doc comment) until manually resolved via
+ * Settings, so nothing breaks for an UNRESOLVED or CONFLICT type — it
+ * just isn't genuinely scoped to one Umbrella yet.
+ */
+function backfillClientOnboardingScope_impl_(commit) {
+  const sheet = getOnboardingSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 'ClientOnboarding has no data rows — nothing to backfill.';
+
+  const data = sheet.getRange(2, 1, lastRow - 1, ONBOARDING_HEADERS_.length).getValues();
+  const typeIdx = ONBOARDING_HEADERS_.indexOf('EventType');
+  const parentIdx = ONBOARDING_HEADERS_.indexOf('ParentEventID');
+
+  const typesInOnboarding = {};
+  data.forEach(function(row) {
+    const type = normalizeEventType_(row[typeIdx]);
+    if (type) typesInOnboarding[type] = true;
+  });
+
+  const owningUmbrellasByType = {};
+  getAllEvents_().forEach(function(e) {
+    const type = normalizeEventType_(e.eventType);
+    if (!type) return;
+    const owner = e.parentEventId || e.eventId;
+    owningUmbrellasByType[type] = owningUmbrellasByType[type] || {};
+    owningUmbrellasByType[type][owner] = true;
+  });
+
+  const resolvedScope = {}; // type -> umbrellaId, only for the clean single-owner case
+  const lines = [];
+
+  Object.keys(typesInOnboarding).sort().forEach(function(type) {
+    const owners = Object.keys(owningUmbrellasByType[type] || {});
+    if (owners.length === 0) {
+      lines.push('UNRESOLVED: "' + type + '" — configured but used by zero events yet. Left unscoped; assign it to an Umbrella manually via Settings when ready.');
+    } else if (owners.length === 1) {
+      resolvedScope[type] = owners[0];
+      lines.push('OK: "' + type + '" → scoped to Umbrella ' + owners[0] + '.');
+    } else {
+      lines.push('CONFLICT: "' + type + '" — used by ' + owners.length + ' different Umbrellas (' + owners.join(', ') +
+        '). Left unscoped; resolve manually via Settings once the Settings panel ships — duplicate the type per-Umbrella, or pick one canonical owner and re-save the others\' events under a different type.');
+    }
+  });
+
+  let changedCount = 0;
+  if (commit) {
+    data.forEach(function(row) {
+      const type = normalizeEventType_(row[typeIdx]);
+      if (type && resolvedScope[type] && String(row[parentIdx] || '').trim() !== resolvedScope[type]) {
+        row[parentIdx] = resolvedScope[type];
+        changedCount++;
+      }
+    });
+    if (changedCount > 0) {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+      try {
+        sheet.getRange(2, 1, data.length, ONBOARDING_HEADERS_.length).setValues(data);
+      } finally {
+        lock.releaseLock();
+      }
+    }
+  }
+
+  return (commit ? 'COMMITTED — ' : 'DRY RUN (nothing written) — ') + changedCount + ' row(s) ' +
+    (commit ? 'updated' : 'would be updated') + '.\n\n' + lines.join('\n');
+}
+
 /* =========================================================================
    EVENTS SHEET HELPERS
    ========================================================================= */
@@ -929,10 +1136,23 @@ function eventsHeaders_() {
   // belongs to whichever row actually carries the B2B Meeting Preferences
   // data). Blank/false is the default: attendees never see who chose
   // them unless an admin explicitly opts an entity in.
+  //
+  // IsExhibition / IsCuratedEvent: per-entity, same as ShowChosenByToAttendees
+  // (top-level events AND sub-events both get a real value — unlike IsB2B,
+  // which stays top-level-only by long-standing convention elsewhere in
+  // this file). Computed from the entity's EventType's ClientOnboarding
+  // flags at save time in createOrUpdateEvent, not looked up live on read.
+  // BannerImageUrl / BannerImageFileId: top-level-only, same convention as
+  // Currency/AllowedDomains (see createOrUpdateEvent's isTopLevel gate and
+  // uploadEventBannerImage/removeEventBannerImage). Url is the public
+  // renderable thumbnail link (or blank = use the default gradient
+  // banner); FileId is kept purely so removeEventBannerImage can trash the
+  // Drive file instead of orphaning it.
   return ['EventID', 'ParentEventID', 'EventName', 'Description', 'EventDate', 'EventTime',
     'Location', 'Website', 'Status', 'EventType', 'IsB2B', 'DietaryRequirements', 'CreatedDate', 'CreatedBy',
     'DetailsPageUrl', 'Price', 'TypeConfig', 'Currency', 'Places', 'MaxOptionsPerAttendee', 'FloorPlanSize',
-    'AllowedDomains', 'ShowChosenByToAttendees'];
+    'AllowedDomains', 'ShowChosenByToAttendees', 'IsExhibition', 'IsCuratedEvent',
+    'BannerImageUrl', 'BannerImageFileId'];
 }
 
 /**
@@ -1036,7 +1256,16 @@ function rowToEventObj_(headers, row) {
     // Own raw flag — per-entity, not inherited from a parent (see
     // eventsHeaders_ note). Used by getChosenByForEntity_'s callers to
     // decide whether the attendee-facing report is available.
-    showChosenByToAttendees: obj.ShowChosenByToAttendees === true || String(obj.ShowChosenByToAttendees).toUpperCase() === 'TRUE'
+    showChosenByToAttendees: obj.ShowChosenByToAttendees === true || String(obj.ShowChosenByToAttendees).toUpperCase() === 'TRUE',
+    // Own raw cells — top-level-only (see eventsHeaders_ note). Blank url
+    // means "no custom banner," and callers should render the default
+    // gradient rather than treating this as an error. FileId isn't
+    // sensitive (the thumbnail URL above already embeds it in plain text
+    // once shared) — kept on the object so uploadEventBannerImage/
+    // removeEventBannerImage can trash the previous file without a
+    // separate lookup.
+    bannerImageUrl: String(obj.BannerImageUrl || ''),
+    bannerImageFileId: String(obj.BannerImageFileId || '')
   };
 }
 
@@ -1180,7 +1409,7 @@ function getRegistrationCountMap_() {
 function getConfirmedCountForEntity_(entity) {
   if (!entity) return 0;
   const isSubEvent = !!entity.parentEventId;
-  const tracksViaSubEventRegs = isSubEvent || entity.eventType === EVENT_TYPE_EXHIBITION;
+  const tracksViaSubEventRegs = isSubEvent || entity.isExhibition;
   if (tracksViaSubEventRegs) {
     return getConfirmedSubEventCountMap_()[entity.eventId] || 0;
   }
@@ -1392,8 +1621,8 @@ function getCuratedEventOptionsLiveState_(entity) {
  */
 function entityUsesRankedAllocation_(entity) {
   if (!entity) return false;
-  if (entity.eventType === EVENT_TYPE_EXHIBITION) return true;
-  if (entity.eventType === EVENT_TYPE_CURATED_EVENT || entity.eventType === EVENT_TYPE_B2B_MEETINGS) {
+  if (entity.isExhibition) return true;
+  if (entity.isCuratedEvent || entity.isB2B) {
     return !!(entity.typeConfig && entity.typeConfig.length);
   }
   return false;
@@ -1422,30 +1651,36 @@ function entityUsesRankedAllocation_(entity) {
 function getEntityLiveState(entityId) {
   const entity = getEventById_(entityId);
   if (!entity) throw new Error('Event not found.');
-  if (entity.eventType === EVENT_TYPE_EXHIBITION) {
+  // isB2B/isExhibition/isCuratedEvent included on every branch below so
+  // every caller (getEventDetailsForAttendee, etc.) can pass these
+  // straight through to Portal.html without a separate lookup.
+  if (entity.isExhibition) {
     const state = getExhibitionCompleteState_(entity);
     const canvasSize = getFloorPlanCanvasSize_(entity);
     return {
-      eventType: EVENT_TYPE_EXHIBITION,
+      eventType: entity.eventType,
+      isB2B: entity.isB2B, isExhibition: entity.isExhibition, isCuratedEvent: entity.isCuratedEvent,
       tables: state.tables,
       decor: state.decor,
       canvasWidth: canvasSize.width,
       canvasHeight: canvasSize.height
     };
   }
-  if (entity.eventType === EVENT_TYPE_CURATED_EVENT || entity.eventType === EVENT_TYPE_B2B_MEETINGS) {
+  if (entity.isCuratedEvent || entity.isB2B) {
     const options = getCuratedEventOptionsLiveState_(entity);
     if (options) {
       return {
         eventType: entity.eventType,
+        isB2B: entity.isB2B, isExhibition: entity.isExhibition, isCuratedEvent: entity.isCuratedEvent,
         options: options,
         currency: getEventCurrency_(entity),
-        maxOptionsPerAttendee: entity.eventType === EVENT_TYPE_CURATED_EVENT ? entity.maxOptionsPerAttendee : 1
+        maxOptionsPerAttendee: entity.isCuratedEvent ? entity.maxOptionsPerAttendee : 1
       };
     }
   }
   return {
     eventType: entity.eventType,
+    isB2B: entity.isB2B, isExhibition: entity.isExhibition, isCuratedEvent: entity.isCuratedEvent,
     capacity: getEventCapacityState_(entity),
     price: getEventPrice_(entity),
     currency: getEventCurrency_(entity)
@@ -1469,18 +1704,32 @@ function getUmbrellaChildren(eventId) {
   // would otherwise call getEventById_(e.parentEventId) -> getAllEvents_()
   // once per sub-event.
   const parentCurrency = event.currencyRaw || DEFAULT_CURRENCY;
+  // Hoisted out of the per-sub-event map below, same rationale as
+  // parentCurrency — every sub-event shares this Umbrella's scope, so
+  // there's no reason to re-fetch (or even re-hit the cache) once per
+  // sub-event. Each sub-event's own registrationTypes (for its own
+  // Registration Type picker — see Phase 8) come from this, hidden ones
+  // filtered and effective-disabled computed the same way
+  // getRegistrationFormDefinition does for the top-level entity.
+  const onboarding = getOnboardingData_(eventId);
 
   return getAllEvents_()
     .filter(e => e.parentEventId === eventId && e.status !== 'Draft' && e.status !== 'Closed')
     .sort((a, b) => (a.eventDate + a.eventTime).localeCompare(b.eventDate + b.eventTime))
     .map(e => {
+      const regTypes = (onboarding[e.eventType] && onboarding[e.eventType].registrationTypes) || [];
       const base = {
         eventId: e.eventId, eventName: e.eventName, description: e.description,
         eventDate: e.eventDate, eventTime: e.eventTime, location: e.location, eventType: e.eventType,
-        extraFields: getExtraFieldsForType_(e.eventType),
+        // Client-side (Portal.html) branches on these flags instead of
+        // comparing eventType against a hardcoded string — see Phase 8 of
+        // the Event Type flags plan.
+        isB2B: e.isB2B, isExhibition: e.isExhibition, isCuratedEvent: e.isCuratedEvent,
+        registrationTypes: regTypes.filter(rt => !rt.hidden).map(computeRegTypeEffectiveState_),
+        extraFields: getExtraFieldsForType_(e.eventType, eventId),
         currency: parentCurrency
       };
-      if (e.eventType === EVENT_TYPE_EXHIBITION) {
+      if (e.isExhibition) {
         const state = getExhibitionCompleteState_(e);
         const canvasSize = getFloorPlanCanvasSize_(e);
         base.tables = state.tables;
@@ -1488,10 +1737,10 @@ function getUmbrellaChildren(eventId) {
         base.canvasWidth = canvasSize.width;
         base.canvasHeight = canvasSize.height;
         base.price = getEventPrice_(e); // flat, per-booth — see EVENTTYPE-SPECIFIC REQUIREMENTS
-      } else if ((e.eventType === EVENT_TYPE_CURATED_EVENT || e.eventType === EVENT_TYPE_B2B_MEETINGS) && getCuratedEventOptionsLiveState_(e)) {
+      } else if ((e.isCuratedEvent || e.isB2B) && getCuratedEventOptionsLiveState_(e)) {
         base.options = getCuratedEventOptionsLiveState_(e);
         // B2B is always a single pick (see allocateChoice_'s maxAllowed); only Curated Event's cap is admin-configurable.
-        base.maxOptionsPerAttendee = e.eventType === EVENT_TYPE_CURATED_EVENT ? e.maxOptionsPerAttendee : 1;
+        base.maxOptionsPerAttendee = e.isCuratedEvent ? e.maxOptionsPerAttendee : 1;
       } else {
         base.price = getEventPrice_(e);
         base.capacity = getEventCapacityState_(e);
@@ -1547,8 +1796,19 @@ function getMilestonesForAttendee(sessionToken, eventId) {
           eventTime: e.eventTime,
           location: e.location,
           eventType: e.eventType,
+          isB2B: e.isB2B,
+          isExhibition: e.isExhibition,
+          isCuratedEvent: e.isCuratedEvent,
           detailsPageUrl: e.detailsPageUrl,
           registrationStatus: regs.some(r => r.status === 'Confirmed') ? 'Confirmed' : 'Waitlisted',
+          // The Registration Type this attendee chose for this sub-event —
+          // for a ranked sub-event (Exhibition booth, Curated Event/B2B
+          // option), optionLabel already holds the chosen option's own
+          // label; for a plain opt-in it holds whatever Registration Type
+          // was picked at signup (see recordPlainSubEventOptIn_). A
+          // Curated Event attendee with multiple selected options has one
+          // row per option, so those are joined for display.
+          registrationType: regs.map(r => r.optionLabel).filter(Boolean).join(', '),
           milestones: getMilestonesForEntity_(e.eventId, em)
         };
       });
@@ -1853,7 +2113,7 @@ function releaseEntityLock_(entityId, leaseId) {
 
 function allocateChoice_(topEventId, entity, rankedIds, email, fullName, displayLabel, extraFields) {
   if (!rankedIds || !rankedIds.length) throw new Error('Please select at least one preference for ' + entity.eventName + '.');
-  const maxAllowed = entity.eventType === EVENT_TYPE_B2B_MEETINGS ? 1 : 3;
+  const maxAllowed = entity.isB2B ? 1 : 3;
   if (rankedIds.length > maxAllowed) throw new Error('Please select at most ' + maxAllowed + ' option' + (maxAllowed === 1 ? '' : 's') + ' for ' + entity.eventName + '.');
 
   const leaseId = acquireEntityLock_(entity.eventId, 15000);
@@ -1861,7 +2121,7 @@ function allocateChoice_(topEventId, entity, rankedIds, email, fullName, display
     // Re-read fresh, inside the lock, so concurrent submissions can't both
     // see the same "available" slot.
     let liveOptions;
-    if (entity.eventType === EVENT_TYPE_EXHIBITION) {
+    if (entity.isExhibition) {
       liveOptions = getExhibitionCompleteState_(entity).tables.map(o => ({ id: o.elementId, label: o.label, price: o.price, isFull: o.status !== 'Available' }));
     } else {
       const curatedOptions = getCuratedEventOptionsLiveState_(entity) || [];
@@ -1989,17 +2249,26 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
  * allocation. Enforces capacity (if limited) before recording; throws if
  * the sub-event is full so the caller can surface a clear error.
  */
-function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraFields) {
+function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraFields, registrationType) {
   const leaseId = acquireEntityLock_(subEvent.eventId, 15000);
   try {
     const capacityState = getEventCapacityState_(subEvent);
     if (!capacityState.unlimited && capacityState.isFull) {
       throw new Error('"' + subEvent.eventName + '" is full (' + capacityState.label + ').');
     }
-    const optionPrice = getEventPrice_(subEvent);
+    const regTypeLabel = registrationType || '';
+    // A chosen Registration Type's own Price replaces the flat sub-event
+    // Price fallback (same precedence as Portal.html's getSelectionPriceInfo)
+    // — falls back to the flat price when no type was chosen or its price
+    // isn't set, so a legacy sub-event with no Registration Types behaves
+    // exactly as before.
+    const onboarding = getOnboardingData_(topEventId);
+    const regTypeDef = ((onboarding[subEvent.eventType] && onboarding[subEvent.eventType].registrationTypes) || [])
+      .find(rt => rt.label === regTypeLabel);
+    const optionPrice = (regTypeDef && typeof regTypeDef.price === 'number' && regTypeDef.price > 0) ? regTypeDef.price : getEventPrice_(subEvent);
     const optionCurrency = getEventCurrency_(subEvent);
     const registrationId = mintId_('SER');
-    getSubEventRegSheet_().appendRow([new Date(), topEventId, subEvent.eventId, email, fullName, subEvent.eventType || '', '', '', 'Confirmed', '', JSON.stringify(extraFields || {}), '', registrationId]);
+    getSubEventRegSheet_().appendRow([new Date(), topEventId, subEvent.eventId, email, fullName, subEvent.eventType || '', '', regTypeLabel, 'Confirmed', '', JSON.stringify(extraFields || {}), '', registrationId]);
     _rawDataCache_.subEventRegs = null; // invalidate — see allocateChoice_ for why this matters within a batch loop
     _rawDataCache_.confirmedSubEventCounts = null; // derived from subEventRegs — same staleness risk
 
@@ -2009,7 +2278,7 @@ function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraF
 
     return {
       subEventId: subEvent.eventId, subEventName: subEvent.eventName, eventType: subEvent.eventType,
-      status: 'Confirmed', optionId: '', optionLabel: '', rank: null,
+      status: 'Confirmed', optionId: '', optionLabel: regTypeLabel, rank: null,
       optionPrice: optionPrice, optionCurrency: optionCurrency
     };
   } finally {
@@ -2028,8 +2297,8 @@ function getAdminEventsTree(token) {
   // event ISN'T using Exhibition's floor plan or a Curated Event's/B2B's
   // per-option capacity — those show their own capacity per booth/option
   // in the admin allocation view instead.
-  const usesEntityLevelCapacity = e => !(e.eventType === EVENT_TYPE_EXHIBITION ||
-    ((e.eventType === EVENT_TYPE_CURATED_EVENT || e.eventType === EVENT_TYPE_B2B_MEETINGS) && e.typeConfig && e.typeConfig.length));
+  const usesEntityLevelCapacity = e => !(e.isExhibition ||
+    ((e.isCuratedEvent || e.isB2B) && e.typeConfig && e.typeConfig.length));
 
   // Plain milestone definitions (no per-attendee completion status — this
   // is the admin's edit view, not getMilestonesForEntity_'s attendee-
@@ -2056,60 +2325,129 @@ function getAdminEventsTree(token) {
   });
 }
 
-function getEventTypesAndRegTypes(token) {
+function getEventTypesAndRegTypes(token, umbrellaEventId) {
   requireAdmin_(token);
-  return getOnboardingData_();
+  return getOnboardingData_(umbrellaEventId);
 }
 
-/** Used by AdminPortal to populate the Event Type dropdown (top-level vs sub-event lists differ). */
-function getEventTypeOptions(token) {
+/** Used by AdminPortal to populate the Event Type dropdown (top-level vs sub-event lists differ). Scoped to one Umbrella Event — its own id when editing/converting itself, or its parent's id for a sub-event. */
+function getEventTypeOptions(token, umbrellaEventId) {
   requireAdmin_(token);
-  return getEventTypeOptions_();
+  return getEventTypeOptions_(umbrellaEventId);
 }
 
-const ONBOARDING_CACHE_KEY_ = 'onboarding_v1';
+const ONBOARDING_CACHE_KEY_ = 'onboarding_v2:';
 
 /**
- * ClientOnboarding is only ever edited directly on the sheet (there's no
- * in-app UI for it), so a short cross-request TTL is a safe trade-off —
- * there's no write path in this file to pair an explicit invalidation
- * with, unlike getAllEvents_/getFloorPlanElementsRaw_ above.
+ * Scoped to one top-level Umbrella Event — umbrellaEventId is required.
+ * A ClientOnboarding row counts as belonging to this scope if its
+ * ParentEventID matches, OR is blank. Blank is a TEMPORARY legacy
+ * fallback for rows written before per-Umbrella scoping existed —
+ * treated as "visible to every scope" so nothing broke on the day this
+ * shipped, until backfillClientOnboardingScope_ assigns them a real
+ * ParentEventID (see that function's own doc comment). Remove the blank
+ * branch once that backfill has run in production and every row has a
+ * real scope or an intentionally-blank one from an unresolved conflict.
+ *
+ * Boolean/date columns are read with a bare `=== true` alongside a
+ * case-insensitive 'TRUE' string check because Sheets can hand back
+ * either a real boolean or a checkbox's literal string depending on how
+ * the cell was populated — same tolerant pattern IsB2B already used.
  */
-function getOnboardingData_() {
-  if (_rawDataCache_.onboarding) return _rawDataCache_.onboarding;
-  const cached = getCrossRequestCache_(ONBOARDING_CACHE_KEY_);
-  if (cached) { _rawDataCache_.onboarding = cached; return cached; }
+function getOnboardingData_(umbrellaEventId) {
+  if (!umbrellaEventId) throw new Error('getOnboardingData_ requires an umbrellaEventId.');
+  const cacheKey = ONBOARDING_CACHE_KEY_ + umbrellaEventId;
+  if (_rawDataCache_.onboarding && _rawDataCache_.onboarding[umbrellaEventId]) return _rawDataCache_.onboarding[umbrellaEventId];
+  const cached = getCrossRequestCache_(cacheKey);
+  if (cached) {
+    _rawDataCache_.onboarding = _rawDataCache_.onboarding || {};
+    _rawDataCache_.onboarding[umbrellaEventId] = cached;
+    return cached;
+  }
 
   const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName(ONBOARDING_SHEET_NAME);
-  const result = {}; // { eventType: { isB2B: bool, registrationTypes: [] } }
+  // { eventType: { isB2B, isExhibition, isCuratedEvent, registrationTypes: [{label, price, disabled, hidden, availableFrom, availableUntil}] } }
+  const result = {};
 
-  if (!sheet || sheet.getLastRow() <= 1) {
-    _rawDataCache_.onboarding = result;
-    putCrossRequestCache_(ONBOARDING_CACHE_KEY_, result);
+  const store_ = function() {
+    _rawDataCache_.onboarding = _rawDataCache_.onboarding || {};
+    _rawDataCache_.onboarding[umbrellaEventId] = result;
+    putCrossRequestCache_(cacheKey, result);
     return result;
-  }
+  };
+
+  if (!sheet || sheet.getLastRow() <= 1) return store_();
+
   const data = sheet.getDataRange().getValues();
   const headers = data[0].map(h => String(h).trim().toLowerCase());
-  const typeIdx = headers.indexOf('eventtype') !== -1 ? headers.indexOf('eventtype') : headers.indexOf('event type');
-  const regIdx = headers.indexOf('registrationtype') !== -1 ? headers.indexOf('registrationtype') : headers.indexOf('registration type');
-  const b2bIdx = headers.indexOf('isb2b');
+  const idx = function(name) { return headers.indexOf(name); };
+  const typeIdx = idx('eventtype') !== -1 ? idx('eventtype') : idx('event type');
+  const regIdx = idx('registrationtype') !== -1 ? idx('registrationtype') : idx('registration type');
+  const b2bIdx = idx('isb2b');
+  const parentIdx = idx('parenteventid');
+  const exhibitionIdx = idx('isexhibition');
+  const curatedIdx = idx('iscuratedevent');
+  const priceIdx = idx('price');
+  const disabledIdx = idx('disabled');
+  const hiddenIdx = idx('hidden');
+  const fromIdx = idx('availablefrom');
+  const untilIdx = idx('availableuntil');
+  const bool_ = function(row, i) { return i !== -1 && (row[i] === true || String(row[i]).toUpperCase() === 'TRUE'); };
 
   for (let i = 1; i < data.length; i++) {
-    const type = normalizeEventType_(data[i][typeIdx]);
-    const regType = String(data[i][regIdx] || '').trim();
-    const isB2B = b2bIdx !== -1 && (data[i][b2bIdx] === true || String(data[i][b2bIdx]).toUpperCase() === 'TRUE');
+    const row = data[i];
+    const type = normalizeEventType_(row[typeIdx]);
     if (!type) continue;
-    if (!result[type]) result[type] = { isB2B: isB2B, registrationTypes: [] };
+    const parentId = parentIdx !== -1 ? String(row[parentIdx] || '').trim() : '';
+    if (parentId && parentId !== String(umbrellaEventId)) continue; // scoped to a different Umbrella — not visible here
+
+    const regLabel = String(row[regIdx] || '').trim();
+    const isB2B = bool_(row, b2bIdx);
+    const isExhibition = bool_(row, exhibitionIdx);
+    const isCuratedEvent = bool_(row, curatedIdx);
+
+    if (!result[type]) result[type] = { isB2B: false, isExhibition: false, isCuratedEvent: false, registrationTypes: [] };
     if (isB2B) result[type].isB2B = true;
-    if (regType && result[type].registrationTypes.indexOf(regType) === -1) result[type].registrationTypes.push(regType);
+    if (isExhibition) result[type].isExhibition = true;
+    if (isCuratedEvent) result[type].isCuratedEvent = true;
+
+    if (regLabel && !result[type].registrationTypes.some(rt => rt.label === regLabel)) {
+      const priceRaw = priceIdx !== -1 ? row[priceIdx] : '';
+      result[type].registrationTypes.push({
+        label: regLabel,
+        price: (priceRaw === '' || priceRaw === null || isNaN(Number(priceRaw))) ? 0 : Number(priceRaw),
+        disabled: bool_(row, disabledIdx),
+        hidden: bool_(row, hiddenIdx),
+        availableFrom: fromIdx !== -1 && row[fromIdx] ? String(row[fromIdx]) : '',
+        availableUntil: untilIdx !== -1 && row[untilIdx] ? String(row[untilIdx]) : ''
+      });
+    }
   }
-  _rawDataCache_.onboarding = result;
-  putCrossRequestCache_(ONBOARDING_CACHE_KEY_, result);
-  return result;
+  return store_();
 }
 
-const ONBOARDING_HEADERS_ = ['EventType', 'RegistrationType', 'IsB2B'];
+// ParentEventID: the owning top-level Umbrella Event's eventId — scopes
+// this EventType to one specific Umbrella instead of the old global
+// taxonomy. Repeated across every row for that type, same as IsB2B is
+// today. Blank (legacy pre-scoping rows) is treated as "visible to every
+// scope" by getOnboardingData_ until the one-time backfill assigns real
+// values — see backfillClientOnboardingScope_.
+// IsExhibition / IsCuratedEvent: per-type flags, repeated across a type's
+// rows exactly like IsB2B. Mutually exclusive with IsB2B and each other,
+// enforced in saveClientOnboardingType — a type is at most one of
+// B2B / Exhibition / Curated Event, or "Standard" if all three are false.
+// Price / Disabled / Hidden / AvailableFrom / AvailableUntil: per-ROW
+// (per Registration Type, not per-type). Price is a number; blank/0 means
+// "no override, use the entity's flat Price". Disabled is a manual
+// override; AvailableFrom/AvailableUntil are an optional scheduled
+// window — effective disabled state is computed fresh at read time
+// (now outside the window, OR the manual flag), never stored, since "now"
+// keeps moving. Hidden removes the type from the registration form
+// entirely, but existing registrations that already reference it are
+// never re-validated against the live list, so they keep working.
+const ONBOARDING_HEADERS_ = ['EventType', 'RegistrationType', 'IsB2B', 'ParentEventID',
+  'IsExhibition', 'IsCuratedEvent', 'Price', 'Disabled', 'Hidden', 'AvailableFrom', 'AvailableUntil'];
 
 /**
  * Was read-only-by-direct-sheet-edit until now (see getOnboardingData_'s
@@ -2129,34 +2467,88 @@ function getOnboardingSheet_() {
   return s;
 }
 
-function invalidateOnboardingCache_() {
-  _rawDataCache_.onboarding = null;
-  invalidateCrossRequestCache_(ONBOARDING_CACHE_KEY_);
+function invalidateOnboardingCache_(umbrellaEventId) {
+  _rawDataCache_.onboarding = null; // whole in-execution cache — cheap to rebuild, simplest to reset entirely rather than track per-scope staleness here too
+  invalidateCrossRequestCache_(ONBOARDING_CACHE_KEY_ + umbrellaEventId);
 }
 
 /**
- * Bulk-replaces every ClientOnboarding row for ONE EventType — same
- * scoped-replace shape as saveBudgetCategories/saveRegistrationFormFieldsForType.
- * At least one RegistrationType is required: getOnboardingData_ only ever
- * learns an EventType exists by seeing a row for it (see its own comment),
- * so an EventType saved with zero RegistrationTypes would silently vanish
- * from every dropdown that lists EventTypes — not a safe state to allow.
- * Renaming an EXISTING EventType isn't supported here on purpose — see
- * deleteClientOnboardingType's doc comment for why that's a much riskier
- * operation than add/edit-in-place/delete-if-unused.
+ * Bulk-replaces every ClientOnboarding row for ONE EventType, scoped to
+ * ONE Umbrella Event — same scoped-replace shape as
+ * saveBudgetCategories/saveRegistrationFormFieldsForType. At least one
+ * RegistrationType is required: getOnboardingData_ only ever learns an
+ * EventType exists by seeing a row for it, so an EventType saved with
+ * zero RegistrationTypes would silently vanish from every dropdown that
+ * lists EventTypes — not a safe state to allow.
+ *
+ * A row already in the sheet for this exact (type, scope) pair is
+ * replaced; a row with a BLANK ParentEventID for this type name is also
+ * swept up and claimed by this scope (this is the "resolve a legacy /
+ * conflicted type via Settings" path backfillClientOnboardingScope_
+ * leaves for exactly this purpose — see its own doc comment). Rows for
+ * the same type name under a DIFFERENT already-scoped Umbrella are left
+ * untouched, since two different Umbrellas can each define their own
+ * "Exhibition" independently.
+ *
+ * isB2B/isExhibition/isCuratedEvent are mutually exclusive — at most one
+ * may be true. If this type already has events using it within this
+ * scope (usageCount > 0) and the payload's three flags differ from what's
+ * currently stored, the save is HARD-BLOCKED (FLAGS_LOCKED, no override) —
+ * changing behavior out from under events that already rely on it isn't
+ * safe. The Registration Type list itself (labels/price/disabled/hidden/
+ * dates) may still be freely edited even when locked.
+ *
+ * Renaming an EXISTING EventType isn't done here — see
+ * renameClientOnboardingType, a separate function since it's a
+ * cross-sheet rewrite rather than a scoped replace.
  */
-function saveClientOnboardingType(token, eventType, payload) {
+function saveClientOnboardingType(token, umbrellaEventId, eventType, payload) {
   requireAdmin_(token);
+  const scope = String(umbrellaEventId || '').trim();
+  if (!scope) throw new Error('An Umbrella Event must be selected first.');
   const type = String(eventType || '').trim();
   if (!type) throw new Error('Event Type name is required.');
   if (type === EVENT_TYPE_UMBRELLA) throw new Error('"Umbrella Event" is a reserved built-in type and can\'t be edited here.');
 
   const isB2B = !!(payload && payload.isB2B);
+  const isExhibition = !!(payload && payload.isExhibition);
+  const isCuratedEvent = !!(payload && payload.isCuratedEvent);
+  if ([isB2B, isExhibition, isCuratedEvent].filter(Boolean).length > 1) {
+    throw new Error('Only one of B2B / Exhibition / Curated Event may be enabled for an Event Type.');
+  }
+
   const seen = {};
   const regTypes = ((payload && payload.registrationTypes) || [])
-    .map(t => String(t || '').trim())
-    .filter(t => { if (!t || seen[t.toLowerCase()]) return false; seen[t.toLowerCase()] = true; return true; });
+    .map(function(rt) {
+      return {
+        label: String((rt && rt.label) || '').trim(),
+        price: (rt && rt.price !== '' && rt.price != null && !isNaN(Number(rt.price))) ? Math.max(0, Number(rt.price)) : 0,
+        disabled: !!(rt && rt.disabled),
+        hidden: !!(rt && rt.hidden),
+        availableFrom: String((rt && rt.availableFrom) || '').trim(),
+        availableUntil: String((rt && rt.availableUntil) || '').trim()
+      };
+    })
+    .filter(function(rt) {
+      if (!rt.label || seen[rt.label.toLowerCase()]) return false;
+      seen[rt.label.toLowerCase()] = true;
+      return true;
+    });
   if (!regTypes.length) throw new Error('At least one Registration Type is required for "' + type + '".');
+
+  // Scoped usage count: events using this type where the event IS this
+  // Umbrella (a top-level conversion) or is one of its sub-events —
+  // mirrors deleteClientOnboardingType's own count, just scope-aware.
+  const usageCount = getAllEvents_().filter(function(e) {
+    return normalizeEventType_(e.eventType) === type && (e.parentEventId === scope || e.eventId === scope);
+  }).length;
+
+  if (usageCount > 0) {
+    const current = getOnboardingData_(scope)[type];
+    if (current && (current.isB2B !== isB2B || current.isExhibition !== isExhibition || current.isCuratedEvent !== isCuratedEvent)) {
+      throw new Error('FLAGS_LOCKED:' + usageCount);
+    }
+  }
 
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -2164,13 +2556,102 @@ function saveClientOnboardingType(token, eventType, payload) {
     const sheet = getOnboardingSheet_();
     const lastRow = sheet.getLastRow();
     const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, ONBOARDING_HEADERS_.length).getValues() : [];
-    const otherTypeRows = data.filter(row => normalizeEventType_(row[0]) !== type);
-    const newRows = regTypes.map(rt => [type, rt, isB2B]);
-    const finalRows = otherTypeRows.concat(newRows);
+    const claimedByThisSave = function(row) {
+      if (normalizeEventType_(row[0]) !== type) return false;
+      const rowScope = String(row[3] || '').trim();
+      return rowScope === '' || rowScope === scope;
+    };
+    const otherRows = data.filter(function(row) { return !claimedByThisSave(row); });
+    const newRows = regTypes.map(function(rt) {
+      return [type, rt.label, isB2B, scope, isExhibition, isCuratedEvent,
+        rt.price, rt.disabled, rt.hidden, rt.availableFrom, rt.availableUntil];
+    });
+    const finalRows = otherRows.concat(newRows);
 
     if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, ONBOARDING_HEADERS_.length).clearContent();
     if (finalRows.length) sheet.getRange(2, 1, finalRows.length, ONBOARDING_HEADERS_.length).setValues(finalRows);
-    invalidateOnboardingCache_();
+    invalidateOnboardingCache_(scope);
+  } finally {
+    lock.releaseLock();
+  }
+  return { status: 'ok' };
+}
+
+/**
+ * Renames an EventType, updating every row/reference that carries its
+ * name — ClientOnboarding, RegistrationFormFields, and every Events-sheet
+ * row currently using it — all scoped to one Umbrella. Separate from
+ * saveClientOnboardingType because it's a cross-sheet rewrite rather than
+ * a scoped replace of one sheet. Allowed regardless of usage count (a
+ * rename doesn't change behavior, only a label, so it's independent of
+ * the flag lock above) — safe now that a name only needs to be unique
+ * within its own Umbrella's scope, not globally.
+ */
+function renameClientOnboardingType(token, umbrellaEventId, oldName, newName) {
+  requireAdmin_(token);
+  const scope = String(umbrellaEventId || '').trim();
+  if (!scope) throw new Error('An Umbrella Event must be selected first.');
+  const from = String(oldName || '').trim();
+  const to = String(newName || '').trim();
+  if (!from || !to) throw new Error('Both the current and new Event Type name are required.');
+  if (from === to) return { status: 'ok' };
+  if (to === EVENT_TYPE_UMBRELLA) throw new Error('"Umbrella Event" is a reserved name.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const existing = getOnboardingData_(scope);
+    if (!existing[from]) throw new Error('"' + from + '" is not a configured Event Type for this Umbrella.');
+    if (existing[to]) throw new Error('"' + to + '" is already in use for this Umbrella — choose a different name.');
+
+    // ClientOnboarding: rename in place, scoped rows only.
+    const obSheet = getOnboardingSheet_();
+    const obLastRow = obSheet.getLastRow();
+    if (obLastRow > 1) {
+      const obData = obSheet.getRange(2, 1, obLastRow - 1, ONBOARDING_HEADERS_.length).getValues();
+      let changed = false;
+      obData.forEach(function(row) {
+        const rowScope = String(row[3] || '').trim();
+        if (normalizeEventType_(row[0]) === from && (rowScope === '' || rowScope === scope)) { row[0] = to; changed = true; }
+      });
+      if (changed) obSheet.getRange(2, 1, obData.length, ONBOARDING_HEADERS_.length).setValues(obData);
+    }
+
+    // RegistrationFormFields: rename in place, scoped rows only.
+    const ffSheet = getFormFieldsSheet_();
+    const ffLastRow = ffSheet.getLastRow();
+    if (ffLastRow > 1) {
+      const ffData = ffSheet.getRange(2, 1, ffLastRow - 1, FORM_FIELDS_HEADERS_.length).getValues();
+      let changed = false;
+      const parentIdx = FORM_FIELDS_HEADERS_.indexOf('ParentEventID');
+      ffData.forEach(function(row) {
+        const rowScope = String(row[parentIdx] || '').trim();
+        if (normalizeEventType_(row[0]) === from && (rowScope === '' || rowScope === scope)) { row[0] = to; changed = true; }
+      });
+      if (changed) ffSheet.getRange(2, 1, ffData.length, FORM_FIELDS_HEADERS_.length).setValues(ffData);
+    }
+
+    // Events sheet: rename on every event using it within this scope (itself, or its sub-events).
+    const evSheet = getEventsSheet_();
+    const evCol = getEventsColumnIndex_(evSheet);
+    const evData = evSheet.getDataRange().getValues();
+    const typeColIdx = evCol.EventType - 1, idColIdx = evCol.EventID - 1, parentColIdx = evCol.ParentEventID - 1;
+    let anyEventChanged = false;
+    for (let i = 1; i < evData.length; i++) {
+      const belongsToScope = String(evData[i][idColIdx]) === scope || String(evData[i][parentColIdx]) === scope;
+      if (belongsToScope && normalizeEventType_(evData[i][typeColIdx]) === from) {
+        evSheet.getRange(i + 1, evCol.EventType).setValue(to);
+        anyEventChanged = true;
+      }
+    }
+    if (anyEventChanged) {
+      _rawDataCache_.events = null;
+      invalidateCrossRequestCache_(EVENTS_CACHE_KEY_);
+    }
+
+    invalidateOnboardingCache_(scope);
+    if (_rawDataCache_.extraFieldsByType) delete _rawDataCache_.extraFieldsByType[scope];
+    invalidateCrossRequestCache_(FORM_FIELDS_CACHE_KEY_ + ':' + scope);
   } finally {
     lock.releaseLock();
   }
@@ -2191,10 +2672,14 @@ function saveClientOnboardingType(token, eventType, payload) {
  * know the usage count and pass force=true, so the client can show a
  * real confirmation with that number in it first.
  */
-function deleteClientOnboardingType(token, eventType, force) {
+function deleteClientOnboardingType(token, umbrellaEventId, eventType, force) {
   requireAdmin_(token);
+  const scope = String(umbrellaEventId || '').trim();
+  if (!scope) throw new Error('An Umbrella Event must be selected first.');
   const type = String(eventType || '').trim();
-  const usageCount = getAllEvents_().filter(e => normalizeEventType_(e.eventType) === type).length;
+  const usageCount = getAllEvents_().filter(function(e) {
+    return normalizeEventType_(e.eventType) === type && (e.parentEventId === scope || e.eventId === scope);
+  }).length;
   if (usageCount > 0 && !force) {
     throw new Error('USAGE_COUNT:' + usageCount);
   }
@@ -2205,11 +2690,14 @@ function deleteClientOnboardingType(token, eventType, force) {
     const sheet = getOnboardingSheet_();
     const lastRow = sheet.getLastRow();
     const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, ONBOARDING_HEADERS_.length).getValues() : [];
-    const keptRows = data.filter(row => normalizeEventType_(row[0]) !== type);
+    const keptRows = data.filter(function(row) {
+      const rowScope = String(row[3] || '').trim();
+      return !(normalizeEventType_(row[0]) === type && (rowScope === '' || rowScope === scope));
+    });
 
     if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, ONBOARDING_HEADERS_.length).clearContent();
     if (keptRows.length) sheet.getRange(2, 1, keptRows.length, ONBOARDING_HEADERS_.length).setValues(keptRows);
-    invalidateOnboardingCache_();
+    invalidateOnboardingCache_(scope);
   } finally {
     lock.releaseLock();
   }
@@ -2222,8 +2710,8 @@ function deleteClientOnboardingType(token, eventType, force) {
  * "Umbrella Event") or on a sub-event (onboarding-defined types only —
  * "Umbrella Event" is not a legal sub-event type).
  */
-function getEventTypeOptions_() {
-  const onboarding = getOnboardingData_();
+function getEventTypeOptions_(umbrellaEventId) {
+  const onboarding = getOnboardingData_(umbrellaEventId);
   const dynamicTypes = Object.keys(onboarding);
   return {
     topLevelTypes: dynamicTypes.concat([EVENT_TYPE_UMBRELLA]),
@@ -2281,25 +2769,36 @@ function getEventTypeOptions_() {
  * next saved through the admin form, though, this validation kicks in and
  * the admin will need to add at least one option to save it.
  */
-function normalizeTypeConfig_(eventType, rawConfig) {
-  if (eventType === EVENT_TYPE_EXHIBITION) return normalizeExhibitionAssetTypes_(rawConfig);
+/**
+ * flags = { isB2B, isExhibition, isCuratedEvent, registrationTypes } — the
+ * caller (createOrUpdateEvent) resolves these once via a SCOPED
+ * getOnboardingData_(umbrellaEventId) lookup and passes them in, rather
+ * than this function re-deriving behavior from the literal eventType
+ * string. eventType itself is kept only for readable error text — once
+ * EventTypes can have arbitrary admin-chosen names, hardcoding
+ * "B2B Pre-scheduled Meetings" in a message here would be misleading.
+ */
+function normalizeTypeConfig_(eventType, rawConfig, flags) {
+  flags = flags || {};
+  if (flags.isExhibition) return normalizeExhibitionAssetTypes_(rawConfig);
 
-  const usesOptions = eventType === EVENT_TYPE_CURATED_EVENT || eventType === EVENT_TYPE_B2B_MEETINGS;
+  const usesOptions = flags.isCuratedEvent || flags.isB2B;
   if (!usesOptions) return '[]';
 
   const list = Array.isArray(rawConfig) ? rawConfig : [];
-  const b2bOnboarding = eventType === EVENT_TYPE_B2B_MEETINGS ? getOnboardingData_()[EVENT_TYPE_B2B_MEETINGS] : null;
-  const validRegTypes = b2bOnboarding ? b2bOnboarding.registrationTypes : null;
+  const validRegTypes = flags.isB2B && Array.isArray(flags.registrationTypes)
+    ? flags.registrationTypes.map(rt => (rt && rt.label) || rt)
+    : null;
 
   const out = list.map((o, idx) => {
     const label = String((o && o.label) || '').trim();
     if (!label) {
-      throw new Error(eventType === EVENT_TYPE_B2B_MEETINGS
+      throw new Error(flags.isB2B
         ? 'Every pricing option needs a Registration Type selected.'
         : 'Every Curated Event option needs a name.');
     }
     if (validRegTypes && validRegTypes.indexOf(label) === -1) {
-      throw new Error('"' + label + '" is not a Registration Type configured for B2B Pre-scheduled Meetings in ClientOnboarding.');
+      throw new Error('"' + label + '" is not a Registration Type configured for "' + eventType + '" in Settings.');
     }
     const priceRaw = o && o.price;
     if (priceRaw === '' || priceRaw === null || priceRaw === undefined || isNaN(Number(priceRaw))) {
@@ -2317,9 +2816,7 @@ function normalizeTypeConfig_(eventType, rawConfig) {
   });
 
   if (!out.length) {
-    throw new Error(eventType === EVENT_TYPE_B2B_MEETINGS
-      ? 'At least one pricing option (with its own price and capacity) is required for a B2B Pre-scheduled Meetings event.'
-      : 'At least one pricing option (with its own price and capacity) is required for a Curated Event.');
+    throw new Error('At least one pricing option (with its own price and capacity) is required for "' + eventType + '".');
   }
 
   const seen = new Set();
@@ -2443,14 +2940,30 @@ function createOrUpdateEvent(token, payload) {
 
   const eventType = normalizeEventType_(payload.eventType);
   const isTopLevel = !payload.parentEventId;
-  let isB2B = false;
+  let isB2B = false, isExhibition = false, isCuratedEvent = false;
   let parentEvent = null;
+  let onboarding = null; // this entity's scoped ClientOnboarding data — also reused below by normalizeTypeConfig_
 
   if (isTopLevel) {
     if (!eventType) throw new Error('Please select an Event Type.');
+    // A brand-new top-level event has no id of its own yet to scope
+    // Event Types against — the only thing it can legally be is an
+    // Umbrella. Converting it to a specific leaf type (and picking from
+    // Event Types scoped to it) only happens afterward, on an edit,
+    // once it has a real id (see the sub-events-exist guard just below
+    // for the reverse direction).
+    if (!payload.eventId && eventType !== EVENT_TYPE_UMBRELLA) {
+      throw new Error('A brand-new top-level event must be created as "Umbrella Event" — define its own Event Types in Settings, then convert it to a specific type afterward.');
+    }
     if (eventType !== EVENT_TYPE_UMBRELLA) {
-      const onboarding = getOnboardingData_();
-      isB2B = !!(onboarding[eventType] && onboarding[eventType].isB2B);
+      // Editing an existing top-level event, converting it away from
+      // Umbrella to one of its OWN scoped types — the event's own id is
+      // the scope, per the plan's "a top-level event's Event Types are
+      // scoped to itself" model (same scope a sub-event created under it
+      // would use).
+      onboarding = getOnboardingData_(payload.eventId);
+      const flags = onboarding[eventType] || {};
+      isB2B = !!flags.isB2B; isExhibition = !!flags.isExhibition; isCuratedEvent = !!flags.isCuratedEvent;
     }
   } else {
     parentEvent = getEventById_(payload.parentEventId);
@@ -2460,11 +2973,16 @@ function createOrUpdateEvent(token, payload) {
     }
     if (!eventType) throw new Error('Please select an Event Type for this sub-event.');
     if (eventType === EVENT_TYPE_UMBRELLA) throw new Error('A sub-event cannot itself be an Umbrella Event.');
-    const onboarding = getOnboardingData_();
-    if (!onboarding[eventType]) throw new Error('"' + eventType + '" is not a configured Event Type. Choose one from ClientOnboarding.');
+    onboarding = getOnboardingData_(payload.parentEventId);
+    if (!onboarding[eventType]) throw new Error('"' + eventType + '" is not a configured Event Type for this Umbrella. Choose one from Settings > Event Types.');
+    const flags = onboarding[eventType];
+    isB2B = !!flags.isB2B; isExhibition = !!flags.isExhibition; isCuratedEvent = !!flags.isCuratedEvent;
   }
 
-  const typeConfigJson = eventType ? normalizeTypeConfig_(eventType, payload.typeConfig) : '[]';
+  const typeConfigJson = eventType ? normalizeTypeConfig_(eventType, payload.typeConfig, {
+    isB2B: isB2B, isExhibition: isExhibition, isCuratedEvent: isCuratedEvent,
+    registrationTypes: (onboarding && onboarding[eventType]) ? onboarding[eventType].registrationTypes : null
+  }) : '[]';
   // Same validation already applied to per-option prices inside
   // normalizeTypeConfig_ — an unparseable value here used to silently
   // become 0 (free) with no signal to the admin, unlike its sibling
@@ -2481,13 +2999,13 @@ function createOrUpdateEvent(token, payload) {
   const parsedPlaces = parsePlaces_(placesRaw);
   const placesToStore = parsedPlaces === null ? '' : String(parsedPlaces);
 
-  // Only meaningful for Curated Event; stored blank (unlimited) for every other type regardless of what the client sent.
+  // Only meaningful for a Curated-Event-flagged type; stored blank (unlimited) for every other type regardless of what the client sent.
   const maxOptsRaw = (payload.maxOptionsPerAttendee === undefined || payload.maxOptionsPerAttendee === null) ? '' : String(payload.maxOptionsPerAttendee).trim();
-  const parsedMaxOpts = eventType === EVENT_TYPE_CURATED_EVENT ? parsePlaces_(maxOptsRaw) : null;
+  const parsedMaxOpts = isCuratedEvent ? parsePlaces_(maxOptsRaw) : null;
   const maxOptsToStore = parsedMaxOpts === null ? '' : String(parsedMaxOpts);
 
-  // Only meaningful for Exhibition; stored blank for every other type regardless of what the client sent (see normalizeFloorPlanSize_'s default when read back).
-  const floorPlanSizeToStore = eventType === EVENT_TYPE_EXHIBITION ? normalizeFloorPlanSize_(payload.floorPlanSize) : '';
+  // Only meaningful for an Exhibition-flagged type; stored blank for every other type regardless of what the client sent (see normalizeFloorPlanSize_'s default when read back).
+  const floorPlanSizeToStore = isExhibition ? normalizeFloorPlanSize_(payload.floorPlanSize) : '';
 
   // Top-level-only, same as Currency/IsB2B/DietaryRequirements/DetailsPageUrl
   // below — a sub-event under an Umbrella Event inherits its parent's
@@ -2553,8 +3071,14 @@ function createOrUpdateEvent(token, payload) {
           setCol('MaxOptionsPerAttendee', maxOptsToStore);
           setCol('FloorPlanSize', floorPlanSizeToStore);
           setCol('ShowChosenByToAttendees', showChosenByToStore);
+          // IsB2B/IsExhibition/IsCuratedEvent apply on ANY row, top-level
+          // or sub-event — unlike DietaryRequirements/DetailsPageUrl/
+          // Currency/AllowedDomains just below, which stay genuinely
+          // top-level-only fields.
+          setCol('IsB2B', isB2B);
+          setCol('IsExhibition', isExhibition);
+          setCol('IsCuratedEvent', isCuratedEvent);
           if (isTopLevel) {
-            setCol('IsB2B', isB2B);
             setCol('DietaryRequirements', !!payload.dietaryRequirements);
             setCol('DetailsPageUrl', payload.detailsPageUrl || '');
             setCol('Currency', String(payload.currency || '').trim().toUpperCase());
@@ -2586,7 +3110,14 @@ function createOrUpdateEvent(token, payload) {
         Website: payload.website || '',
         Status: payload.status || 'Draft',
         EventType: eventType || '',
-        IsB2B: isTopLevel ? isB2B : false,
+        // Per-entity, not top-level-gated (a brand-new top-level event is
+        // always Umbrella per the guard above, so these are already false
+        // in that case regardless — this only actually changes behavior
+        // for a newly-created sub-event, which now correctly gets its own
+        // type's flags instead of being forced false).
+        IsB2B: isB2B,
+        IsExhibition: isExhibition,
+        IsCuratedEvent: isCuratedEvent,
         DietaryRequirements: isTopLevel ? !!payload.dietaryRequirements : false,
         CreatedDate: new Date(),
         CreatedBy: adminEmail,
@@ -2622,13 +3153,139 @@ function createOrUpdateEvent(token, payload) {
   // know their milestone edits specifically did NOT take, or they might
   // assume the whole save failed and re-submit a duplicate event.
   try {
-    saveMilestonesForEntity_(resultEventId, payload.milestones, eventType);
+    saveMilestonesForEntity_(resultEventId, payload.milestones, isB2B);
   } catch (e) {
     throw new Error('The event itself was saved successfully, but its milestones failed to save: ' +
       e.message + ' Reopen "' + (payload.eventName || 'this event') + '" and save again to retry just the milestones.');
   }
 
   return { status: 'ok', eventId: resultEventId };
+}
+
+/**
+ * Finds (or creates, on first use) the single flat Drive folder that holds
+ * every event's cover image. Lock-guarded the same way
+ * getOrCreateEventUploadFolder_ guards the milestone-uploads root folder —
+ * same check-then-act race on first-ever use, since Drive doesn't enforce
+ * folder-name uniqueness.
+ */
+function getOrCreateEventBannerFolder_() {
+  const leaseId = acquireEntityLock_('event_banner_folder', 15000);
+  try {
+    const folders = DriveApp.getFoldersByName(EVENT_BANNER_FOLDER_NAME);
+    return folders.hasNext() ? folders.next() : DriveApp.createFolder(EVENT_BANNER_FOLDER_NAME);
+  } finally {
+    releaseEntityLock_('event_banner_folder', leaseId);
+  }
+}
+
+/**
+ * Writes bannerImageUrl/bannerImageFileId onto an already-existing Events
+ * row, by name via getEventsColumnIndex_ (same name-based-write approach
+ * createOrUpdateEvent uses — see that function's column-index doc comment
+ * for why hardcoded column numbers are avoided). Shared by
+ * uploadEventBannerImage and removeEventBannerImage so both write through
+ * the exact same lock/cache-bust path.
+ */
+function writeEventBannerColumns_(eventId, urlValue, fileIdValue) {
+  const sheet = getEventsSheet_();
+  const col = getEventsColumnIndex_(sheet);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const data = sheet.getDataRange().getValues();
+    const eventIdCol = col.EventID - 1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][eventIdCol]) === String(eventId)) {
+        sheet.getRange(i + 1, col.BannerImageUrl).setValue(urlValue);
+        sheet.getRange(i + 1, col.BannerImageFileId).setValue(fileIdValue);
+        _rawDataCache_.events = null;
+        invalidateCrossRequestCache_(EVENTS_CACHE_KEY_);
+        return;
+      }
+    }
+    throw new Error('Event not found.');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Admin uploads a cover image for a TOP-LEVEL event (banners aren't a
+ * sub-event concept — sub-events are reached via the always-visible tabs
+ * on the parent's card, not their own card). Mirrors
+ * completeFileUploadMilestone_'s shape: base64 payload from the client,
+ * re-validated server-side (never trust the client-side check alone),
+ * decoded and written to Drive, then made publicly viewable so it can
+ * render as a plain <img> for every attendee — including external/
+ * cross-domain B2B partners who wouldn't otherwise have Drive access.
+ * payload: { eventId, base64, fileName, mimeType }
+ */
+function uploadEventBannerImage(token, payload) {
+  requireAdmin_(token);
+  const eventId = (payload && payload.eventId) || '';
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+  if (event.parentEventId) throw new Error('Cover images are only supported on the top-level event, not individual sub-events.');
+
+  const base64 = payload && payload.base64;
+  const fileName = String((payload && payload.fileName) || '').trim();
+  const mimeType = String((payload && payload.mimeType) || 'application/octet-stream').trim();
+  if (!base64 || !fileName) throw new Error('Please choose an image to upload.');
+
+  const extension = (fileName.split('.').pop() || '').toLowerCase();
+  if (EVENT_BANNER_ACCEPTED_TYPES.indexOf(extension) === -1) {
+    throw new Error('"' + extension + '" files are not accepted. Accepted: ' + EVENT_BANNER_ACCEPTED_TYPES.join(', ') + '.');
+  }
+
+  let bytes;
+  try {
+    bytes = Utilities.base64Decode(base64);
+  } catch (e) {
+    throw new Error('The uploaded image could not be read. Please try again.');
+  }
+  const sizeMB = bytes.length / (1024 * 1024);
+  if (sizeMB > EVENT_BANNER_MAX_SIZE_MB) {
+    throw new Error('Image is too large (' + sizeMB.toFixed(1) + 'MB). Maximum is ' + EVENT_BANNER_MAX_SIZE_MB + 'MB.');
+  }
+
+  const folder = getOrCreateEventBannerFolder_();
+  const blob = Utilities.newBlob(bytes, mimeType, event.eventName + ' (' + event.eventId + ') banner.' + extension);
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // Drive's own getUrl() opens the viewer UI, not an embeddable image — the
+  // thumbnail endpoint is what actually renders inline in an <img> tag.
+  const bannerImageUrl = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1600';
+
+  // Best-effort cleanup of the PREVIOUS banner file, if any, so replacing
+  // an image doesn't silently accumulate orphaned files in Drive forever —
+  // matches the intent of removeEventBannerImage's own trash step. Never
+  // lets a failure here block the new upload from being saved.
+  if (event.bannerImageFileId) {
+    try { DriveApp.getFileById(event.bannerImageFileId).setTrashed(true); } catch (e) { /* already gone — fine */ }
+  }
+
+  writeEventBannerColumns_(eventId, bannerImageUrl, file.getId());
+  return { status: 'ok', bannerImageUrl: bannerImageUrl };
+}
+
+/**
+ * Clears a top-level event's cover image and trashes the underlying Drive
+ * file (best-effort — a failure here, e.g. already manually deleted, isn't
+ * fatal; the columns still get cleared either way).
+ */
+function removeEventBannerImage(token, eventId) {
+  requireAdmin_(token);
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+  if (event.parentEventId) throw new Error('Cover images are only supported on the top-level event, not individual sub-events.');
+
+  if (event.bannerImageFileId) {
+    try { DriveApp.getFileById(event.bannerImageFileId).setTrashed(true); } catch (e) { /* already gone — fine */ }
+  }
+  writeEventBannerColumns_(eventId, '', '');
+  return { status: 'ok' };
 }
 
 /* =========================================================================
@@ -2805,8 +3462,8 @@ function getPreferencesDashboardData_(eventId, registrations) {
   const event = eventId ? getEventById_(eventId) : null;
 
   if (event) {
-    const onboarding = getOnboardingData_();
-    const regTypesForEvent = (onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || [];
+    const onboarding = getOnboardingData_(event.parentEventId || event.eventId);
+    const regTypesForEvent = ((onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || []).map(rt => rt.label);
 
     // Precomputed once (O(n)) instead of re-filtering the full
     // registrations array for every submitted attendee below (was
@@ -2852,7 +3509,7 @@ function getSubEventAllocationSummary(token, subEventId) {
   const waitlisted = getSubEventRegsRaw_().filter(r => r.subEventId === subEventId && r.status === 'Waitlisted');
   const result = { eventType: entity.eventType, waitlist: waitlisted };
 
-  if (entity.eventType === EVENT_TYPE_EXHIBITION) {
+  if (entity.isExhibition) {
     const state = getExhibitionCompleteState_(entity);
     const canvasSize = getFloorPlanCanvasSize_(entity);
     result.tables = state.tables;
@@ -2861,7 +3518,7 @@ function getSubEventAllocationSummary(token, subEventId) {
     result.canvasHeight = canvasSize.height;
     result.price = getEventPrice_(entity);
     result.currency = getEventCurrency_(entity);
-  } else if ((entity.eventType === EVENT_TYPE_CURATED_EVENT || entity.eventType === EVENT_TYPE_B2B_MEETINGS) && getCuratedEventOptionsLiveState_(entity)) {
+  } else if ((entity.isCuratedEvent || entity.isB2B) && getCuratedEventOptionsLiveState_(entity)) {
     result.options = getCuratedEventOptionsLiveState_(entity);
     result.currency = getEventCurrency_(entity);
   } else {
@@ -2874,7 +3531,7 @@ function getSubEventAllocationSummary(token, subEventId) {
   // ShowChosenByToAttendees toggle (see getMyChosenByReport) — that
   // toggle only ever gates the ATTENDEE-facing version of the same
   // underlying data.
-  if (entity.eventType === EVENT_TYPE_B2B_MEETINGS) {
+  if (entity.isB2B) {
     const seenAttendee = {};
     const confirmedAttendees = [];
     getSubEventRegsRaw_().filter(r => r.subEventId === subEventId && r.status === 'Confirmed').forEach(r => {
@@ -3028,8 +3685,8 @@ function saveFloorPlanLayout(token, eventId, elements) {
   requireAdmin_(token);
   const event = getEventById_(eventId);
   if (!event) throw new Error('Event not found.');
-  if (event.eventType !== EVENT_TYPE_EXHIBITION) {
-    throw new Error('Floor plan layouts are only supported for "Exhibition" events.');
+  if (!event.isExhibition) {
+    throw new Error('Floor plan layouts are only supported for Exhibition-flagged event types.');
   }
   if (!Array.isArray(elements)) throw new Error('No floor plan elements provided.');
 
@@ -3137,6 +3794,7 @@ function getFloorPlanLayout(token, eventId) {
     eventId: event.eventId,
     eventName: event.eventName,
     eventType: event.eventType,
+    isExhibition: event.isExhibition,
     canvasWidth: canvasSize.width,
     canvasHeight: canvasSize.height,
     floorPlanSize: normalizeFloorPlanSize_(event.floorPlanSize),
@@ -3156,7 +3814,7 @@ function getFloorPlanLayout(token, eventId) {
 function getExhibitionEventOptions(token) {
   requireAdmin_(token);
   return getAllEvents_()
-    .filter(function(e) { return e.eventType === EVENT_TYPE_EXHIBITION; })
+    .filter(function(e) { return e.isExhibition; })
     .map(function(e) { return { eventId: e.eventId, eventName: e.eventName, isSubEvent: !!e.parentEventId }; });
 }
 
@@ -3235,12 +3893,12 @@ function getMilestonesRaw_() {
  * with the new set atomically, same bulk-replace-by-EventID shape as
  * saveFloorPlanLayout. Called as its own step, in its own lock, from
  * createOrUpdateEvent AFTER that function's own save/lock has already
- * completed (not nested inside it). `entityEventType` is the entity's OWN
- * (normalized) EventType — needed to enforce that a SetPreferences
- * milestone only ever lands on a B2B Pre-scheduled Meetings entity, even
- * if a stale/tampered client payload claims otherwise.
+ * completed (not nested inside it). `entityIsB2B` is the entity's OWN
+ * resolved isB2B flag, needed to enforce that a SetPreferences milestone
+ * only ever lands on a B2B-flagged entity, even if a stale/tampered
+ * client payload claims otherwise.
  */
-function saveMilestonesForEntity_(eventId, milestones, entityEventType) {
+function saveMilestonesForEntity_(eventId, milestones, entityIsB2B) {
   const list = Array.isArray(milestones) ? milestones : [];
 
   const normalized = list.map((m, idx) => {
@@ -3250,8 +3908,8 @@ function saveMilestonesForEntity_(eventId, milestones, entityEventType) {
     if (MILESTONE_TYPES.indexOf(milestoneType) === -1) {
       throw new Error('"' + milestoneType + '" is not a supported milestone type.');
     }
-    if (milestoneType === MILESTONE_TYPE_SET_PREFERENCES && entityEventType !== EVENT_TYPE_B2B_MEETINGS) {
-      throw new Error('"Set Preferences" milestones are only supported on a "B2B Pre-scheduled Meetings" event or sub-event.');
+    if (milestoneType === MILESTONE_TYPE_SET_PREFERENCES && !entityIsB2B) {
+      throw new Error('"Set Preferences" milestones are only supported on a B2B-flagged event or sub-event.');
     }
     let config = (m && m.config) || {};
     if (milestoneType === MILESTONE_TYPE_FILE_UPLOAD) {
@@ -4045,8 +4703,9 @@ function authenticateUserPortal(sessionToken) {
       .map(c => ({
         eventName: c.eventName, description: c.description,
         eventDate: c.eventDate, eventTime: c.eventTime, location: c.location, eventType: c.eventType,
+        isB2B: c.isB2B, isExhibition: c.isExhibition, isCuratedEvent: c.isCuratedEvent,
         price: getEventPrice_(c), currency: currency,
-        capacity: c.eventType === EVENT_TYPE_EXHIBITION ? null : getEventCapacityState_(c)
+        capacity: c.isExhibition ? null : getEventCapacityState_(c)
       }));
 
     return {
@@ -4058,11 +4717,13 @@ function authenticateUserPortal(sessionToken) {
       eventType: e.eventType,
       isUmbrella: e.isUmbrella,
       isB2B: e.isB2B,
+      isExhibition: e.isExhibition,
+      isCuratedEvent: e.isCuratedEvent,
       dietaryRequirements: e.dietaryRequirements,
       detailsPageUrl: e.detailsPageUrl,
       price: getEventPrice_(e),
       currency: currency,
-      capacity: e.isUmbrella || e.eventType === EVENT_TYPE_EXHIBITION ? null : getEventCapacityState_(e),
+      capacity: e.isUmbrella || e.isExhibition ? null : getEventCapacityState_(e),
       registered: registeredEventIds.has(e.eventId),
       subEvents: subEvents
     };
@@ -4212,7 +4873,13 @@ function getEventDetailsForAttendee(eventId) {
 
 /** Looks up the RegistrationFormFields rows configured for a given EventType, sorted by SortOrder. */
 const FORM_FIELDS_CACHE_KEY_ = 'formfields_v1';
-const FORM_FIELDS_HEADERS_ = ['EventType', 'FieldName', 'FieldLabel', 'FieldType', 'Options', 'Required', 'SortOrder'];
+// ParentEventID: scopes this custom field to one Umbrella Event, same
+// column name/semantics as ClientOnboarding's own ParentEventID — added
+// so identically-named EventTypes in two different Umbrellas don't share
+// (and silently collide on) the same set of custom registration
+// questions. Blank (legacy pre-scoping rows) is treated as "visible to
+// every scope" until the one-time backfill assigns real values.
+const FORM_FIELDS_HEADERS_ = ['EventType', 'FieldName', 'FieldLabel', 'FieldType', 'Options', 'Required', 'SortOrder', 'ParentEventID'];
 
 /**
  * Was read-only-by-direct-sheet-edit until now (see getExtraFieldsForType_'s
@@ -4231,17 +4898,22 @@ function getFormFieldsSheet_() {
   return s;
 }
 
-/** Admin-facing raw list (unlike getExtraFieldsForType_, not filtered to one EventType) for the Settings > Registration Fields panel. */
-function getRegistrationFormFieldsAdmin(token) {
+/** Admin-facing raw list (unlike getExtraFieldsForType_, not filtered to one EventType), scoped to one Umbrella Event, for the Settings > Registration Fields panel. */
+function getRegistrationFormFieldsAdmin(token, umbrellaEventId) {
   requireAdmin_(token);
+  const scope = String(umbrellaEventId || '').trim();
+  if (!scope) throw new Error('An Umbrella Event must be selected first.');
   const byType = {};
-  Object.keys(getOnboardingData_()).concat([EVENT_TYPE_UMBRELLA]).forEach(t => { byType[t] = []; }); // ensure every known EventType has an entry, even with zero fields configured yet
+  Object.keys(getOnboardingData_(scope)).concat([EVENT_TYPE_UMBRELLA]).forEach(t => { byType[t] = []; }); // ensure every known EventType has an entry, even with zero fields configured yet
   const sheet = getFormFieldsSheet_();
+  const parentIdx = FORM_FIELDS_HEADERS_.indexOf('ParentEventID');
   if (sheet.getLastRow() > 1) {
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       const type = normalizeEventType_(data[i][0]);
       if (!type) continue;
+      const rowScope = String(data[i][parentIdx] || '').trim();
+      if (rowScope && rowScope !== scope) continue; // scoped to a different Umbrella — not visible here (blank = legacy, visible everywhere until backfilled)
       if (!byType[type]) byType[type] = [];
       byType[type].push({
         fieldName: String(data[i][1] || '').trim(),
@@ -4258,16 +4930,20 @@ function getRegistrationFormFieldsAdmin(token) {
 }
 
 /**
- * Bulk-replaces every custom field for ONE EventType — same "client sends
- * the whole ordered list, server does a scoped replace" shape as
- * saveBudgetCategories/saveMilestonesForEntity_. FieldName is validated as
- * a safe identifier since it's used as an object key in attendee payloads
+ * Bulk-replaces every custom field for ONE EventType, scoped to ONE
+ * Umbrella Event — same "client sends the whole ordered list, server does
+ * a scoped replace" shape as saveBudgetCategories/saveMilestonesForEntity_,
+ * plus the same "claim a legacy blank-scope row" behavior
+ * saveClientOnboardingType uses. FieldName is validated as a safe
+ * identifier since it's used as an object key in attendee payloads
  * elsewhere (submitEventRegistrationBatch's extraFields, etc.) — spaces or
  * punctuation there would silently break that lookup rather than error
  * clearly at save time.
  */
-function saveRegistrationFormFieldsForType(token, eventType, fields) {
+function saveRegistrationFormFieldsForType(token, umbrellaEventId, eventType, fields) {
   requireAdmin_(token);
+  const scope = String(umbrellaEventId || '').trim();
+  if (!scope) throw new Error('An Umbrella Event must be selected first.');
   const type = normalizeEventType_(eventType);
   if (!type) throw new Error('Event Type is required.');
 
@@ -4294,9 +4970,15 @@ function saveRegistrationFormFieldsForType(token, eventType, fields) {
     const sheet = getFormFieldsSheet_();
     const lastRow = sheet.getLastRow();
     const data = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, FORM_FIELDS_HEADERS_.length).getValues() : [];
-    const otherTypeRows = data.filter(row => normalizeEventType_(row[0]) !== type);
-    const newRows = cleaned.map(f => [type, f.fieldName, f.fieldLabel, f.fieldType, f.options, f.required, f.sortOrder]);
-    const finalRows = otherTypeRows.concat(newRows);
+    const parentIdx = FORM_FIELDS_HEADERS_.indexOf('ParentEventID');
+    const claimedByThisSave = function(row) {
+      if (normalizeEventType_(row[0]) !== type) return false;
+      const rowScope = String(row[parentIdx] || '').trim();
+      return rowScope === '' || rowScope === scope;
+    };
+    const otherRows = data.filter(function(row) { return !claimedByThisSave(row); });
+    const newRows = cleaned.map(f => [type, f.fieldName, f.fieldLabel, f.fieldType, f.options, f.required, f.sortOrder, scope]);
+    const finalRows = otherRows.concat(newRows);
 
     if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, FORM_FIELDS_HEADERS_.length).clearContent();
     if (finalRows.length) sheet.getRange(2, 1, finalRows.length, FORM_FIELDS_HEADERS_.length).setValues(finalRows);
@@ -4304,28 +4986,33 @@ function saveRegistrationFormFieldsForType(token, eventType, fields) {
     // path — so it needs the same explicit invalidation every other
     // writable cache gets, rather than relying on the cross-request TTL
     // alone to eventually pick up the change.
-    _rawDataCache_.extraFieldsByType = null;
-    invalidateCrossRequestCache_(FORM_FIELDS_CACHE_KEY_);
+    if (_rawDataCache_.extraFieldsByType) delete _rawDataCache_.extraFieldsByType[scope];
+    invalidateCrossRequestCache_(FORM_FIELDS_CACHE_KEY_ + ':' + scope);
   } finally {
     lock.releaseLock();
   }
   return { status: 'ok' };
 }
 
-function getExtraFieldsForType_(eventType) {
+function getExtraFieldsForType_(eventType, umbrellaEventId) {
   const wantedType = normalizeEventType_(eventType);
+  const scope = String(umbrellaEventId || '').trim();
 
-  // Memoize the WHOLE sheet (grouped by type) on first call, rather than
-  // caching per-type — this way, whichever event type is requested first
-  // still only costs one getDataRange().getValues() for the entire
-  // execution, no matter how many distinct event types get looked up
-  // afterwards (e.g. once per sub-event in an Umbrella event). Also cached
-  // cross-request (like getOnboardingData_) — RegistrationFormFields is
-  // only ever edited directly on the sheet, so a short TTL with no
-  // explicit invalidation path is an acceptable trade-off.
-  if (!_rawDataCache_.extraFieldsByType) {
-    const cachedByType = getCrossRequestCache_(FORM_FIELDS_CACHE_KEY_);
-    if (cachedByType) { _rawDataCache_.extraFieldsByType = cachedByType; return cachedByType[wantedType] || []; }
+  // Memoize the WHOLE sheet (grouped by type), scoped to this Umbrella, on
+  // first call for that scope — this way, whichever event type is
+  // requested first for a given Umbrella still only costs one
+  // getDataRange().getValues() for the rest of the execution, no matter
+  // how many distinct event types get looked up afterwards (e.g. once per
+  // sub-event in an Umbrella event — they all share the same scope). Also
+  // cached cross-request (like getOnboardingData_) — RegistrationFormFields
+  // is only ever edited directly through Settings, so a short TTL with no
+  // explicit invalidation path beyond the save/rename functions is an
+  // acceptable trade-off.
+  _rawDataCache_.extraFieldsByType = _rawDataCache_.extraFieldsByType || {};
+  if (!_rawDataCache_.extraFieldsByType[scope]) {
+    const cacheKey = FORM_FIELDS_CACHE_KEY_ + ':' + scope;
+    const cachedByType = getCrossRequestCache_(cacheKey);
+    if (cachedByType) { _rawDataCache_.extraFieldsByType[scope] = cachedByType; return cachedByType[wantedType] || []; }
 
     const ss = getSpreadsheet_();
     const sheet = ss.getSheetByName(FORM_FIELDS_SHEET_NAME);
@@ -4340,8 +5027,11 @@ function getExtraFieldsForType_(eventType) {
       const optionsIdx = headers.indexOf('options');
       const requiredIdx = headers.indexOf('required');
       const sortIdx = headers.indexOf('sortorder');
+      const parentIdx = headers.indexOf('parenteventid');
 
       for (let i = 1; i < data.length; i++) {
+        const rowScope = parentIdx !== -1 ? String(data[i][parentIdx] || '').trim() : '';
+        if (rowScope && rowScope !== scope) continue; // scoped to a different Umbrella — not visible here (blank = legacy, visible everywhere until backfilled)
         const type = normalizeEventType_(data[i][typeIdx]);
         if (!byType[type]) byType[type] = [];
         byType[type].push({
@@ -4355,11 +5045,11 @@ function getExtraFieldsForType_(eventType) {
       }
       Object.keys(byType).forEach(type => byType[type].sort((a, b) => a.sortOrder - b.sortOrder));
     }
-    _rawDataCache_.extraFieldsByType = byType;
-    putCrossRequestCache_(FORM_FIELDS_CACHE_KEY_, byType);
+    _rawDataCache_.extraFieldsByType[scope] = byType;
+    putCrossRequestCache_(cacheKey, byType);
   }
 
-  return _rawDataCache_.extraFieldsByType[wantedType] || [];
+  return _rawDataCache_.extraFieldsByType[scope][wantedType] || [];
 }
 
 /**
@@ -4378,6 +5068,30 @@ function getExtraFieldsForType_(eventType) {
  * and getUmbrellaChildren are left in place, unchanged, for any other
  * caller that still wants them standalone.
  */
+
+/**
+ * Collapses a Registration Type's manual Disabled flag and its optional
+ * AvailableFrom/AvailableUntil scheduling window into one effective
+ * "disabled" boolean — computed fresh on every call since "now" keeps
+ * moving, never stored. The client only ever needs to know "can this be
+ * picked right now," not the reason, so it renders exactly like a
+ * manually-disabled option either way. Hidden types are filtered out by
+ * the caller before this even runs (see getRegistrationFormDefinition).
+ */
+function computeRegTypeEffectiveState_(rt) {
+  const now = new Date();
+  let scheduledOut = false;
+  if (rt.availableFrom) {
+    const from = new Date(rt.availableFrom);
+    if (!isNaN(from.getTime()) && now < from) scheduledOut = true;
+  }
+  if (rt.availableUntil) {
+    const until = new Date(rt.availableUntil);
+    if (!isNaN(until.getTime()) && now > until) scheduledOut = true;
+  }
+  return Object.assign({}, rt, { disabled: !!rt.disabled || scheduledOut });
+}
+
 function getRegistrationFormDefinition(sessionToken, eventId) {
   const email = requireAttendeeSession_(sessionToken);
   const event = getEventById_(eventId);
@@ -4395,20 +5109,26 @@ function getRegistrationFormDefinition(sessionToken, eventId) {
     throw new Error('This event is not open for registration.');
   }
 
-  const onboarding = getOnboardingData_();
+  const onboarding = getOnboardingData_(event.parentEventId || event.eventId);
   const regTypes = (onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || [];
-  const extraFields = getExtraFieldsForType_(event.eventType);
+  const extraFields = getExtraFieldsForType_(event.eventType, event.parentEventId || event.eventId);
 
   const result = {
     eventName: event.eventName,
     eventType: event.eventType,
     isUmbrella: event.eventType === EVENT_TYPE_UMBRELLA,
     isB2B: event.isB2B,
-    registrationTypes: regTypes,
+    isExhibition: event.isExhibition,
+    isCuratedEvent: event.isCuratedEvent,
+    // Hidden types never reach the client at all; the rest get their
+    // manual Disabled flag collapsed with any AvailableFrom/AvailableUntil
+    // scheduling window into one effective "disabled" boolean (see
+    // computeRegTypeEffectiveState_).
+    registrationTypes: regTypes.filter(rt => !rt.hidden).map(computeRegTypeEffectiveState_),
     extraFields: extraFields,
     price: getEventPrice_(event),
     currency: getEventCurrency_(event),
-    capacity: event.isUmbrella || event.eventType === EVENT_TYPE_EXHIBITION ? null : getEventCapacityState_(event)
+    capacity: event.isUmbrella || event.isExhibition ? null : getEventCapacityState_(event)
   };
 
   // Standalone Exhibition (not under an Umbrella Event) embeds its own
@@ -4423,18 +5143,18 @@ function getRegistrationFormDefinition(sessionToken, eventId) {
   // configured (legacy events saved before options became mandatory for
   // these two types — see normalizeTypeConfig_), result.price/capacity
   // above are used instead (the flat event-level fallback).
-  if (event.eventType === EVENT_TYPE_EXHIBITION) {
+  if (event.isExhibition) {
     const state = getExhibitionCompleteState_(event);
     const canvasSize = getFloorPlanCanvasSize_(event);
     result.exhibitionTables = state.tables;
     result.exhibitionDecor = state.decor;
     result.canvasWidth = canvasSize.width;
     result.canvasHeight = canvasSize.height;
-  } else if (event.eventType === EVENT_TYPE_CURATED_EVENT || event.eventType === EVENT_TYPE_B2B_MEETINGS) {
+  } else if (event.isCuratedEvent || event.isB2B) {
     const options = getCuratedEventOptionsLiveState_(event);
     if (options) {
       result.curatedEventOptions = options;
-      result.maxOptionsPerAttendee = event.eventType === EVENT_TYPE_CURATED_EVENT ? event.maxOptionsPerAttendee : 1;
+      result.maxOptionsPerAttendee = event.isCuratedEvent ? event.maxOptionsPerAttendee : 1;
     }
   }
 
@@ -4571,7 +5291,7 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
   // bug, could otherwise save a registration missing a field the admin
   // explicitly marked mandatory. Computed once outside the loop, same as
   // every other per-event lookup here.
-  const requiredExtraFields = getExtraFieldsForType_(event.eventType).filter(f => f.required);
+  const requiredExtraFields = getExtraFieldsForType_(event.eventType, event.parentEventId || event.eventId).filter(f => f.required);
 
   const seenInBatch = new Set();
   const normalizedAttendees = [];
@@ -4780,12 +5500,12 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
       // irreversible writes already happened.
       try {
         let results;
-        if (subEntity.eventType === EVENT_TYPE_CURATED_EVENT && entityUsesRankedAllocation_(subEntity)) {
+        if (subEntity.isCuratedEvent && entityUsesRankedAllocation_(subEntity)) {
           results = allocateCuratedEventSelections_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {});
         } else if (entityUsesRankedAllocation_(subEntity)) {
           results = [allocateChoice_(eventId, subEntity, sel.rankedOptionIds || [], a.email, a.fullName, displayLabel, sel.extraFields || {})];
         } else {
-          results = [recordPlainSubEventOptIn_(eventId, subEntity, a.email, a.fullName, sel.extraFields || {})];
+          results = [recordPlainSubEventOptIn_(eventId, subEntity, a.email, a.fullName, sel.extraFields || {}, sel.registrationType || '')];
         }
         results.forEach(result => { allocationsByEmail[a.email].push(Object.assign({ email: a.email }, result)); });
       } catch (e) {
@@ -5073,12 +5793,12 @@ function addSubEventSelectionsForAttendee(sessionToken, eventId, selections) {
     if (subEntity.status === 'Draft' || subEntity.status === 'Closed') return;
 
     let results;
-    if (subEntity.eventType === EVENT_TYPE_CURATED_EVENT && entityUsesRankedAllocation_(subEntity)) {
+    if (subEntity.isCuratedEvent && entityUsesRankedAllocation_(subEntity)) {
       results = allocateCuratedEventSelections_(eventId, subEntity, sel.rankedOptionIds || [], email, reg.fullName, displayLabel, sel.extraFields || {});
     } else if (entityUsesRankedAllocation_(subEntity)) {
       results = [allocateChoice_(eventId, subEntity, sel.rankedOptionIds || [], email, reg.fullName, displayLabel, sel.extraFields || {})];
     } else {
-      results = [recordPlainSubEventOptIn_(eventId, subEntity, email, reg.fullName, sel.extraFields || {})];
+      results = [recordPlainSubEventOptIn_(eventId, subEntity, email, reg.fullName, sel.extraFields || {}, sel.registrationType || '')];
     }
     results.forEach(result => { allocations.push(Object.assign({ email: email }, result)); });
   });
@@ -5255,8 +5975,8 @@ function initializePreferencesSession(sessionToken, eventId) {
   const regByEmail = {};
   getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => { regByEmail[r.email.toLowerCase()] = r; });
 
-  const onboarding = getOnboardingData_();
-  const regTypes = (onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || [];
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || []).map(rt => rt.label);
   const oppositeTypes = regTypes.filter(t => t !== userAlloc.optionLabel);
 
   const availableCompanies = allocations
@@ -5314,8 +6034,8 @@ function savePreferences(sessionToken, eventId, payload) {
   const userAlloc = allocations.find(r => r.email === email);
   if (!userAlloc) throw new Error('Email not registered for this event.');
   const entity = getEventById_(eventId);
-  const onboarding = getOnboardingData_();
-  const regTypes = (entity && onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || [];
+  const onboarding = entity ? getOnboardingData_(entity.parentEventId || entity.eventId) : {};
+  const regTypes = ((entity && onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || []).map(rt => rt.label);
   const oppositeTypes = regTypes.filter(t => t !== userAlloc.optionLabel);
   const eligibleEmails = new Set(allocations.filter(r => oppositeTypes.indexOf(r.optionLabel) !== -1).map(r => r.email));
 
@@ -5450,8 +6170,8 @@ function generateB2BMatchingSql(token, entityId) {
   const adminEmail = requireAdmin_(token);
   const entity = getEventById_(entityId);
   if (!entity) throw new Error('Event not found.');
-  if (entity.eventType !== EVENT_TYPE_B2B_MEETINGS) {
-    throw new Error('"' + entity.eventName + '" is not a B2B Pre-scheduled Meetings event or sub-event.');
+  if (!entity.isB2B) {
+    throw new Error('"' + entity.eventName + '" is not a B2B-flagged event or sub-event.');
   }
 
   // Confirmed allocations for this entity, joined back to the top-level
@@ -5666,8 +6386,8 @@ function getAttendeeItinerary_(eventId, email) {
   const userRecord = registrations.find(r => r.email.toLowerCase() === email);
   if (!userRecord) throw new Error('Registration details not found for this email address.');
 
-  const onboarding = getOnboardingData_();
-  const regTypes = (onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || [];
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || []).map(rt => rt.label);
   // Every B2B Pre-scheduled Meetings event requires ranked TypeConfig
   // options now (see normalizeTypeConfig_), so the base registration
   // form's flat Registration Type dropdown is always suppressed and
@@ -6751,7 +7471,7 @@ function buildMergeIndexes_(eventId, itineraryEntityId) {
     topEventId: topEventId,
     registrationsByEmail: registrationsByEmail,
     subEventRegsByEmail: subEventRegsByEmail,
-    onboarding: getOnboardingData_(),
+    onboarding: getOnboardingData_(topEventId),
     settings: getCommSettings_(),
     itineraryEntityId: itineraryEntityId || null
   };

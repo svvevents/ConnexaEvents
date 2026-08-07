@@ -43,9 +43,9 @@
     .tab-content.active { display: block; }
 
     .kpi-row { display: flex; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
-    .kpi-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 150px; }
-    .kpi-card .value { font-size: 30px; font-weight: 800; color: var(--primary-color); }
-    .kpi-card .label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .kpi-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 150px; display: flex; align-items: center; gap: 14px; }
+    .kpi-card .value { font-size: 30px; font-weight: 800; color: var(--primary-color); line-height: 1.15; }
+    .kpi-card .label { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
     .section { background: white; border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; margin-top: 20px; overflow-x: auto; }
     .section h2 { font-size: 16px; margin: 0 0 16px; border-bottom: 2px solid #f1f3f4; padding-bottom: 8px; font-weight: 700; }
@@ -78,6 +78,8 @@
     }
   </style>
 
+  <?!= include('SharedStyles'); ?>
+
 </head>
 <body>
 
@@ -105,8 +107,8 @@
 
     <div id="tab-registration" class="tab-content active">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="value" id="kpi-total">-</div><div class="label">Total Registrations</div></div>
-        <div class="kpi-card"><div class="value" id="kpi-companies">-</div><div class="label">Companies Represented</div></div>
+        <div class="kpi-card"><div class="icon-badge tint-primary">&#128101;</div><div><div class="value" id="kpi-total">-</div><div class="label">Total Registrations</div></div></div>
+        <div class="kpi-card"><div class="icon-badge tint-gold">&#127970;</div><div><div class="value" id="kpi-companies">-</div><div class="label">Companies Represented</div></div></div>
       </div>
       <div class="section"><h2>Registrations by Type</h2><div id="reg-type-chart"><p class="empty-state">Loading...</p></div></div>
       <div class="section"><h2>Last 10 Registrations</h2><div id="last10-table"><p class="empty-state">Loading...</p></div></div>
@@ -114,9 +116,9 @@
 
     <div id="tab-preferences" class="tab-content">
       <div class="kpi-row">
-        <div class="kpi-card"><div class="value" id="kpi-total-attendees">-</div><div class="label">Total Registered Attendees</div></div>
-        <div class="kpi-card"><div class="value" id="kpi-submitted-pref">-</div><div class="label">Preferences Submitted</div></div>
-        <div class="kpi-card"><div class="value" id="kpi-pending-pref">-</div><div class="label">Preferences Pending</div></div>
+        <div class="kpi-card"><div class="icon-badge tint-primary">&#128101;</div><div><div class="value" id="kpi-total-attendees">-</div><div class="label">Total Registered Attendees</div></div></div>
+        <div class="kpi-card"><div class="icon-badge tint-success">&#9989;</div><div><div class="value" id="kpi-submitted-pref">-</div><div class="label">Preferences Submitted</div></div></div>
+        <div class="kpi-card"><div class="icon-badge tint-gold">&#8987;</div><div><div class="value" id="kpi-pending-pref">-</div><div class="label">Preferences Pending</div></div></div>
       </div>
       <div class="section">
         <h2>Preference Submission Details</h2>
@@ -199,19 +201,10 @@
       document.getElementById('kpi-companies').textContent = data.totalCompanies;
 
       var chartEl = document.getElementById('reg-type-chart');
-      var entries = Object.entries(data.byRegistrationType || {});
-      if (entries.length === 0) {
-        chartEl.innerHTML = '<p class="empty-state">No registrations yet.</p>';
-      } else {
-        var maxCount = Math.max.apply(null, entries.map(function(e){ return e[1]; }));
-        chartEl.innerHTML = entries.map(function(e) {
-          var type = e[0], count = e[1];
-          var pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
-          return '<div class="bar-row"><div class="bar-label">' + escapeHtml(type) + '</div>' +
-            '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
-            '<div class="bar-count">' + count + '</div></div>';
-        }).join('');
-      }
+      var entries = Object.entries(data.byRegistrationType || {}).map(function(e) {
+        return { label: e[0], value: e[1] };
+      });
+      renderDonutChart(chartEl, entries);
 
       var tableEl = document.getElementById('last10-table');
       if (!data.last10 || data.last10.length === 0) {

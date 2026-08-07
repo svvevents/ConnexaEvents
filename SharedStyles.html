@@ -1,0 +1,117 @@
+<!--
+  Shared visual-refresh component layer, included via <?!= include('SharedStyles') ?>
+  in each portal's <head>, after that file's own :root variable block.
+
+  Everything here is additive on top of the 5 branding.* CSS variables each
+  file already defines (--primary-color, --navy-color, --accent-color,
+  --mint-color, --bg-color, plus --success/--warning/--error/--border-color)
+  — no new tokens, no markup contract beyond what's documented per class below.
+-->
+<style>
+  /* ---------- Elevation polish (pure CSS, no markup change needed) ---------- */
+  .tile, .kpi-card, .section, .event-card, .modal-box, .fp-toolbar, .fp-picker-box,
+  .mini-event-card, .event-tile, .subevent-card {
+    box-shadow: 0 1px 2px rgba(27,42,74,0.05), 0 6px 18px rgba(27,42,74,0.045);
+  }
+
+  /* ---------- Icon badge: small tinted square, used inside tiles/cards ---------- */
+  .icon-badge {
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1;
+  }
+  .icon-badge.tint-primary { background: color-mix(in srgb, var(--primary-color) 14%, transparent); color: var(--primary-color); }
+  .icon-badge.tint-mint    { background: color-mix(in srgb, var(--mint-color) 18%, transparent); color: var(--mint-color); }
+  .icon-badge.tint-gold    { background: color-mix(in srgb, var(--accent-color) 16%, transparent); color: var(--accent-color); }
+  .icon-badge.tint-success { background: color-mix(in srgb, var(--success-color) 16%, transparent); color: var(--success-color); }
+  .icon-badge.tint-navy    { background: color-mix(in srgb, var(--navy-color) 10%, transparent); color: var(--navy-color); }
+
+  /* ---------- Tile v2: icon + value/label row, built by tileHtmlIconed() ---------- */
+  .tile.tile-v2 { display: flex; align-items: center; gap: 12px; text-align: left; }
+  .tile.tile-v2 .tile-v2-body { min-width: 0; }
+  .tile.tile-v2 .val { line-height: 1.15; }
+
+  /* ---------- Status dot on existing .tag pills (no markup change) ---------- */
+  .tag.live::before, .tag.draft::before, .tag.closed::before {
+    content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle; background: currentColor;
+  }
+
+  /* ---------- Event-type icon, used by renderEventsList() ---------- */
+  .ev-type-icon {
+    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; margin-right: 4px;
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+
+  /* ---------- Donut chart + legend, built by renderDonutChart() ---------- */
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut-wrap svg { flex-shrink: 0; }
+  .donut-legend { display: flex; flex-direction: column; gap: 6px; }
+  .donut-legend .legend-item { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dark); }
+  .donut-legend .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+</style>
+
+<script>
+  /**
+   * Icon-badged tile, drop-in alternative to the plain tileHtml(val, lbl)
+   * used across the dashboards. tint is one of the .icon-badge tint-*
+   * classes above; icon is any short string/emoji.
+   */
+  function tileHtmlIconed(val, lbl, icon, tint) {
+    return '<div class="tile tile-v2">' +
+      '<div class="icon-badge tint-' + tint + '">' + icon + '</div>' +
+      '<div class="tile-v2-body"><div class="val">' + val + '</div><div class="lbl">' + lbl + '</div></div>' +
+    '</div>';
+  }
+
+  /**
+   * Renders a donut chart + legend into containerEl from entries
+   * [{label, value}, ...]. Uses the well-known SVG stroke-dasharray
+   * "0-100 circumference" trick (r=15.9 => circumference ~= 100), so each
+   * segment's dasharray/dashoffset is just its percentage share — no
+   * external charting library needed.
+   *
+   * opts.colorFn(label, index) -> CSS color string; defaults to cycling
+   * the five brand tokens so the chart follows tenant branding.
+   */
+  function renderDonutChart(containerEl, entries, opts) {
+    opts = opts || {};
+    var colorFn = opts.colorFn || function(label, i) {
+      var palette = ['var(--primary-color)', 'var(--mint-color)', 'var(--accent-color)', 'var(--navy-color)', 'var(--success-color)', 'var(--warning-color)'];
+      return palette[i % palette.length];
+    };
+    entries = (entries || []).filter(function(e) { return e.value > 0; });
+    var total = entries.reduce(function(s, e) { return s + e.value; }, 0);
+    if (!entries.length || total <= 0) {
+      containerEl.innerHTML = '<p class="empty-state">No data yet.</p>';
+      return;
+    }
+    var r = 15.9;
+    var offset = 25; // rotates the first segment's start to 12 o'clock
+    var segments = '';
+    var legend = '';
+    entries.forEach(function(e, i) {
+      var pct = (e.value / total) * 100;
+      var color = colorFn(e.label, i);
+      segments += '<circle cx="21" cy="21" r="' + r + '" fill="transparent" style="stroke:' + color + '" ' +
+        'stroke-width="6" stroke-dasharray="' + pct.toFixed(2) + ' 100" stroke-dashoffset="' + offset.toFixed(2) + '"></circle>';
+      legend += '<div class="legend-item"><span class="legend-dot" style="background:' + color + '"></span>' +
+        donutEscapeHtml_(e.label) + ' · ' + e.value + '</div>';
+      offset -= pct;
+    });
+    containerEl.innerHTML =
+      '<div class="donut-wrap">' +
+        '<svg width="76" height="76" viewBox="0 0 42 42">' +
+          '<circle cx="21" cy="21" r="' + r + '" fill="transparent" stroke="var(--border-color)" stroke-width="6"></circle>' +
+          segments +
+        '</svg>' +
+        '<div class="donut-legend">' + legend + '</div>' +
+      '</div>';
+  }
+
+  function donutEscapeHtml_(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+</script>
