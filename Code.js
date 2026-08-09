@@ -203,12 +203,22 @@
                                preference rank that was actually granted, and
                                Status is "Confirmed" or "Waitlisted".)
    10. <EventID>_BuyerMeetings / <EventID>_SupplierMeetings
-                              Per-event meeting schedules produced by your
-                              external B2B matching tool (same column layout
-                              as before: email, appointment, start, end,
+                              Per-event meeting schedules — either produced
+                              by your external B2B matching tool (legacy
+                              column layout: email, appointment, start, end,
                               table_number, status, meeting_type,
                               supplier_org/buyer_org, supplier_fullname/
-                              buyer_fullname).
+                              buyer_fullname), OR generated in-app by Diary
+                              Creation (see generateB2BDiaries), which also
+                              adds meeting_id, supplier_email/buyer_email,
+                              requested_by, requested_at, responded_at —
+                              needed for the in-app Cancel/Request/Accept/
+                              Reject flow. See meetingSheetHeaders_.
+   11. B2BDiaryTemplates      EventID | Side (Buyer/Supplier) | SlotsJson |
+                              UploadedBy | UploadedAt
+                              (The appointment-slot schedule an admin
+                              uploads per side before running Diary
+                              Creation — see saveB2BDiaryTemplate.)
 
    ADMIN PASSWORDS
    ----------------------------------------------------------------------
@@ -239,6 +249,7 @@ const MILESTONE_COMPLETIONS_SHEET_NAME = 'MilestoneCompletions';
 const ORDERS_SHEET_NAME           = 'Orders';
 const BUDGET_LINES_SHEET_NAME     = 'BudgetLines';
 const BUDGET_CATEGORIES_SHEET_NAME = 'BudgetCategories';
+const B2B_DIARY_TEMPLATES_SHEET_NAME = 'B2BDiaryTemplates';
 
 // Communications feature — see the "COMMUNICATIONS FEATURE" section near
 // the end of this file for the full engine. Sheet names declared here
@@ -586,6 +597,27 @@ function doGet(e) {
     tpl.portalUrl = getWebAppUrl_();
     return tpl.evaluate()
       .setTitle('Unsubscribe')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // --- B2B meeting Accept/Reject (from a request-notification email's
+  // Accept/Reject link). Same "never act on bare GET" rule as Unsubscribe
+  // just above, for the identical reason (link prefetchers) — the actual
+  // write only happens from confirmB2BMeetingResponseByToken, called via
+  // google.script.run after an explicit button click in
+  // MeetingResponse.html. ---
+  if (String(params.page).toLowerCase() === 'meetingresponse') {
+    const tpl = HtmlService.createTemplateFromFile('MeetingResponse');
+    tpl.branding = BRANDING;
+    tpl.eventId = params.ev || '';
+    tpl.meetingId = params.m || '';
+    tpl.email = decodeURIComponent(params.e || '');
+    tpl.action = params.a || '';
+    tpl.token = params.t || '';
+    tpl.portalUrl = getWebAppUrl_();
+    return tpl.evaluate()
+      .setTitle('Meeting Request')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
@@ -1473,8 +1505,11 @@ function formatMoney_(amount, currency) {
 // RegistrationID is a trailing, additive column (see registrationsHeaders_
 // note above — same reasoning: Orders needs a stable FK back to whichever
 // row generated it).
+// TableNumber: also trailing/additive — written by assignB2BTableNumbers_
+// (Table Allocation, B2B-only), blank for every non-B2B row and for a B2B
+// row that hasn't had Table Allocation run for its registration type yet.
 function subEventRegHeaders_() {
-  return ['Timestamp', 'EventID', 'SubEventID', 'Email', 'FullName', 'EventType', 'OptionId', 'OptionLabel', 'Status', 'Rank', 'ExtraFields', 'CompanyName', 'RegistrationID'];
+  return ['Timestamp', 'EventID', 'SubEventID', 'Email', 'FullName', 'EventType', 'OptionId', 'OptionLabel', 'Status', 'Rank', 'ExtraFields', 'CompanyName', 'RegistrationID', 'TableNumber'];
 }
 
 function getSubEventRegSheet_() {
@@ -1509,11 +1544,183 @@ function getSubEventRegsRaw_() {
       rank: row[9] === '' ? null : Number(row[9]),
       extraFields: (function() { try { return JSON.parse(row[10] || '{}') || {}; } catch (e) { return {}; } })(),
       companyName: String(row[11] || ''),
-      registrationId: String(row[12] || '')
+      registrationId: String(row[12] || ''),
+      tableNumber: row[13] === '' || row[13] === undefined || row[13] === null ? null : Number(row[13])
     });
   }
   _rawDataCache_.subEventRegs = out;
   return out;
+}
+
+/* =========================================================================
+   B2B TABLE ALLOCATION (admin-only, manual action) — assigns a sequential
+   table number to every CONFIRMED attendee of one registration type on a
+   B2B entity (top-level event or sub-event), sorted by Organization Name
+   then Surname. Deliberately per-attendee, not per-organization: two
+   people from the same company can register for different tables. Written
+   onto SubEventRegistrations.TableNumber — see subEventRegHeaders_'s note.
+   ========================================================================= */
+
+/**
+ * Registration-type options for the Table Allocation picker: every
+ * TypeConfig option label configured for this B2B entity's EventType, each
+ * with how many CONFIRMED attendees are currently allocated to it and how
+ * many of those already have a TableNumber — lets the admin see whether
+ * this would be a first run or a re-run (which replaces every existing
+ * number for that type) before committing.
+ */
+function getB2BTableAllocationOptions(token, entityId) {
+  requireAdmin_(token);
+  const entity = getEventById_(entityId);
+  if (!entity) throw new Error('Event not found.');
+  if (!entity.isB2B) throw new Error('"' + entity.eventName + '" is not a B2B-flagged event or sub-event.');
+
+  const topEventId = entity.parentEventId || entity.eventId;
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || []).map(rt => rt.label);
+  const allocations = getSubEventRegsRaw_().filter(r => r.subEventId === entityId && r.status === 'Confirmed');
+
+  return regTypes.map(label => {
+    const forType = allocations.filter(a => a.optionLabel === label);
+    return {
+      label: label,
+      confirmedCount: forType.length,
+      alreadyAssignedCount: forType.filter(a => a.tableNumber !== null).length
+    };
+  });
+}
+
+/**
+ * Runs (or re-runs) Table Allocation for one (entity, registrationType)
+ * pair. A re-run is a full clear-and-replace for that pair — every existing
+ * TableNumber for it is cleared first, then every CURRENTLY-confirmed
+ * attendee gets a fresh sequential number, so a re-run after someone's
+ * status changed or a new attendee confirmed doesn't leave stale numbers
+ * behind. Also propagates the fresh numbers into that attendee's own rows
+ * in the Buyer/SupplierMeetings sheet (see getMeetingSheet_) IF Diary
+ * Creation has already run for this entity — those rows carry their own
+ * denormalized table_number column (see getMeetingSheetRaw_'s doc comment
+ * on why), which would otherwise go stale the moment Table Allocation is
+ * re-run after diaries already exist.
+ */
+function assignB2BTableNumbers(token, entityId, registrationType) {
+  requireAdmin_(token);
+  const entity = getEventById_(entityId);
+  if (!entity) throw new Error('Event not found.');
+  if (!entity.isB2B) throw new Error('"' + entity.eventName + '" is not a B2B-flagged event or sub-event.');
+  registrationType = String(registrationType || '').trim();
+  if (!registrationType) throw new Error('Please choose a registration type.');
+
+  const leaseId = acquireEntityLock_(entityId, 15000);
+  try {
+    const sheet = getSubEventRegSheet_();
+    if (sheet.getLastRow() <= 1) return { status: 'ok', registrationType: registrationType, assignments: [] };
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const subEventIdIdx = headers.indexOf('SubEventID');
+    const emailIdx = headers.indexOf('Email');
+    const fullNameIdx = headers.indexOf('FullName');
+    const optionLabelIdx = headers.indexOf('OptionLabel');
+    const statusIdx = headers.indexOf('Status');
+    const companyIdx = headers.indexOf('CompanyName');
+    const tableIdx = headers.indexOf('TableNumber');
+
+    // Candidates: every row for this (entity, registrationType) pair —
+    // regardless of current Status — get their TableNumber cleared first,
+    // matching the "latest run replaces the previous one" requirement.
+    // Only the currently-Confirmed subset among them then gets a fresh
+    // number assigned below.
+    const candidateRowIdx = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][subEventIdIdx]) === String(entityId) && String(data[i][optionLabelIdx]) === registrationType) {
+        data[i][tableIdx] = '';
+        candidateRowIdx.push(i);
+      }
+    }
+
+    const confirmedRowIdx = candidateRowIdx.filter(i => String(data[i][statusIdx]) === 'Confirmed');
+    const withSortKeys = confirmedRowIdx.map(i => {
+      const email = String(data[i][emailIdx] || '').trim().toLowerCase();
+      const profile = findProfileRow_(email);
+      const fullName = String(data[i][fullNameIdx] || '');
+      const surname = (profile && String(profile.values[profile.idx['Surname']] || '')) || splitFullName_(fullName).lastName;
+      return {
+        rowIdx: i,
+        email: email,
+        fullName: fullName,
+        companyName: String(data[i][companyIdx] || ''),
+        sortCompany: String(data[i][companyIdx] || '').toLowerCase(),
+        sortSurname: surname.toLowerCase()
+      };
+    });
+
+    withSortKeys.sort((a, b) => {
+      if (a.sortCompany !== b.sortCompany) return a.sortCompany < b.sortCompany ? -1 : 1;
+      if (a.sortSurname !== b.sortSurname) return a.sortSurname < b.sortSurname ? -1 : 1;
+      return 0;
+    });
+
+    const assignments = [];
+    withSortKeys.forEach((entry, idx) => {
+      const tableNumber = idx + 1;
+      data[entry.rowIdx][tableIdx] = tableNumber;
+      assignments.push({ email: entry.email, fullName: entry.fullName, companyName: entry.companyName, tableNumber: tableNumber });
+    });
+
+    sheet.getRange(1, 1, data.length, headers.length).setValues(data);
+    _rawDataCache_.subEventRegs = null;
+
+    syncTableNumbersIntoMeetingSheets_(entityId, entity, registrationType, assignments);
+
+    return { status: 'ok', registrationType: registrationType, assignedCount: assignments.length, assignments: assignments };
+  } finally {
+    releaseEntityLock_(entityId, leaseId);
+  }
+}
+
+/**
+ * Propagates fresh table numbers from assignB2BTableNumbers into the
+ * denormalized table_number column on that attendee's own rows in whichever
+ * meeting sheet matches their side (Buyer/Supplier) — a no-op if Diary
+ * Creation hasn't run yet for this entity (getMeetingSheet_ returns null,
+ * same "not created yet" signal every other caller of it already handles).
+ * isBuyerSide mirrors getAttendeeItinerary_'s own resolution: whichever
+ * registration type is configured FIRST for this entity's EventType is
+ * "the buyer side" — not asked again here, just re-derived the same way.
+ */
+function syncTableNumbersIntoMeetingSheets_(entityId, entity, registrationType, assignments) {
+  if (!assignments.length) return;
+  const topEventId = entity.parentEventId || entity.eventId;
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || []).map(rt => rt.label);
+  const isBuyerSide = regTypes.length > 0 && regTypes[0] === registrationType;
+
+  const sheet = getMeetingSheet_(entityId, isBuyerSide);
+  if (!sheet || sheet.getLastRow() <= 1) return;
+
+  const tableByEmail = {};
+  assignments.forEach(a => { tableByEmail[a.email] = a.tableNumber; });
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const emailIdx = headers.indexOf('email');
+  const tableIdx = headers.indexOf('table_number');
+  if (emailIdx === -1 || tableIdx === -1) return;
+
+  let changed = false;
+  for (let i = 1; i < data.length; i++) {
+    const email = String(data[i][emailIdx] || '').trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(tableByEmail, email)) {
+      data[i][tableIdx] = tableByEmail[email];
+      changed = true;
+    }
+  }
+  if (changed) {
+    sheet.getRange(1, 1, data.length, headers.length).setValues(data);
+    _rawDataCache_.meetingSheets = null; // whole-cache clear — cheap, and simpler than reconstructing this sheet's specific cache key
+    invalidateCrossRequestCache_('meetingSheet_' + entityId + '_' + (isBuyerSide ? 'buyer' : 'supplier'));
+  }
 }
 
 /**
@@ -2320,7 +2527,12 @@ function getAdminEventsTree(token) {
       effectiveCurrency: currency,
       capacityState: (parent.isUmbrella || !usesEntityLevelCapacity(parent)) ? null : getEventCapacityState_(parent),
       milestones: milestonesForEntity(parent.eventId),
-      subEvents: subEvents
+      subEvents: subEvents,
+      // One rollup per top-level event, covering itself + every sub-event —
+      // My Events shows this on the card itself; each sub-event tab filters
+      // this same list down to its own entityId client-side rather than
+      // this being computed once per sub-event too.
+      alerts: buildEventAlertsSummary_(parent)
     });
   });
 }
@@ -3393,6 +3605,7 @@ function getMilestoneCompletionSummary_(event) {
         title: m.title,
         milestoneType: m.milestoneType,
         dueDate: m.dueDate,
+        entityId: entityId,
         entityLabel: entityLabel,
         totalEligible: eligible.length,
         completedCount: eligible.length - pending.length,
@@ -3426,6 +3639,124 @@ function getMilestoneCompletionSummary_(event) {
   }
 
   return results;
+}
+
+/** red = due today or overdue, amber = within 7 days, neutral = further out or no due date — same thresholds as Portal.html's client-side urgencyOfDueDate_, kept independent since this runs server-side over admin-facing aggregate data instead of one attendee's own milestones. */
+function milestoneAlertUrgency_(dueDate) {
+  if (!dueDate) return 'neutral';
+  let due;
+  try { due = new Date(dueDate); } catch (e) { return 'neutral'; }
+  if (isNaN(due.getTime())) return 'neutral';
+  due.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((due - today) / 86400000);
+  if (days <= 0) return 'red';
+  if (days <= 7) return 'amber';
+  return 'neutral';
+}
+
+/**
+ * Pending-meeting-request alerts for one top-level event: one item per B2B
+ * entity (the event itself, or any of its B2B sub-events) that currently
+ * has 1+ meetings Reserved, urgency driven by how close the OLDEST pending
+ * request is to the 4-day auto-cancel cutoff (autoCancelStaleB2BMeetingRequests_)
+ * — red once it's within a day of expiring, amber once it's at least a day
+ * old, neutral for anything requested very recently. Same red/amber/neutral
+ * vocabulary as milestoneAlertUrgency_, just measured against a fixed
+ * countdown instead of an admin-set due date. Only ever scans the BUYER
+ * sheet per entity — a Reserved row's meeting_id already links it to its
+ * mirrored Supplier row, so scanning both sides would double-count every
+ * pending request, same reasoning autoCancelStaleB2BMeetingRequests_ itself
+ * already relies on.
+ */
+function buildB2BMeetingAlertItems_(topLevelEvent) {
+  const entities = [topLevelEvent].concat(getAllEvents_().filter(e => e.parentEventId === topLevelEvent.eventId));
+  const items = [];
+
+  entities.filter(e => e.isB2B).forEach(entity => {
+    const sheet = getMeetingSheet_(entity.eventId, true);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim().toLowerCase());
+    const statusIdx = headers.indexOf('status');
+    const requestedAtIdx = headers.indexOf('requested_at');
+    if (statusIdx === -1) return;
+
+    let count = 0;
+    let oldestAgeMs = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][statusIdx]) !== 'Reserved') continue;
+      count++;
+      const raw = requestedAtIdx !== -1 ? data[i][requestedAtIdx] : null;
+      if (!raw) continue;
+      const requestedAt = raw instanceof Date ? raw : new Date(raw);
+      if (isNaN(requestedAt.getTime())) continue;
+      const ageMs = Date.now() - requestedAt.getTime();
+      if (ageMs > oldestAgeMs) oldestAgeMs = ageMs;
+    }
+    if (!count) return;
+
+    const ageDays = oldestAgeMs / 86400000;
+    const urgency = ageDays >= B2B_MEETING_AUTOCANCEL_DAYS - 1 ? 'red' : ageDays >= 1 ? 'amber' : 'neutral';
+    const cutoffDate = new Date(Date.now() - oldestAgeMs + B2B_MEETING_AUTOCANCEL_DAYS * 86400000);
+
+    items.push({
+      kind: 'meeting',
+      milestoneId: 'b2b-pending-' + entity.eventId,
+      title: count + ' pending meeting request' + (count === 1 ? '' : 's'),
+      dueDate: Utilities.formatDate(cutoffDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+      entityId: entity.eventId,
+      entityName: entity.eventName,
+      pendingCount: count,
+      urgency: urgency
+    });
+  });
+
+  return items;
+}
+
+/**
+ * Admin "My Events" alert rollup for one top-level event: reuses
+ * getMilestoneCompletionSummary_'s per-milestone pending counts (already
+ * aggregated across the event itself AND every sub-event) and reduces them
+ * to just the milestones with at least one attendee still pending, each
+ * tagged with an urgency bucket — PLUS buildB2BMeetingAlertItems_'s pending-
+ * meeting-request items for any B2B entity, so an organizer sees both kinds
+ * of "needs a response" in one place instead of two. This is the single
+ * feed behind both the condensed 3-count box and its expandable full list
+ * on an event's card — see renderAlertsCondensedHtml_/renderAlertsFullHtml_
+ * in AdminPortal.html, which use each item's `kind` to phrase the pending-
+ * count line appropriately ("N attendee(s) pending" vs "N meeting
+ * request(s) pending"). Sorted by due date ascending; no-due-date items
+ * sort last (not urgent, but not hidden).
+ */
+function buildEventAlertsSummary_(event) {
+  const counts = { red: 0, amber: 0, neutral: 0 };
+  const milestoneItems = getMilestoneCompletionSummary_(event)
+    .map(m => ({
+      kind: 'milestone',
+      milestoneId: m.milestoneId,
+      title: m.title,
+      dueDate: m.dueDate,
+      entityId: m.entityId,
+      entityName: m.entityLabel,
+      pendingCount: m.totalEligible - m.completedCount,
+      urgency: milestoneAlertUrgency_(m.dueDate)
+    }))
+    .filter(it => it.pendingCount > 0);
+
+  const items = milestoneItems.concat(buildB2BMeetingAlertItems_(event));
+
+  items.forEach(it => { counts[it.urgency]++; });
+  items.sort((a, b) => {
+    if (!a.dueDate && !b.dueDate) return 0;
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return a.dueDate < b.dueDate ? -1 : (a.dueDate > b.dueDate ? 1 : 0);
+  });
+
+  return { counts: counts, items: items };
 }
 
 function getPreferencesDashboardData_(eventId, registrations) {
@@ -4725,6 +5056,9 @@ function authenticateUserPortal(sessionToken) {
       currency: currency,
       capacity: e.isUmbrella || e.isExhibition ? null : getEventCapacityState_(e),
       registered: registeredEventIds.has(e.eventId),
+      // Renderable thumbnail URL, or '' to fall back to the default
+      // gradient banner (see uploadEventBannerImage/renderEventBannerHtml).
+      bannerImageUrl: e.bannerImageUrl,
       subEvents: subEvents
     };
   });
@@ -6287,6 +6621,280 @@ function generateB2BMatchingSql(token, entityId) {
 }
 
 /* =========================================================================
+   B2B DIARY CREATION (admin-only, manual action) — builds the empty
+   appointment skeleton for a B2B entity's Buyer/SupplierMeetings sheets:
+   one row per confirmed attendee of a side x one row per slot in that
+   side's uploaded template. This is the first in-app WRITER of those
+   sheets (see meetingSheetHeaders_/getOrCreateMeetingSheet_ below) — until
+   now they were only ever populated by hand-pasting the external matching
+   engine's own export.
+   ========================================================================= */
+
+function getB2BDiaryTemplatesSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(B2B_DIARY_TEMPLATES_SHEET_NAME) || ss.insertSheet(B2B_DIARY_TEMPLATES_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(['EventID', 'Side', 'SlotsJson', 'UploadedBy', 'UploadedAt']);
+  return s;
+}
+
+/** A static example, not entity-specific — same shape either side needs, so one download serves both. */
+function getB2BDiaryTemplateStarterCsv(token) {
+  requireAdmin_(token);
+  const csv = 'Appointment,Start,End\n' +
+    '1,09:00,09:20\n' +
+    '2,09:20,09:40\n' +
+    'Coffee Break,10:40,11:00\n' +
+    '3,11:00,11:20\n';
+  return { filename: 'diary_slot_template.csv', csv: csv };
+}
+
+/**
+ * Parses an uploaded diary-slot CSV (Appointment, Start, End) into a slot
+ * list. "Appointment" is either a sequential number (a real, bookable
+ * meeting slot) or free text (a fixed block like a break) — mirrors the
+ * existing isSpecialBlock convention the attendee itinerary view already
+ * renders specially (see Portal.html's loadItineraryModule), so a break
+ * row needs no separate flag column to be recognized on either end.
+ * Start/End are kept as plain "HH:MM" strings, not Dates — the meeting
+ * sheets already store/compare them as text (see formatMeetingTime_), and
+ * matching a same-time slot on the counterpart's side (for Request
+ * Meeting) is then an exact string comparison with no timezone round-trip.
+ */
+function parseB2BDiarySlotsCsv_(csvText) {
+  const rows = Utilities.parseCsv(String(csvText || '').trim());
+  if (!rows.length) throw new Error('The uploaded file is empty.');
+
+  const headerRow = rows[0].map(h => String(h).trim().toLowerCase());
+  const apptIdx = headerRow.indexOf('appointment');
+  const startIdx = headerRow.indexOf('start');
+  const endIdx = headerRow.indexOf('end');
+  if (apptIdx === -1 || startIdx === -1 || endIdx === -1) {
+    throw new Error('Expected columns "Appointment, Start, End" — download the starter template if unsure of the format.');
+  }
+
+  const timePattern = /^\d{1,2}:\d{2}$/;
+  const slots = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row.length || row.every(c => String(c).trim() === '')) continue; // skip blank trailing rows
+    const appointment = String(row[apptIdx] || '').trim();
+    const start = String(row[startIdx] || '').trim();
+    const end = String(row[endIdx] || '').trim();
+    if (!appointment) throw new Error('Row ' + (i + 1) + ': "Appointment" can\'t be blank.');
+    if (!timePattern.test(start) || !timePattern.test(end)) {
+      throw new Error('Row ' + (i + 1) + ': Start/End must look like "HH:MM" (got "' + start + '" / "' + end + '").');
+    }
+    slots.push({ appointment: sanitizeForSheet_(appointment), start: start, end: end, isBreak: isNaN(Number(appointment)) });
+  }
+  if (!slots.length) throw new Error('No slot rows found below the header.');
+  return slots;
+}
+
+/** Internal, no auth check — shared by the public getB2BDiaryTemplates wrapper and generateB2BDiaries, which has already authenticated by the time it needs this. */
+function getB2BDiaryTemplates_(entityId) {
+  const sheet = getB2BDiaryTemplatesSheet_();
+  const result = { buyer: null, supplier: null };
+  if (sheet.getLastRow() <= 1) return result;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== String(entityId)) continue;
+    let slots = [];
+    try { slots = JSON.parse(data[i][2] || '[]'); } catch (e) { slots = []; }
+    const summary = {
+      slots: slots,
+      slotCount: slots.length,
+      breakCount: slots.filter(s => s.isBreak).length,
+      uploadedBy: String(data[i][3] || ''),
+      uploadedAt: data[i][4] instanceof Date ? data[i][4].toISOString() : String(data[i][4] || '')
+    };
+    if (String(data[i][1]) === 'Buyer') result.buyer = summary;
+    else if (String(data[i][1]) === 'Supplier') result.supplier = summary;
+  }
+  return result;
+}
+
+/** Feeds the Diary Creation modal's "current state" panel for both sides. */
+function getB2BDiaryTemplates(token, entityId) {
+  requireAdmin_(token);
+  return getB2BDiaryTemplates_(entityId);
+}
+
+/** Upserts one side's template — a second upload for the same (entity, side) replaces the previous one outright, same "latest wins" convention as Table Allocation. */
+function saveB2BDiaryTemplate(token, entityId, side, csvText) {
+  const adminEmail = requireAdmin_(token);
+  const entity = getEventById_(entityId);
+  if (!entity) throw new Error('Event not found.');
+  if (!entity.isB2B) throw new Error('"' + entity.eventName + '" is not a B2B-flagged event or sub-event.');
+  side = String(side || '').trim();
+  if (side !== 'Buyer' && side !== 'Supplier') throw new Error('Side must be "Buyer" or "Supplier".');
+
+  const slots = parseB2BDiarySlotsCsv_(csvText);
+
+  const sheet = getB2BDiaryTemplatesSheet_();
+  const data = sheet.getDataRange().getValues();
+  const now = new Date();
+  let found = false;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(entityId) && String(data[i][1]) === side) {
+      sheet.getRange(i + 1, 3, 1, 3).setValues([[JSON.stringify(slots), adminEmail, now]]);
+      found = true;
+      break;
+    }
+  }
+  if (!found) sheet.appendRow([entityId, side, JSON.stringify(slots), adminEmail, now]);
+
+  return { status: 'ok', side: side, slotCount: slots.length, breakCount: slots.filter(s => s.isBreak).length };
+}
+
+/**
+ * Full column set for a Buyer/SupplierMeetings sheet — the original 9
+ * columns an external matching-tool export already used (see the file
+ * header's schema note) PLUS 6 this app added: meeting_id (links a
+ * buyer-side row to its mirrored supplier-side row — the two are
+ * otherwise only ever fuzzy-matched by time/table), the counterpart's
+ * actual EMAIL (previously only their org/name were stored, display-only),
+ * requested_by/at plus responded_at for the Request/Accept/Reject flow and
+ * the 4-day auto-cancel sweep, and block_note for Block This Slot — an
+ * attendee's own optional reason, shown only to them (see
+ * blockB2BMeetingSlot; requested_by doubles as "who blocked this" there
+ * too, since it's the same underlying idea — who put this row in its
+ * current non-Empty state).
+ */
+function meetingSheetHeaders_(isBuyer) {
+  return isBuyer
+    ? ['email', 'appointment', 'start', 'end', 'table_number', 'status', 'meeting_type', 'supplier_org', 'supplier_fullname', 'supplier_email', 'meeting_id', 'requested_by', 'requested_at', 'responded_at', 'block_note']
+    : ['email', 'appointment', 'start', 'end', 'table_number', 'status', 'meeting_type', 'buyer_org', 'buyer_fullname', 'buyer_email', 'meeting_id', 'requested_by', 'requested_at', 'responded_at', 'block_note'];
+}
+
+/**
+ * Case-insensitive counterpart to migrateSheetHeaders_ — the Buyer/
+ * SupplierMeetings sheets are the one place in this codebase whose header
+ * row can be authored by an EXTERNAL tool (see the file header's schema
+ * note), so its casing can't be assumed to match ours the way every other
+ * admin-owned sheet's can. getMeetingSheetRaw_ already lowercases on read
+ * for the same reason; this mirrors that when deciding which of our newer
+ * columns are actually missing before appending them.
+ */
+function ensureMeetingSheetColumns_(sheet, requiredHeaders) {
+  const lastCol = sheet.getLastColumn();
+  const current = lastCol ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim().toLowerCase()) : [];
+  const missing = requiredHeaders.filter(h => current.indexOf(h) === -1);
+  if (missing.length) sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+}
+
+/**
+ * Creates the per-event Buyer/SupplierMeetings sheet if it doesn't exist
+ * yet, or self-heals a legacy sheet (per-event OR the old global fallback
+ * name — see getMeetingSheet_) that predates this app's newer columns.
+ * Diary Creation is the first in-app WRITER of these sheets;
+ * getMeetingSheet_ itself stays read-only and untouched for every existing
+ * caller (getAttendeeItinerary_, the campaign-audience "has meetings"
+ * filter, etc).
+ */
+function getOrCreateMeetingSheet_(entityId, isBuyer) {
+  const ss = getSpreadsheet_();
+  const scopedName = entityId + (isBuyer ? '_BuyerMeetings' : '_SupplierMeetings');
+  const headers = meetingSheetHeaders_(isBuyer);
+  let sheet = ss.getSheetByName(scopedName);
+  if (!sheet) sheet = ss.getSheetByName(isBuyer ? 'BuyerMeetings' : 'SupplierMeetings');
+  if (!sheet) {
+    sheet = ss.insertSheet(scopedName);
+    sheet.appendRow(headers);
+    return sheet;
+  }
+  if (sheet.getLastRow() === 0) { sheet.appendRow(headers); return sheet; }
+  ensureMeetingSheetColumns_(sheet, headers);
+  return sheet;
+}
+
+/**
+ * Diary Creation: builds the empty appointment skeleton for a B2B entity —
+ * one row per (confirmed attendee of a side) x (template slot) — into that
+ * side's Buyer/SupplierMeetings sheet. Requires BOTH sides' templates to
+ * already be uploaded (see saveB2BDiaryTemplate). A real (numeric)
+ * appointment slot is written as status "Empty"; a break/label slot (see
+ * parseB2BDiarySlotsCsv_'s isBreak) is written as status "Blocked" so it's
+ * excluded from Request Meeting's same-time-availability search, even
+ * though the itinerary view renders it specially regardless of status
+ * (see Portal.html's isSpecialBlock) — the two concepts are independent.
+ *
+ * Buyer/supplier resolution mirrors getAttendeeItinerary_'s own
+ * convention: whichever registration type is configured FIRST for this
+ * entity's EventType is "the buyer side" — not asked again here, just
+ * re-derived the same way. Diary Creation only supports EXACTLY two
+ * registration types; the underlying sheet pair is fundamentally
+ * two-sided, unlike Meeting Preferences/the SQL bridge, which tolerate
+ * more.
+ *
+ * Re-generation is destructive by design (this IS "re-run after fixing a
+ * template mistake"), so once any existing row for a side is no longer
+ * Empty/Blocked (i.e. a real meeting has been Reserved or Booked there),
+ * it's gated behind `force` — same confirm-then-force shape as
+ * deleteClientOnboardingType's USAGE_COUNT guard (see that function's own
+ * doc comment for why this isn't a hard block instead).
+ */
+function generateB2BDiaries(token, entityId, force) {
+  requireAdmin_(token);
+  const entity = getEventById_(entityId);
+  if (!entity) throw new Error('Event not found.');
+  if (!entity.isB2B) throw new Error('"' + entity.eventName + '" is not a B2B-flagged event or sub-event.');
+
+  const topEventId = entity.parentEventId || entity.eventId;
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || []).map(rt => rt.label);
+  if (regTypes.length !== 2) {
+    throw new Error('Diary Creation needs exactly 2 registration types configured for this event type (found ' + regTypes.length + ') — one Buyer side and one Supplier side.');
+  }
+
+  const templates = getB2BDiaryTemplates_(entityId);
+  if (!templates.buyer || !templates.supplier) {
+    throw new Error('Upload both a Buyer and a Supplier slot template before generating diaries.');
+  }
+
+  const leaseId = acquireEntityLock_(entityId, 20000);
+  try {
+    const buyerResult = generateOneSideDiary_(entityId, true, regTypes[0], templates.buyer.slots, !!force);
+    const supplierResult = generateOneSideDiary_(entityId, false, regTypes[1], templates.supplier.slots, !!force);
+    return { status: 'ok', buyer: buyerResult, supplier: supplierResult };
+  } finally {
+    releaseEntityLock_(entityId, leaseId);
+  }
+}
+
+function generateOneSideDiary_(entityId, isBuyer, registrationType, slots, force) {
+  const sheet = getOrCreateMeetingSheet_(entityId, isBuyer);
+  const headers = meetingSheetHeaders_(isBuyer);
+
+  if (sheet.getLastRow() > 1) {
+    const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+    const statusIdx = headers.indexOf('status');
+    const nonEmptyCount = existing.filter(r => r[statusIdx] !== 'Empty' && r[statusIdx] !== 'Blocked' && r[statusIdx] !== '').length;
+    if (nonEmptyCount && !force) {
+      throw new Error('CONFIRM_REPLACE:' + nonEmptyCount + ':' + (isBuyer ? 'Buyer' : 'Supplier'));
+    }
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+  }
+
+  const attendees = getSubEventRegsRaw_().filter(r => r.subEventId === entityId && r.status === 'Confirmed' && r.optionLabel === registrationType);
+
+  const rows = [];
+  attendees.forEach(a => {
+    slots.forEach(slot => {
+      const status = slot.isBreak ? 'Blocked' : 'Empty';
+      const meetingType = slot.isBreak ? 'Break' : 'Meeting';
+      rows.push([a.email, slot.appointment, slot.start, slot.end, a.tableNumber || '', status, meetingType, '', '', '', '', '', '', '']);
+    });
+  });
+
+  if (rows.length) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+
+  _rawDataCache_.meetingSheets = null;
+  invalidateCrossRequestCache_('meetingSheet_' + entityId + '_' + (isBuyer ? 'buyer' : 'supplier'));
+
+  return { attendeeCount: attendees.length, slotCount: slots.length, rowCount: rows.length };
+}
+
+/* =========================================================================
    PAGE: VIEW MY ITINERARY (B2B events, scoped by eventId)
    ========================================================================= */
 
@@ -6301,11 +6909,15 @@ function getMeetingSheet_(eventId, isBuyer) {
   return sheet;
 }
 
-// Longer than CROSS_REQUEST_CACHE_SECONDS (60s) — these sheets are
-// populated by an external B2B matching tool, not written anywhere in
-// this codebase, so they change at most a few times per event lifecycle;
-// a 10-minute window is safe and still reflects a re-import within
-// minutes.
+// Longer than CROSS_REQUEST_CACHE_SECONDS (60s) — these sheets change at
+// most a few times per event lifecycle (an external-tool re-import, or an
+// in-app Diary Creation run), not on every attendee click, so a 10-minute
+// window is safe. Every in-app writer (generateB2BDiaries,
+// syncTableNumbersIntoMeetingSheets_, and eventually the Cancel/Request/
+// Accept/Reject actions) invalidates this sheet's own cache key
+// immediately after writing, so a stale read only matters within the
+// window right after an EXTERNAL re-import this app has no way to know
+// about.
 const MEETING_SHEET_CACHE_SECONDS = 600;
 
 /**
@@ -6414,6 +7026,9 @@ function getAttendeeItinerary_(eventId, email) {
     const nameHeaderKey = isBuyerSide ? 'supplier_fullname' : 'buyer_fullname';
     const compIdx = mtgHeaders.indexOf(compHeaderKey);
     const nameIdx = mtgHeaders.indexOf(nameHeaderKey);
+    const meetingIdIdx = mtgHeaders.indexOf('meeting_id');
+    const requestedByIdx = mtgHeaders.indexOf('requested_by');
+    const blockNoteIdx = mtgHeaders.indexOf('block_note');
 
     for (let i = 0; i < mtgRaw.rows.length; i++) {
       const row = mtgRaw.rows[i];
@@ -6434,7 +7049,10 @@ function getAttendeeItinerary_(eventId, email) {
         status: statusIdx !== -1 ? String(row[statusIdx] || '') : '',
         companyName: compIdx !== -1 ? String(row[compIdx] || '') : '',
         fullName: nameIdx !== -1 ? String(row[nameIdx] || '') : '',
-        meetingType: typeIdx !== -1 ? String(row[typeIdx] || '') : ''
+        meetingType: typeIdx !== -1 ? String(row[typeIdx] || '') : '',
+        meetingId: meetingIdIdx !== -1 ? String(row[meetingIdIdx] || '') : '',
+        requestedBy: requestedByIdx !== -1 ? String(row[requestedByIdx] || '').trim().toLowerCase() : '',
+        blockNote: blockNoteIdx !== -1 ? String(row[blockNoteIdx] || '') : ''
       });
     }
   }
@@ -6509,6 +7127,681 @@ function getAttendeeModalDetails(sessionToken, partnerEmail) {
     companyDescription: reg.companyDescription || 'No description provided.',
     website: reg.website || ''
   };
+}
+
+/* =========================================================================
+   B2B MEETING ACTIONS (attendee-facing) — Cancel Meeting today; Request/
+   Accept/Reject and the 4-day auto-cancel sweep are the next layer, built
+   on the same meeting_id-linked-row shape.
+   ========================================================================= */
+
+const B2B_MEETING_ACTIVITY_LOG_SHEET_NAME = 'MeetingActivityLog';
+
+function getB2BMeetingActivityLogSheet_() {
+  const ss = getSpreadsheet_();
+  let s = ss.getSheetByName(B2B_MEETING_ACTIVITY_LOG_SHEET_NAME) || ss.insertSheet(B2B_MEETING_ACTIVITY_LOG_SHEET_NAME);
+  if (s.getLastRow() === 0) s.appendRow(['Timestamp', 'EventID', 'MeetingID', 'ActionType', 'ActorEmail', 'CounterpartEmail', 'Message']);
+  return s;
+}
+
+/** ActionType: 'Requested' | 'Accepted' | 'Rejected' | 'Cancelled' | 'AutoCancelled' — only 'Cancelled' is fired today. Append-only; feeds the future alerts rollup extension (see buildEventAlertsSummary_'s own doc comment on this same idea). */
+function logB2BMeetingActivity_(eventId, meetingId, actionType, actorEmail, counterpartEmail, message) {
+  getB2BMeetingActivityLogSheet_().appendRow([new Date(), eventId, meetingId, actionType, actorEmail, counterpartEmail || '', sanitizeForSheet_(message || '')]);
+}
+
+/**
+ * Finds the row for one meeting_id in a meeting sheet — a fresh direct
+ * read (never the cached getMeetingSheetRaw_ layer), since every caller of
+ * this is about to mutate the row and can't risk acting on stale data.
+ * Returns { sheet, headers (lowercased), rowNum (1-based, includes header
+ * offset), values (that row's raw cell array) } or null if either the
+ * sheet doesn't exist yet or no row carries this meeting_id. Shared by
+ * cancelB2BMeeting today and the Accept/Reject/auto-cancel actions next —
+ * all of them are "find this meeting's row on ONE side, read identity off
+ * it, then overwrite specific columns in place."
+ */
+function findMeetingRowByMeetingId_(sheet, meetingId) {
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const idIdx = headers.indexOf('meeting_id');
+  if (idIdx === -1) return null;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idIdx]).trim() === meetingId) {
+      return { sheet: sheet, headers: headers, rowNum: i + 1, values: data[i] };
+    }
+  }
+  return null;
+}
+
+function meetingRowVal_(ref, col) {
+  const i = ref.headers.indexOf(col);
+  return i === -1 ? '' : ref.values[i];
+}
+
+/** Reverts one meeting row back to an open Empty slot — clears status, counterpart identity, and every Request/Accept-tracking column, but keeps the slot itself (email/appointment/start/end/table_number) so it stays requestable rather than disappearing from the diary. */
+function clearMeetingRowToEmpty_(ref) {
+  const setIfPresent = (col, val) => {
+    const i = ref.headers.indexOf(col);
+    if (i !== -1) ref.values[i] = val;
+  };
+  setIfPresent('status', 'Empty');
+  setIfPresent('meeting_type', 'Meeting');
+  setIfPresent('supplier_org', ''); setIfPresent('buyer_org', '');
+  setIfPresent('supplier_fullname', ''); setIfPresent('buyer_fullname', '');
+  setIfPresent('supplier_email', ''); setIfPresent('buyer_email', '');
+  setIfPresent('meeting_id', '');
+  setIfPresent('requested_by', '');
+  setIfPresent('requested_at', '');
+  setIfPresent('responded_at', '');
+  setIfPresent('block_note', '');
+  ref.sheet.getRange(ref.rowNum, 1, 1, ref.headers.length).setValues([ref.values]);
+}
+
+/**
+ * Cancel Meeting: the calling attendee's own confirmed (Booked) meeting is
+ * reverted to an open Empty slot on BOTH sides (their own row and the
+ * counterpart's mirrored row, linked by meeting_id), logged, and the
+ * counterpart is emailed. Ownership and status are both re-checked
+ * server-side — the "Cancel Meeting" button only ever renders for a
+ * Booked meeting the signed-in attendee is actually part of, but that's a
+ * client-side convenience, never trusted alone.
+ */
+function cancelB2BMeeting(sessionToken, eventId, meetingId, message) {
+  const email = requireAttendeeSession_(sessionToken);
+  meetingId = String(meetingId || '').trim();
+  if (!meetingId) throw new Error('Missing meeting.');
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const buyerRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, true), meetingId);
+    const supplierRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, false), meetingId);
+    if (!buyerRef && !supplierRef) throw new Error('This meeting could not be found — it may already have been cancelled.');
+
+    let callerRef = null, counterpartRef = null;
+    if (buyerRef && String(meetingRowVal_(buyerRef, 'email')).trim().toLowerCase() === email) { callerRef = buyerRef; counterpartRef = supplierRef; }
+    else if (supplierRef && String(meetingRowVal_(supplierRef, 'email')).trim().toLowerCase() === email) { callerRef = supplierRef; counterpartRef = buyerRef; }
+    if (!callerRef) throw new Error('You are not a participant in this meeting.');
+    if (meetingRowVal_(callerRef, 'status') !== 'Booked') throw new Error('Only a confirmed meeting can be cancelled this way.');
+
+    const isCallerBuyer = callerRef === buyerRef;
+    const counterpartEmail = counterpartRef ? String(meetingRowVal_(counterpartRef, 'email')).trim().toLowerCase() : '';
+    const appointmentStart = meetingRowVal_(callerRef, 'start');
+    const appointmentEnd = meetingRowVal_(callerRef, 'end');
+
+    if (buyerRef) clearMeetingRowToEmpty_(buyerRef);
+    if (supplierRef) clearMeetingRowToEmpty_(supplierRef);
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_buyer');
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_supplier');
+
+    logB2BMeetingActivity_(eventId, meetingId, 'Cancelled', email, counterpartEmail, message);
+
+    if (counterpartEmail) {
+      sendB2BMeetingCancelledEmail_(entity, email, counterpartEmail, appointmentStart, appointmentEnd, message);
+    }
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+  return { status: 'ok' };
+}
+
+/**
+ * "<Name> from <Company> has cancelled your meeting" — deliberately plain
+ * MailApp.sendEmail, same as emailItinerary's own precedent for a single
+ * user-triggered transactional email, not routed through the templated/
+ * quota-tracked campaign system (see sendCampaign) built for bulk sends.
+ * Revisit this if meeting-notification volume ever becomes large enough
+ * to compete with campaign quota.
+ */
+function sendB2BMeetingCancelledEmail_(entity, actorEmail, counterpartEmail, start, end, message) {
+  const topEventId = entity.parentEventId || entity.eventId;
+  const actorReg = getRegistrationsRaw_().find(r => r.eventId === topEventId && r.email.toLowerCase() === actorEmail);
+  const actorName = (actorReg && actorReg.fullName) || actorEmail;
+  const actorCompany = actorReg && actorReg.companyName;
+
+  const body =
+    '<p>' + escapeHtml(actorName) + (actorCompany ? ' from ' + escapeHtml(actorCompany) : '') +
+    ' has cancelled your ' + escapeHtml(start) + '–' + escapeHtml(end) + ' meeting at ' + escapeHtml(entity.eventName) + '.</p>' +
+    (message ? '<p><em>Message from ' + escapeHtml(actorName) + ':</em><br>' + escapeHtml(message) + '</p>' : '') +
+    '<p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>';
+
+  MailApp.sendEmail({ to: counterpartEmail, subject: 'Meeting Cancelled — ' + entity.eventName, htmlBody: body });
+}
+
+/**
+ * Resolves whether `email` is on the Buyer or Supplier side of a B2B
+ * entity (true = Buyer) — same convention as getAttendeeItinerary_'s own
+ * inline isBuyerSide (whichever registration type is configured FIRST for
+ * this entity's EventType), factored out here since every B2B meeting-
+ * action endpoint below needs it and getAttendeeItinerary_ itself is left
+ * untouched to avoid disturbing already-shipped, already-tested behavior.
+ */
+function resolveB2BAttendeeSide_(eventId, email) {
+  const event = getEventById_(eventId);
+  if (!event) throw new Error('Event not found.');
+  const topEventId = event.parentEventId || event.eventId;
+  const userRecord = getRegistrationsRaw_().find(r => r.eventId === topEventId && r.email.toLowerCase() === email);
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypes = ((onboarding[event.eventType] && onboarding[event.eventType].registrationTypes) || []).map(rt => rt.label);
+  const allocation = getSubEventRegsRaw_().find(r => r.subEventId === eventId && r.email === email && (r.status === 'Confirmed' || r.status === 'Waitlisted'));
+  const registrationType = (allocation && allocation.optionLabel) || (userRecord && userRecord.registrationType);
+  return regTypes.length > 0 && regTypes[0] === registrationType;
+}
+
+/** Finds one attendee's own row by (email, appointment) — appointment is unique per attendee within their own side's sheet, so it's the natural slot key for actions the ATTENDEE THEMSELVES takes on their own diary (Request/Block), as opposed to meeting_id, which only exists once a slot is actually Reserved/Booked. */
+function findMeetingRowByAppointment_(sheet, email, appointment) {
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const emailIdx = headers.indexOf('email');
+  const apptIdx = headers.indexOf('appointment');
+  if (emailIdx === -1 || apptIdx === -1) return null;
+  const em = String(email).trim().toLowerCase();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][emailIdx]).trim().toLowerCase() === em && String(data[i][apptIdx]).trim() === appointment) {
+      return { sheet: sheet, headers: headers, rowNum: i + 1, values: data[i] };
+    }
+  }
+  return null;
+}
+
+/** Finds one attendee's row by (email, start, end) — the join key for locating a SPECIFIC counterpart's slot on the other side once a request already knows who and when, as distinct from getEmptySlotCandidates_'s broader "everyone free at this time" scan. */
+function findMeetingRowByEmailAndTime_(sheet, email, start, end) {
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const emailIdx = headers.indexOf('email');
+  const startIdx = headers.indexOf('start');
+  const endIdx = headers.indexOf('end');
+  if (emailIdx === -1) return null;
+  const em = String(email).trim().toLowerCase();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][emailIdx]).trim().toLowerCase() === em &&
+        String(data[i][startIdx]) === String(start) && String(data[i][endIdx]) === String(end)) {
+      return { sheet: sheet, headers: headers, rowNum: i + 1, values: data[i] };
+    }
+  }
+  return null;
+}
+
+/** Every attendee on one side with an Empty slot at exactly this (start, end) — the "who's free right now" scan Request Meeting's candidate list is built from. */
+function getEmptySlotCandidates_(sheet, start, end) {
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const emailIdx = headers.indexOf('email');
+  const startIdx = headers.indexOf('start');
+  const endIdx = headers.indexOf('end');
+  const statusIdx = headers.indexOf('status');
+  if (emailIdx === -1 || statusIdx === -1) return [];
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][statusIdx]) !== 'Empty') continue;
+    if (String(data[i][startIdx]) !== String(start) || String(data[i][endIdx]) !== String(end)) continue;
+    const email = String(data[i][emailIdx] || '').trim().toLowerCase();
+    if (email) out.push(email);
+  }
+  return out;
+}
+
+/** Overwrites named columns on an already-located row and writes it straight back — the general-purpose counterpart to clearMeetingRowToEmpty_'s single fixed transition, used wherever a specific SET of columns needs updating instead of a full revert-to-Empty. */
+function setMeetingRowValues_(ref, updates) {
+  Object.keys(updates).forEach(col => {
+    const i = ref.headers.indexOf(col);
+    if (i !== -1) ref.values[i] = updates[col];
+  });
+  ref.sheet.getRange(ref.rowNum, 1, 1, ref.headers.length).setValues([ref.values]);
+}
+
+/**
+ * Candidate list for Request Meeting: every opposite-side attendee with an
+ * Empty slot at the SAME wall-clock time as the caller's own named
+ * appointment — matched by time, not appointment number, since the two
+ * sides' templates can carry a different number/placement of break rows
+ * (see parseB2BDiarySlotsCsv_'s doc comment). filter narrows the list using
+ * the SAME Meeting Preferences data the SQL bridge and "Who Chose Me"
+ * report already read — no new preference concept, just two different
+ * views of it: 'mine' = companies the caller has selected, 'theirs' =
+ * companies that selected the caller (getChosenByForEntity_, already
+ * built for the "Who Chose Me" report).
+ */
+function getB2BMeetingCandidates(sessionToken, eventId, appointment, filter) {
+  const email = requireAttendeeSession_(sessionToken);
+  appointment = String(appointment || '').trim();
+  if (!appointment) throw new Error('Missing appointment slot.');
+
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+  const isBuyerSide = resolveB2BAttendeeSide_(eventId, email);
+  const ownRef = findMeetingRowByAppointment_(getMeetingSheet_(eventId, isBuyerSide), email, appointment);
+  if (!ownRef) throw new Error('This slot could not be found in your diary.');
+  if (meetingRowVal_(ownRef, 'status') !== 'Empty') throw new Error('This slot is no longer open — refresh and try again.');
+
+  const start = meetingRowVal_(ownRef, 'start');
+  const end = meetingRowVal_(ownRef, 'end');
+  const candidateEmails = getEmptySlotCandidates_(getMeetingSheet_(eventId, !isBuyerSide), start, end);
+
+  const topEventId = entity.parentEventId || entity.eventId;
+  const regByEmail = {};
+  getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => { regByEmail[r.email.toLowerCase()] = r; });
+
+  const myPreferenceTargets = new Set();
+  const pref = getPreferencesRaw_();
+  const eIdx = pref.idx['eventid'], emailIdx = pref.idx['email'], targetIdx = pref.idx['target email'];
+  if (eIdx !== undefined && emailIdx !== undefined && targetIdx !== undefined) {
+    pref.rows.forEach(row => {
+      if (String(row[eIdx]) === String(eventId) && String(row[emailIdx]).trim().toLowerCase() === email) {
+        myPreferenceTargets.add(String(row[targetIdx]).trim().toLowerCase());
+      }
+    });
+  }
+  const choseMe = new Set(getChosenByForEntity_(eventId, email).map(c => c.email));
+
+  let results = candidateEmails.map(candidateEmail => {
+    const reg = regByEmail[candidateEmail];
+    return {
+      email: candidateEmail,
+      companyName: (reg && reg.companyName) || '',
+      fullName: (reg && reg.fullName) || '',
+      membershipCategory: (reg && reg.membershipCategory) || '',
+      isMyPreference: myPreferenceTargets.has(candidateEmail),
+      isTheirPreference: choseMe.has(candidateEmail)
+    };
+  });
+
+  if (filter === 'mine') results = results.filter(r => r.isMyPreference);
+  else if (filter === 'theirs') results = results.filter(r => r.isTheirPreference);
+
+  return results;
+}
+
+/**
+ * Submits a meeting request: re-validates both slots are still Empty under
+ * the entity lock (a candidate list can go stale between load and click —
+ * this is the actual race-safe check, the client-side list is just a
+ * convenience), writes both mirrored rows to Reserved with a shared new
+ * meeting_id, logs it, and emails the target. The requester's own row also
+ * gets `requested_by` set so both sides — and the itinerary view — can
+ * tell who's waiting on whom (see getAttendeeItinerary_'s requestedBy
+ * field).
+ */
+function requestB2BMeeting(sessionToken, eventId, appointment, targetEmail) {
+  const email = requireAttendeeSession_(sessionToken);
+  appointment = String(appointment || '').trim();
+  targetEmail = String(targetEmail || '').trim().toLowerCase();
+  if (!appointment || !targetEmail) throw new Error('Missing slot or target attendee.');
+  if (targetEmail === email) throw new Error("You can't request a meeting with yourself.");
+
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const isBuyerSide = resolveB2BAttendeeSide_(eventId, email);
+    const ownRef = findMeetingRowByAppointment_(getMeetingSheet_(eventId, isBuyerSide), email, appointment);
+    if (!ownRef) throw new Error('This slot could not be found in your diary.');
+    if (meetingRowVal_(ownRef, 'status') !== 'Empty') throw new Error('This slot is no longer open — refresh and try again.');
+
+    const start = meetingRowVal_(ownRef, 'start');
+    const end = meetingRowVal_(ownRef, 'end');
+    const targetRef = findMeetingRowByEmailAndTime_(getMeetingSheet_(eventId, !isBuyerSide), targetEmail, start, end);
+    if (!targetRef || meetingRowVal_(targetRef, 'status') !== 'Empty') {
+      throw new Error('That attendee no longer has this time slot open.');
+    }
+
+    const topEventId = entity.parentEventId || entity.eventId;
+    const regByEmail = {};
+    getRegistrationsRaw_().filter(r => r.eventId === topEventId).forEach(r => { regByEmail[r.email.toLowerCase()] = r; });
+    const myReg = regByEmail[email], targetReg = regByEmail[targetEmail];
+
+    const meetingId = Utilities.getUuid();
+    const now = new Date();
+    const ownCounterpartPrefix = isBuyerSide ? 'supplier' : 'buyer';
+    const targetCounterpartPrefix = isBuyerSide ? 'buyer' : 'supplier';
+
+    const ownUpdates = { status: 'Reserved', meeting_type: 'Meeting', meeting_id: meetingId, requested_by: email, requested_at: now };
+    ownUpdates[ownCounterpartPrefix + '_org'] = (targetReg && targetReg.companyName) || '';
+    ownUpdates[ownCounterpartPrefix + '_fullname'] = (targetReg && targetReg.fullName) || '';
+    ownUpdates[ownCounterpartPrefix + '_email'] = targetEmail;
+    setMeetingRowValues_(ownRef, ownUpdates);
+
+    const targetUpdates = { status: 'Reserved', meeting_type: 'Meeting', meeting_id: meetingId, requested_by: email, requested_at: now };
+    targetUpdates[targetCounterpartPrefix + '_org'] = (myReg && myReg.companyName) || '';
+    targetUpdates[targetCounterpartPrefix + '_fullname'] = (myReg && myReg.fullName) || '';
+    targetUpdates[targetCounterpartPrefix + '_email'] = email;
+    setMeetingRowValues_(targetRef, targetUpdates);
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_buyer');
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_supplier');
+
+    logB2BMeetingActivity_(eventId, meetingId, 'Requested', email, targetEmail, '');
+    sendB2BMeetingRequestedEmail_(entity, email, targetEmail, start, end, meetingId);
+    ensureB2BAutoCancelTrigger_(); // idempotent — this is the first point a Reserved (auto-cancellable) row can exist
+
+    return { status: 'ok', meetingId: meetingId };
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+}
+
+/** "<Name> from <Company> has requested a meeting with you" — same plain-MailApp precedent as sendB2BMeetingCancelledEmail_; Accept/Reject links land in a follow-up piece, so for now this just points back at the portal (also satisfies the "guide them to the platform" fallback for a from-email response). */
+/** Accept/Reject buttons link straight to MeetingResponse.html via a token bound to this one (event, meeting, recipient, action) — no login needed to respond, same as the whole point of the Unsubscribe link this pattern is copied from. A third, untokenized link still offers the in-portal route for anyone who'd rather sign in and see full context first. */
+function sendB2BMeetingRequestedEmail_(entity, requesterEmail, targetEmail, start, end, meetingId) {
+  const topEventId = entity.parentEventId || entity.eventId;
+  const requesterReg = getRegistrationsRaw_().find(r => r.eventId === topEventId && r.email.toLowerCase() === requesterEmail);
+  const requesterName = (requesterReg && requesterReg.fullName) || requesterEmail;
+  const requesterCompany = requesterReg && requesterReg.companyName;
+
+  const acceptUrl = buildMeetingResponseUrl_(entity.eventId, meetingId, targetEmail, 'accept');
+  const rejectUrl = buildMeetingResponseUrl_(entity.eventId, meetingId, targetEmail, 'reject');
+
+  const body =
+    '<p>' + escapeHtml(requesterName) + (requesterCompany ? ' from ' + escapeHtml(requesterCompany) : '') +
+    ' has requested a meeting with you at ' + escapeHtml(start) + '–' + escapeHtml(end) + ' during ' + escapeHtml(entity.eventName) + '.</p>' +
+    '<p>' +
+      '<a href="' + acceptUrl + '" style="background:' + BRANDING.successColor + '; color:#fff; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:700; margin-right:10px; display:inline-block;">Accept</a>' +
+      '<a href="' + rejectUrl + '" style="background:#eef1f5; color:' + BRANDING.errorColor + '; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:700; display:inline-block;">Reject</a>' +
+    '</p>' +
+    '<p style="margin-top:16px; font-size:13px;"><a href="' + getWebAppUrl_() + '">Or open the Event Portal</a> to respond there instead.</p>' +
+    '<p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>';
+
+  MailApp.sendEmail({ to: targetEmail, subject: 'New Meeting Request — ' + entity.eventName, htmlBody: body });
+}
+
+/**
+ * Block This Slot: an attendee marks one of their OWN open slots
+ * unavailable — a personal decision (a conflicting workshop, a break they
+ * need), never tied to a counterpart. Only ever touches the caller's own
+ * row; unlike every other meeting action in this file, nothing on the
+ * other side changes because there IS no other side yet. Only an Empty
+ * slot can be blocked — a Reserved/Booked one already has a counterpart
+ * depending on it, so Cancel/Reject is the right action there instead.
+ */
+function blockB2BMeetingSlot(sessionToken, eventId, appointment, note) {
+  const email = requireAttendeeSession_(sessionToken);
+  appointment = String(appointment || '').trim();
+  if (!appointment) throw new Error('Missing slot.');
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const isBuyerSide = resolveB2BAttendeeSide_(eventId, email);
+    const ownRef = findMeetingRowByAppointment_(getMeetingSheet_(eventId, isBuyerSide), email, appointment);
+    if (!ownRef) throw new Error('This slot could not be found in your diary.');
+    if (meetingRowVal_(ownRef, 'status') !== 'Empty') throw new Error('Only an open slot can be blocked.');
+
+    setMeetingRowValues_(ownRef, { status: 'Blocked', requested_by: email, block_note: sanitizeForSheet_(String(note || '').trim()) });
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_' + (isBuyerSide ? 'buyer' : 'supplier'));
+    logB2BMeetingActivity_(eventId, '', 'Blocked', email, '', note || '');
+
+    return { status: 'ok' };
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+}
+
+/** The reverse of blockB2BMeetingSlot — only the attendee who blocked a slot (requested_by, reused here as "who blocked this") can unblock it. */
+function unblockB2BMeetingSlot(sessionToken, eventId, appointment) {
+  const email = requireAttendeeSession_(sessionToken);
+  appointment = String(appointment || '').trim();
+  if (!appointment) throw new Error('Missing slot.');
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const isBuyerSide = resolveB2BAttendeeSide_(eventId, email);
+    const ownRef = findMeetingRowByAppointment_(getMeetingSheet_(eventId, isBuyerSide), email, appointment);
+    if (!ownRef) throw new Error('This slot could not be found in your diary.');
+    if (meetingRowVal_(ownRef, 'status') !== 'Blocked') throw new Error('This slot is not currently blocked.');
+    if (String(meetingRowVal_(ownRef, 'requested_by')).trim().toLowerCase() !== email) throw new Error('You can only unblock a slot you blocked yourself.');
+
+    setMeetingRowValues_(ownRef, { status: 'Empty', requested_by: '', block_note: '' });
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_' + (isBuyerSide ? 'buyer' : 'supplier'));
+    logB2BMeetingActivity_(eventId, '', 'Unblocked', email, '', '');
+
+    return { status: 'ok' };
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+}
+
+/** Session-authenticated wrapper — the in-portal Accept/Reject buttons. See applyB2BMeetingResponse_ for the actual logic, shared with the emailed-link path below. */
+function respondToB2BMeeting(sessionToken, eventId, meetingId, accept) {
+  const email = requireAttendeeSession_(sessionToken);
+  return applyB2BMeetingResponse_(eventId, meetingId, email, accept);
+}
+
+/**
+ * Accept/Reject core: only the RECIPIENT of a Reserved meeting may respond
+ * — never the requester, who's the one waiting (re-checked server-side via
+ * requested_by, the same "don't trust the button's own visibility" rule
+ * every other action in this file follows). Accept books both mirrored
+ * rows; Reject reverts both back to Empty via the same transition Cancel
+ * Meeting already uses (clearMeetingRowToEmpty_) — a rejected request
+ * simply never happened, and the slot goes back to being requestable by
+ * anyone else. Shared by respondToB2BMeeting (session-authenticated, the
+ * in-portal buttons) and confirmB2BMeetingResponseByToken (HMAC-token-
+ * authenticated, the emailed Accept/Reject links) — identical mutation
+ * either way, only how `email` gets proven differs.
+ */
+function applyB2BMeetingResponse_(eventId, meetingId, email, accept) {
+  meetingId = String(meetingId || '').trim();
+  if (!meetingId) throw new Error('Missing meeting.');
+  const entity = getEventById_(eventId);
+  if (!entity) throw new Error('Event not found.');
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const buyerRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, true), meetingId);
+    const supplierRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, false), meetingId);
+    if (!buyerRef && !supplierRef) throw new Error('This meeting request could not be found — it may have already been withdrawn.');
+
+    let callerRef = null;
+    if (buyerRef && String(meetingRowVal_(buyerRef, 'email')).trim().toLowerCase() === email) callerRef = buyerRef;
+    else if (supplierRef && String(meetingRowVal_(supplierRef, 'email')).trim().toLowerCase() === email) callerRef = supplierRef;
+    if (!callerRef) throw new Error('You are not a participant in this meeting.');
+    if (meetingRowVal_(callerRef, 'status') !== 'Reserved') throw new Error('This request is no longer pending — it may already have been responded to.');
+
+    const requesterEmail = String(meetingRowVal_(callerRef, 'requested_by')).trim().toLowerCase();
+    if (requesterEmail === email) throw new Error("You sent this request — you'll need to wait for a reply.");
+
+    const start = meetingRowVal_(callerRef, 'start');
+    const end = meetingRowVal_(callerRef, 'end');
+
+    if (accept) {
+      const now = new Date();
+      if (buyerRef) setMeetingRowValues_(buyerRef, { status: 'Booked', responded_at: now });
+      if (supplierRef) setMeetingRowValues_(supplierRef, { status: 'Booked', responded_at: now });
+    } else {
+      if (buyerRef) clearMeetingRowToEmpty_(buyerRef);
+      if (supplierRef) clearMeetingRowToEmpty_(supplierRef);
+    }
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_buyer');
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_supplier');
+
+    logB2BMeetingActivity_(eventId, meetingId, accept ? 'Accepted' : 'Rejected', email, requesterEmail, '');
+    if (requesterEmail) sendB2BMeetingRespondedEmail_(entity, email, requesterEmail, start, end, accept);
+
+    return { status: 'ok', eventName: entity.eventName, accepted: accept };
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+}
+
+/**
+ * Lazily-generated HMAC signing secret reused as-is from the Unsubscribe
+ * flow (getCommHmacSecret_) — same PropertiesService secret, a new derived
+ * token. computeMeetingResponseToken_ binds (event, meeting, recipient,
+ * action) together so an Accept link can't be replayed as a Reject (or
+ * against a different meeting/person) even if intercepted.
+ */
+function computeMeetingResponseToken_(eventId, meetingId, email, action) {
+  const raw = Utilities.computeHmacSha256Signature(eventId + '|' + meetingId + '|' + email + '|' + action, getCommHmacSecret_());
+  return Utilities.base64EncodeWebSafe(raw).substring(0, 22);
+}
+
+function buildMeetingResponseUrl_(eventId, meetingId, email, action) {
+  const token = computeMeetingResponseToken_(eventId, meetingId, email, action);
+  return getWebAppUrl_() + '?page=meetingresponse&ev=' + encodeURIComponent(eventId) + '&m=' + encodeURIComponent(meetingId) +
+    '&e=' + encodeURIComponent(email) + '&a=' + encodeURIComponent(action) + '&t=' + encodeURIComponent(token);
+}
+
+/**
+ * Public (no session) Accept/Reject confirmation — reached only from
+ * MeetingResponse.html's explicit button click, never from the bare GET
+ * that serves that page (see doGet's own note on why, mirroring
+ * confirmUnsubscribe's identical reasoning about email link prefetchers).
+ */
+function confirmB2BMeetingResponseByToken(eventId, meetingId, email, action, token) {
+  email = (email || '').trim().toLowerCase();
+  meetingId = String(meetingId || '').trim();
+  action = String(action || '').trim();
+  if (!eventId || !email || !meetingId || (action !== 'accept' && action !== 'reject') ||
+      token !== computeMeetingResponseToken_(eventId, meetingId, email, action)) {
+    throw new Error('This link is invalid or has expired.');
+  }
+  return applyB2BMeetingResponse_(eventId, meetingId, email, action === 'accept');
+}
+
+/** Reject deliberately carries no reason field — just a plain notification, per the same "no reason" call already made for Cancel Meeting's own message being optional. */
+function sendB2BMeetingRespondedEmail_(entity, actorEmail, requesterEmail, start, end, accepted) {
+  const topEventId = entity.parentEventId || entity.eventId;
+  const actorReg = getRegistrationsRaw_().find(r => r.eventId === topEventId && r.email.toLowerCase() === actorEmail);
+  const actorName = (actorReg && actorReg.fullName) || actorEmail;
+  const actorCompany = actorReg && actorReg.companyName;
+  const actorLabel = escapeHtml(actorName) + (actorCompany ? ' from ' + escapeHtml(actorCompany) : '');
+
+  const subject = accepted ? 'Meeting Accepted — ' + entity.eventName : 'Meeting Request Declined — ' + entity.eventName;
+  const body = accepted
+    ? '<p>' + actorLabel + ' has accepted your ' + escapeHtml(start) + '–' + escapeHtml(end) + ' meeting request at ' + escapeHtml(entity.eventName) + '. It is now confirmed on both diaries.</p>'
+    : '<p>' + actorLabel + ' has rejected your request.</p>';
+
+  MailApp.sendEmail({ to: requesterEmail, subject: subject, htmlBody: body + '<p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>' });
+}
+
+const B2B_MEETING_AUTOCANCEL_TRIGGER_HANDLER = 'autoCancelStaleB2BMeetingRequests_';
+const B2B_MEETING_AUTOCANCEL_DAYS = 4;
+
+/**
+ * Ensures exactly one daily time-driven trigger exists for the stale-
+ * request sweep — same idempotent-by-handler-name pattern as
+ * ensureDailyReminderTrigger_ (Project triggers are capped at 20/script/
+ * user, so this checks before creating rather than blindly calling
+ * newTrigger). Unlike the milestone reminder (opt-in per event via a
+ * MilestoneDeadlineReminder automation), the 4-day auto-cancel is an
+ * unconditional part of how Request Meeting itself works, so there's no
+ * per-event toggle to hang this off — it's ensured here, the first place
+ * a Reserved (and therefore auto-cancellable) row can ever be created.
+ */
+function ensureB2BAutoCancelTrigger_() {
+  const already = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === B2B_MEETING_AUTOCANCEL_TRIGGER_HANDLER);
+  if (already) return;
+  ScriptApp.newTrigger(B2B_MEETING_AUTOCANCEL_TRIGGER_HANDLER).timeBased().everyDays(1).atHour(4).create();
+}
+
+/**
+ * Daily sweep: any meeting still Reserved more than 4 days after it was
+ * requested (`requested_at`) is auto-cancelled — reverted to Empty on both
+ * sides (clearMeetingRowToEmpty_, same transition Cancel/Reject already
+ * use), logged, and both participants notified. Only ever scans the BUYER
+ * sheet per B2B entity: a Reserved row's meeting_id already links it to
+ * its mirrored Supplier row, so scanning both sides would just process
+ * every stale meeting twice. Self-throttles against the 6-minute execution
+ * cap the same way sendMilestoneDeadlineReminders_ does — whatever's left
+ * when the soft limit hits just waits for tomorrow's run.
+ */
+function autoCancelStaleB2BMeetingRequests_() {
+  const cutoffMs = B2B_MEETING_AUTOCANCEL_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const SOFT_LIMIT_MS = 4.5 * 60 * 1000;
+  const startTime = Date.now();
+
+  const b2bEntities = getAllEvents_().filter(e => e.isB2B);
+  for (let i = 0; i < b2bEntities.length; i++) {
+    if (Date.now() - startTime > SOFT_LIMIT_MS) break;
+    const entity = b2bEntities[i];
+    const buyerSheet = getMeetingSheet_(entity.eventId, true);
+    if (!buyerSheet || buyerSheet.getLastRow() <= 1) continue;
+
+    const data = buyerSheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim().toLowerCase());
+    const statusIdx = headers.indexOf('status');
+    const requestedAtIdx = headers.indexOf('requested_at');
+    const meetingIdIdx = headers.indexOf('meeting_id');
+    if (statusIdx === -1 || requestedAtIdx === -1 || meetingIdIdx === -1) continue;
+
+    const staleMeetingIds = [];
+    for (let r = 1; r < data.length; r++) {
+      if (String(data[r][statusIdx]) !== 'Reserved') continue;
+      const requestedAtRaw = data[r][requestedAtIdx];
+      if (!requestedAtRaw) continue;
+      const requestedAtDate = requestedAtRaw instanceof Date ? requestedAtRaw : new Date(requestedAtRaw);
+      if (isNaN(requestedAtDate.getTime()) || now - requestedAtDate.getTime() < cutoffMs) continue;
+      const meetingId = String(data[r][meetingIdIdx] || '').trim();
+      if (meetingId) staleMeetingIds.push(meetingId);
+    }
+
+    staleMeetingIds.forEach(meetingId => {
+      try {
+        autoCancelOneB2BMeeting_(entity.eventId, meetingId);
+      } catch (e) {
+        // One meeting failing (e.g. brief lock contention with a live Accept/Reject) shouldn't stop the rest of the sweep — it's simply due for a retry on tomorrow's run.
+      }
+    });
+  }
+}
+
+/** Re-checks the meeting is STILL Reserved under the lock before acting — it may have just been accepted, rejected, or cancelled by a human between the sweep's read pass and this write, and that outcome must win. */
+function autoCancelOneB2BMeeting_(eventId, meetingId) {
+  const entity = getEventById_(eventId);
+  if (!entity) return;
+
+  const leaseId = acquireEntityLock_(eventId, 15000);
+  try {
+    const buyerRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, true), meetingId);
+    const supplierRef = findMeetingRowByMeetingId_(getMeetingSheet_(eventId, false), meetingId);
+    const stillReserved = (buyerRef && meetingRowVal_(buyerRef, 'status') === 'Reserved') || (supplierRef && meetingRowVal_(supplierRef, 'status') === 'Reserved');
+    if (!stillReserved) return;
+
+    const buyerEmail = buyerRef ? String(meetingRowVal_(buyerRef, 'email')).trim().toLowerCase() : '';
+    const supplierEmail = supplierRef ? String(meetingRowVal_(supplierRef, 'email')).trim().toLowerCase() : '';
+    const requesterEmail = String((buyerRef ? meetingRowVal_(buyerRef, 'requested_by') : meetingRowVal_(supplierRef, 'requested_by')) || '').trim().toLowerCase();
+    const recipientEmail = requesterEmail === buyerEmail ? supplierEmail : buyerEmail;
+
+    if (buyerRef) clearMeetingRowToEmpty_(buyerRef);
+    if (supplierRef) clearMeetingRowToEmpty_(supplierRef);
+
+    _rawDataCache_.meetingSheets = null;
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_buyer');
+    invalidateCrossRequestCache_('meetingSheet_' + eventId + '_supplier');
+
+    logB2BMeetingActivity_(eventId, meetingId, 'AutoCancelled', 'system', requesterEmail, '');
+    sendB2BMeetingAutoCancelledEmails_(entity, requesterEmail, recipientEmail);
+  } finally {
+    releaseEntityLock_(eventId, leaseId);
+  }
+}
+
+function sendB2BMeetingAutoCancelledEmails_(entity, requesterEmail, recipientEmail) {
+  const body = '<p>A meeting request at ' + escapeHtml(entity.eventName) + ' received no response within ' + B2B_MEETING_AUTOCANCEL_DAYS +
+    ' days and has been automatically cancelled. The slot is open again if you\'d like to send a new request.</p>' +
+    '<p style="margin-top:20px; font-size:12px; color:#5f6368;">Sent via Event Portal</p>';
+  [requesterEmail, recipientEmail].forEach(addr => {
+    if (addr) MailApp.sendEmail({ to: addr, subject: 'Meeting Request Expired — ' + entity.eventName, htmlBody: body });
+  });
 }
 
 /* =========================================================================

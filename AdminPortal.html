@@ -58,17 +58,6 @@
 
     /* My Events */
     .event-card { background: white; border: 1px solid var(--border-color); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
-    .event-card-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; cursor: pointer; flex-wrap: wrap; gap: 10px; }
-    .event-card-header:hover { background: #f8f9fa; }
-    .event-card-header h3 { margin: 0; font-size: 16px; font-weight: 700; }
-    .event-card-header .meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-    .event-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .subevents-wrap { display: none; border-top: 1px solid #f1f3f4; padding: 12px 20px 20px; background: var(--bg-color); }
-    .subevents-wrap.open { display: block; }
-    .subevent-row { display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #eee; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
-    .subevent-row .name { font-weight: 700; font-size: 14px; }
-    .subevent-row .tags { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
-    .subevent-row-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
     .tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px; }
     .tag.live { background: rgba(34,211,197,0.15); color: var(--success-color); }
     .tag.draft { background: #FBF4E6; color: var(--warning-color); }
@@ -76,10 +65,133 @@
     .tag.type { background: #F0EDF6; color: var(--category-tag-color); }
     .empty-state { color: var(--text-muted); background: white; border: 1px dashed var(--border-color); border-radius: 12px; padding: 40px; text-align: center; }
 
+    /* ---- Event card banner: left = identity/actions, right = aggregated
+       alert rollup for this event + every sub-event. Same cover-image/
+       gradient treatment as the attendee portal's My Events banner, since
+       evt.bannerImageUrl is the same admin-uploaded field either way. ---- */
+    .ecb-banner {
+      position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+      padding: 18px 20px; background-position: center;
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,0.16) 1px, transparent 1px),
+        linear-gradient(135deg, var(--navy-color) 0%, var(--primary-color) 55%, var(--mint-color) 100%);
+      background-size: 15px 15px, 100% 100%;
+    }
+    .ecb-banner.has-image { background-size: cover; }
+    .ecb-banner::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 45%, rgba(0,0,0,0.55) 100%);
+    }
+    .ecb-banner-left, .ecb-banner-alerts { position: relative; z-index: 2; }
+    .ecb-banner-left { flex: 1; min-width: 220px; }
+    .ecb-top-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; }
+    .ecb-banner-left h3 { margin: 0 0 6px; font-size: 18px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.35); }
+    .ecb-meta { font-size: 12.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,.3); margin: 0 0 13px; }
+    .ecb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ecb-pill-btn {
+      font-family: inherit; border: none; cursor: pointer; white-space: nowrap;
+      background: rgba(255,255,255,0.18); color: #fff; font-size: 11.5px; font-weight: 700;
+      padding: 6px 12px; border-radius: 20px; transition: background .15s ease;
+    }
+    .ecb-pill-btn:hover { background: rgba(255,255,255,0.32); }
+    .ecb-banner-alerts { width: 240px; flex-shrink: 0; }
+    .ecb-banner-alerts .action-condensed { box-shadow: 0 4px 14px rgba(0,0,0,0.22); }
+    @media (max-width: 700px) { .ecb-banner { flex-wrap: wrap; } .ecb-banner-alerts { width: 100%; } }
+
+    /* ---- Milestone alerts: condensed 3-count box + expandable grouped
+       list, ported from Portal.html's attendee-facing "Action Required"
+       box. There it's one attendee's own pending milestones; here each row
+       is one milestone with 1+ attendees still pending, aggregated across
+       the event and (for the card-level box) every sub-event. ---- */
+    .action-condensed { border: 1px solid var(--border-color); border-radius: 10px; background: white; overflow: hidden; }
+    .action-condensed-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 12px;
+      background: #FBF4E6; cursor: pointer; border: none; width: 100%; font-family: inherit; text-align: left;
+    }
+    .action-condensed-head h4 { margin: 0; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--warning-color); display: flex; align-items: center; gap: 5px; }
+    .action-condensed-head .chev { font-size: 11px; color: var(--warning-color); transition: transform .18s ease; }
+    .action-condensed.expanded .action-condensed-head .chev { transform: rotate(180deg); }
+    .action-condensed-body { padding: 8px 12px 10px; }
+    .action-group-row {
+      display: flex; align-items: center; justify-content: space-between; padding: 5px 0; font-size: 12px;
+      cursor: pointer; background: none; border: none; width: 100%; font-family: inherit; color: inherit;
+    }
+    .action-group-row .lbl { display: flex; align-items: center; gap: 7px; color: var(--text-dark); font-weight: 600; }
+    .action-group-row .lbl .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .action-group-row .lbl .dot.red { background: var(--error-color); }
+    .action-group-row .lbl .dot.amber { background: var(--warning-color); }
+    .action-group-row .lbl .dot.neutral { background: var(--text-muted); opacity: .55; }
+    .action-group-row .count { font-weight: 800; font-size: 11.5px; min-width: 22px; text-align: center; padding: 2px 7px; border-radius: 9px; }
+    .action-group-row .count.red { color: var(--error-color); background: #F9EBEA; }
+    .action-group-row .count.amber { color: var(--warning-color); background: #FBF4E6; }
+    .action-group-row .count.neutral { color: var(--text-muted); background: #f1f3f4; }
+    .action-group-row.zero { opacity: .4; cursor: default; }
+    .action-condensed-clear { font-size: 12px; color: var(--text-muted); padding: 2px 0; margin: 0; }
+
+    .ecb-action-full { display: none; border-top: 1px solid var(--border-color); background: var(--bg-color); padding: 14px 20px 4px; }
+    .ecb-action-full.open { display: block; }
+    .action-full-group + .action-full-group { margin-top: 14px; }
+    .action-full-group-title {
+      display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .04em; margin: 0 0 6px; color: var(--text-muted);
+    }
+    .action-full-group-title .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .action-full-group-title .dot.red { background: var(--error-color); }
+    .action-full-group-title .dot.amber { background: var(--warning-color); }
+    .action-full-group-title .dot.neutral { background: var(--text-muted); opacity: .55; }
+    .action-full-group-title.red-text { color: var(--error-color); }
+    .action-full-group-title.amber-text { color: var(--warning-color); }
+    .action-full-item { padding: 8px 0; border-top: 1px solid var(--border-color); }
+    .action-full-item:first-child { border-top: none; }
+    .action-item-tag {
+      display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+      color: var(--category-tag-color); background: #F0EDF6; padding: 2px 7px; border-radius: 7px; margin-bottom: 5px;
+    }
+    .action-item-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .action-item-title { font-size: 12.5px; font-weight: 700; color: var(--text-dark); }
+    .action-item-due { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: #f1f3f4; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+    .action-item-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .action-full-empty { font-size: 12.5px; color: var(--text-muted); padding: 4px 0; }
+
+    /* ---- Always-visible sub-event tabs, directly under the banner (none
+       selected by default) — same shape as Portal.html's ev-tabs. ---- */
+    .ecb-tabs-wrap { border-top: 1px solid var(--border-color); background: var(--bg-color); padding: 0 8px; overflow-x: auto; }
+    .ecb-tabs { display: flex; gap: 4px; width: max-content; min-width: 100%; padding: 0 10px; }
+    .ecb-tab {
+      font-family: inherit; border: none; background: transparent; cursor: pointer; white-space: nowrap;
+      font-size: 13px; font-weight: 700; color: var(--text-muted); padding: 12px 14px 11px;
+      border-bottom: 2px solid transparent; transition: color .12s ease, border-color .12s ease;
+    }
+    .ecb-tab:hover { color: var(--text-dark); }
+    .ecb-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    .ecb-tab .tab-flag { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+    .ecb-tab .tab-flag.red { background: var(--error-color); }
+    .ecb-tab .tab-flag.amber { background: var(--warning-color); }
+    .ecb-tabs-empty-hint { padding: 14px 20px; font-size: 13px; color: var(--text-muted); background: var(--bg-color); border-top: 1px solid var(--border-color); }
+    .ecb-tab-pane { padding: 16px 20px 20px; background: var(--bg-color); display: none; }
+    .ecb-tab-pane.open { display: block; }
+
+    .subevent-card { border: 1px solid var(--border-color); border-left: 4px solid var(--primary-color); border-radius: 12px; padding: 14px 16px; background: #fff; }
+    .subevent-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .subevent-card-name { font-weight: 700; font-size: 14px; }
+    .subevent-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .subevent-row-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .subevent-card .ecb-action-full { margin: 12px -16px -14px; padding-left: 16px; padding-right: 16px; }
+
     /* Modal */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(13,27,42,0.55); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
     .modal-box { background: white; border-radius: 16px; max-width: 560px; width: 100%; padding: 24px; max-height: 88vh; overflow-y: auto; position: relative; }
     .modal-box.wide { max-width: 900px; }
+    .table-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 20px; padding: 0 6px; border-radius: 6px; background: rgba(28,114,147,0.14); color: var(--primary-color); font-weight: 800; font-size: 11.5px; }
+
+    /* Diary Creation: two-column buyer/supplier template panel */
+    .diary-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    @media (max-width: 560px) { .diary-cols { grid-template-columns: 1fr; } }
+    .diary-side { border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; }
+    .diary-side .side-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 8px; }
+    .dropzone { border: 1.5px dashed var(--border-color); border-radius: 10px; padding: 12px 10px; text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .dropzone.filled { border-style: solid; border-color: var(--success-color); background: rgba(46,125,91,0.08); color: var(--success-color); font-weight: 700; }
+    .tpl-link { font-size: 11.5px; color: var(--primary-color); font-weight: 700; cursor: pointer; text-decoration: underline; }
     .modal-close { position: absolute; top: 14px; right: 16px; font-size: 20px; cursor: pointer; color: var(--text-muted); }
     .form-group { margin-bottom: 14px; }
     .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
@@ -756,6 +868,26 @@
       <span class="modal-close" onclick="closeBudgetModal()">&times;</span>
       <h3 id="budgetModalTitle" style="margin-top:0;">Budget</h3>
       <div id="budgetModalBody"><p style="color:var(--text-muted);">Loading...</p></div>
+    </div>
+  </div>
+
+  <!-- Table Allocation Modal — opened from a "🪑 Tables" action on a B2B event/sub-event card in My Events -->
+  <div id="tableAllocModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeTableAllocModal()">&times;</span>
+      <h3 id="tableAllocModalTitle" style="margin-top:0;">🪑 Table Allocation</h3>
+      <p class="hint" style="font-size:12px; color:var(--text-muted); margin-top:-8px;">Assigns a table number to every confirmed attendee of one registration type, sorted by Organization Name then Surname.</p>
+      <div id="tableAllocModalBody"><p style="color:var(--text-muted);">Loading...</p></div>
+    </div>
+  </div>
+
+  <!-- Diary Creation Modal — opened from a "📔 Diaries" action on a B2B event/sub-event card in My Events -->
+  <div id="diaryCreationModal" class="modal-overlay">
+    <div class="modal-box wide">
+      <span class="modal-close" onclick="closeDiaryCreationModal()">&times;</span>
+      <h3 id="diaryCreationModalTitle" style="margin-top:0;">📔 Diary Creation</h3>
+      <p class="hint" style="font-size:12px; color:var(--text-muted); margin-top:-8px;">Upload a slot schedule for each side, then generate the empty appointment diary for every confirmed attendee.</p>
+      <div id="diaryCreationModalBody"><p style="color:var(--text-muted);">Loading...</p></div>
     </div>
   </div>
 
@@ -1550,6 +1682,192 @@
     if (field) { field.scrollIntoView({ block: 'center' }); field.focus(); }
   }
 
+  /* ---- My Events: milestone alert rollup (condensed box + expandable grouped list) ----
+   * evt.alerts (from getAdminEventsTree, built server-side by
+   * buildEventAlertsSummary_) is ALREADY the aggregate across the event
+   * itself and every one of its sub-events — one item per milestone with
+   * 1+ attendees still pending, tagged with the sub-event it belongs to.
+   * The card-level box renders it as-is; each sub-event tab just filters
+   * the same list down to its own entityId (see worstUrgencyForEntity_ /
+   * renderSubEventPaneHtml_) rather than the server computing it twice.
+   */
+
+  function renderAlertsCondensedHtml_(alerts) {
+    var counts = (alerts && alerts.counts) || { red: 0, amber: 0, neutral: 0 };
+    var total = counts.red + counts.amber + counts.neutral;
+    if (!total) {
+      return '<div class="action-condensed">' +
+        '<div class="action-condensed-head"><h4>&#9888; Alerts</h4></div>' +
+        '<div class="action-condensed-body"><p class="action-condensed-clear">Nothing outstanding.</p></div>' +
+      '</div>';
+    }
+    var defs = [
+      { key: 'red', label: 'Overdue', dot: 'red' },
+      { key: 'amber', label: 'Due soon', dot: 'amber' },
+      { key: 'neutral', label: 'Upcoming', dot: 'neutral' }
+    ];
+    var rows = defs.map(function(d) {
+      var n = counts[d.key] || 0;
+      return '<button type="button" class="action-group-row' + (n === 0 ? ' zero' : '') + '" data-action-group="' + d.key + '"' + (n === 0 ? ' disabled' : '') + '>' +
+        '<span class="lbl"><span class="dot ' + d.dot + '"></span>' + d.label + '</span>' +
+        '<span class="count ' + d.key + '">' + n + '</span>' +
+      '</button>';
+    }).join('');
+    return '<div class="action-condensed">' +
+      '<button type="button" class="action-condensed-head"><h4>&#9888; Alerts</h4><span class="chev">&#8964;</span></button>' +
+      '<div class="action-condensed-body">' + rows + '</div>' +
+    '</div>';
+  }
+
+  /**
+   * showEntityTag: true on the card-level rollup (rows span several sub-
+   * events, so each needs to say which one); false inside a single sub-
+   * event's own tab pane. Each item's `kind` — 'milestone' (see
+   * buildEventAlertsSummary_) or 'meeting' (see buildB2BMeetingAlertItems_)
+   * — decides how the due-date and pending-count lines read, since
+   * "3 attendee(s) pending" makes no sense for a meeting-request alert and
+   * vice versa; everything else about the two kinds renders identically.
+   */
+  function renderAlertsFullHtml_(items, showEntityTag) {
+    if (!items.length) return '<p class="action-full-empty">Nothing outstanding.</p>';
+    var groups = { red: [], amber: [], neutral: [] };
+    items.forEach(function(it) { groups[it.urgency].push(it); });
+    var defs = [
+      { key: 'red', label: 'Overdue', dot: 'red', cls: 'red-text' },
+      { key: 'amber', label: 'Due soon · within a week', dot: 'amber', cls: 'amber-text' },
+      { key: 'neutral', label: 'Upcoming', dot: 'neutral', cls: '' }
+    ];
+    return defs.map(function(d) {
+      if (!groups[d.key].length) return '';
+      var rows = groups[d.key].map(function(it) {
+        var isMeeting = it.kind === 'meeting';
+        var dueLabel = it.dueDate ? (isMeeting ? 'Expires ' + escapeHtml(it.dueDate) : 'Due ' + escapeHtml(it.dueDate)) : 'No due date';
+        var subLabel = isMeeting
+          ? it.pendingCount + ' meeting request' + (it.pendingCount === 1 ? '' : 's') + ' pending — oldest auto-cancels if unanswered'
+          : it.pendingCount + ' attendee(s) pending';
+        return '<div class="action-full-item">' +
+          (showEntityTag ? '<span class="action-item-tag">' + escapeHtml(it.entityName) + '</span>' : '') +
+          '<div class="action-item-title-row">' +
+            '<span class="action-item-title">' + escapeHtml(it.title) + '</span>' +
+            '<span class="action-item-due">' + dueLabel + '</span>' +
+          '</div>' +
+          '<div class="action-item-sub">' + subLabel + '</div>' +
+        '</div>';
+      }).join('');
+      return '<div class="action-full-group" data-action-group-section="' + d.key + '">' +
+        '<h5 class="action-full-group-title ' + d.cls + '"><span class="dot ' + d.dot + '"></span>' + d.label + ' (' + groups[d.key].length + ')</h5>' +
+        rows +
+      '</div>';
+    }).join('');
+  }
+
+  /** Wires one card's condensed box: clicking the header (or a non-empty group row) renders the full grouped list into fullEl, scoped to `items` (the card-level rollup, or — when called for a tab pane — that one sub-event's own filtered items). */
+  function wireAlertsBox_(scopeEl, fullEl, items, showEntityTag) {
+    var head = scopeEl.querySelector('.action-condensed-head');
+    var box = scopeEl.querySelector('.action-condensed');
+    if (!head || !fullEl) return;
+    function setExpanded(expanded, scrollGroup) {
+      box.classList.toggle('expanded', expanded);
+      fullEl.classList.toggle('open', expanded);
+      if (expanded) {
+        fullEl.innerHTML = renderAlertsFullHtml_(items, showEntityTag);
+        if (scrollGroup) {
+          var sec = fullEl.querySelector('[data-action-group-section="' + scrollGroup + '"]');
+          if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    }
+    head.addEventListener('click', function() { setExpanded(!fullEl.classList.contains('open')); });
+    scopeEl.querySelectorAll('[data-action-group]').forEach(function(btn) {
+      btn.addEventListener('click', function() { setExpanded(true, btn.dataset.actionGroup); });
+    });
+  }
+
+  /** Worst urgency among one entity's own pending alert items — drives a sub-event tab's little flag dot, same idea as Portal.html's worstUrgencyForEntity_. */
+  function worstUrgencyForEntity_(alertItems, entityId) {
+    var worst = null;
+    (alertItems || []).forEach(function(it) {
+      if (it.entityId !== entityId) return;
+      if (it.urgency === 'red') worst = 'red';
+      else if (it.urgency === 'amber' && worst !== 'red') worst = 'amber';
+    });
+    return worst;
+  }
+
+  function renderSubEventPaneHtml_(sub, evt) {
+    var subStatusClass = sub.status === 'Live' ? 'live' : (sub.status === 'Closed' ? 'closed' : 'draft');
+    var subCapBadge = capacityBadgeText(sub.capacityState);
+    var subCuratedOptionsBadge = optionsConfiguredBadgeText(sub);
+    var metaBits = [];
+    if (sub.eventDate) metaBits.push(sub.eventDate);
+    if (sub.eventTime) metaBits.push(sub.eventTime);
+    if (sub.location) metaBits.push(sub.location);
+    if (subCuratedOptionsBadge) metaBits.push(subCuratedOptionsBadge);
+    else if (sub.price) metaBits.push((sub.effectiveCurrency || evt.effectiveCurrency || 'USD') + ' ' + Number(sub.price).toFixed(2));
+    if (subCapBadge) metaBits.push(subCapBadge);
+
+    return '<div class="subevent-card">' +
+      '<div class="subevent-card-head">' +
+        '<div style="display:flex; gap:10px; align-items:flex-start; min-width:0;">' +
+          '<div class="ev-type-icon" style="width:30px; height:30px; font-size:13px;">' + eventTypeIcon_(sub.eventType, sub.isB2B, sub.isExhibition, sub.isCuratedEvent) + '</div>' +
+          '<div style="min-width:0;">' +
+            '<div class="subevent-card-name">' + escapeHtml(sub.eventName) + '</div>' +
+            '<div style="margin-top:4px; display:flex; gap:6px; flex-wrap:wrap;">' +
+              '<span class="tag ' + subStatusClass + '">' + escapeHtml(sub.status) + '</span>' +
+              '<span class="tag type">' + escapeHtml(sub.eventType || 'No type') + '</span>' +
+            '</div>' +
+            (metaBits.length ? '<div class="subevent-card-meta">' + escapeHtml(metaBits.join(' · ')) + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="subevent-row-actions">' +
+          (sub.isExhibition ? '<button type="button" class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
+          (sub.isB2B ? '<button type="button" class="btn small secondary" data-action="table-alloc">🪑 Tables</button>' : '') +
+          (sub.isB2B ? '<button type="button" class="btn small secondary" data-action="diary">📔 Diaries</button>' : '') +
+          '<button type="button" class="btn small secondary" data-action="emails">✉️ Emails</button>' +
+          '<button type="button" class="btn small secondary" data-action="edit">Edit</button>' +
+        '</div>' +
+      '</div>' +
+      renderAlertsCondensedHtml_forSub_(evt.alerts, sub.eventId) +
+      '<div class="ecb-action-full"></div>' +
+    '</div>';
+  }
+
+  /** Same condensed box, but pre-filtered to one sub-event's own items and its own counts, for use inside a tab pane. */
+  function renderAlertsCondensedHtml_forSub_(alerts, entityId) {
+    var items = ((alerts && alerts.items) || []).filter(function(it) { return it.entityId === entityId; });
+    var counts = { red: 0, amber: 0, neutral: 0 };
+    items.forEach(function(it) { counts[it.urgency]++; });
+    return renderAlertsCondensedHtml_({ counts: counts });
+  }
+
+  function wireSubEventPaneActions_(paneEl, sub, evt) {
+    paneEl.querySelector('[data-action="edit"]').addEventListener('click', function() { openEventModal(sub, evt); });
+    paneEl.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, sub.eventId, sub.eventName); });
+    var floorPlanBtn = paneEl.querySelector('[data-action="floor-plan"]');
+    if (floorPlanBtn) floorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(sub.eventId); });
+    var tableAllocBtn = paneEl.querySelector('[data-action="table-alloc"]');
+    if (tableAllocBtn) tableAllocBtn.addEventListener('click', function(e) { e.stopPropagation(); openTableAllocModal(sub.eventId, sub.eventName); });
+    var diaryBtn = paneEl.querySelector('[data-action="diary"]');
+    if (diaryBtn) diaryBtn.addEventListener('click', function(e) { e.stopPropagation(); openDiaryCreationModal(sub.eventId, sub.eventName); });
+
+    var items = ((evt.alerts && evt.alerts.items) || []).filter(function(it) { return it.entityId === sub.eventId; });
+    wireAlertsBox_(paneEl, paneEl.querySelector('.ecb-action-full'), items, false);
+  }
+
+  function wireTabs_(tabsWrap, tabPane, evt) {
+    tabsWrap.querySelectorAll('.ecb-tab').forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        tabsWrap.querySelectorAll('.ecb-tab').forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        var sub = evt.subEvents.find(function(s) { return s.eventId === tab.dataset.tabId; });
+        if (!sub) return;
+        tabPane.innerHTML = renderSubEventPaneHtml_(sub, evt);
+        tabPane.classList.add('open');
+        wireSubEventPaneActions_(tabPane, sub, evt);
+      });
+    });
+  }
+
   function renderEventsList(events) {
     var wrap = document.getElementById('eventsListWrap');
     if (!events.length) {
@@ -1561,89 +1879,90 @@
       var card = document.createElement('div');
       card.className = 'event-card';
 
-      var header = document.createElement('div');
-      header.className = 'event-card-header';
-      header.setAttribute('role', 'button');
-      header.setAttribute('tabindex', '0');
-      var statusClass = evt.status === 'Live' ? 'live' : (evt.status === 'Closed' ? 'closed' : 'draft');
       var isUmbrella = evt.eventType === UMBRELLA_TYPE;
       var currency = evt.effectiveCurrency || 'USD';
       var capBadge = capacityBadgeText(evt.capacityState);
       var curatedOptionsBadge = optionsConfiguredBadgeText(evt);
-      header.innerHTML =
-        '<div style="display:flex; align-items:flex-start; gap:12px;">' +
-        '<div class="ev-type-icon">' + eventTypeIcon_(evt.eventType, evt.isB2B, evt.isExhibition, evt.isCuratedEvent) + '</div>' +
-        '<div><h3>' + escapeHtml(evt.eventName) + '</h3><div class="meta">' +
-          '<span class="tag ' + statusClass + '" style="margin-right:6px;">' + escapeHtml(evt.status) + '</span>' +
-          '<span class="tag type" style="margin-right:6px;">' + escapeHtml(evt.eventType) + '</span>' +
-          (evt.isB2B ? '<span class="tag type" style="margin-right:6px;">B2B</span>' : '') +
-          (evt.dietaryRequirements ? '<span class="tag type" style="margin-right:6px;">Dietary</span>' : '') +
-          evt.totalRegistrations + ' registration(s) · ' + evt.subEvents.length + ' sub-event(s)' +
-          (curatedOptionsBadge ? ' · ' + curatedOptionsBadge : (evt.price ? ' · ' + escapeHtml(currency) + ' ' + Number(evt.price).toFixed(2) + (evt.isExhibition ? '/booth' : '/registrant') : '')) +
-          (capBadge ? ' · ' + capBadge : '') +
-          (evt.eventDate ? ' · ' + escapeHtml(evt.eventDate) : '') +
-        '</div></div></div>' +
-        '<div class="event-card-actions">' +
-          '<button class="btn small secondary" data-action="edit-parent">Edit</button>' +
-          '<button class="btn small secondary" data-action="budget">💰 Budget</button>' +
-          '<button class="btn small secondary" data-action="emails">✉️ Emails</button>' +
-          (isUmbrella ? '<button class="btn small" data-action="add-sub">+ Add Sub-Event</button>' : '') +
-          (evt.isExhibition ? '<button class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
-        '</div>';
-      header.querySelector('[data-action="edit-parent"]').addEventListener('click', function(e) { e.stopPropagation(); openEventModal(evt); });
-      header.querySelector('[data-action="budget"]').addEventListener('click', function(e) { e.stopPropagation(); openBudgetModal(evt.eventId, evt.eventName); });
-      header.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, '', evt.eventName); });
-      var addSubBtn = header.querySelector('[data-action="add-sub"]');
+      var statusClass = evt.status === 'Live' ? 'live' : (evt.status === 'Closed' ? 'closed' : 'draft');
+
+      var metaBits = [evt.totalRegistrations + ' registration(s)', evt.subEvents.length + ' sub-event(s)'];
+      if (curatedOptionsBadge) metaBits.push(curatedOptionsBadge);
+      else if (evt.price) metaBits.push(escapeHtml(currency) + ' ' + Number(evt.price).toFixed(2) + (evt.isExhibition ? '/booth' : '/registrant'));
+      if (capBadge) metaBits.push(capBadge);
+      if (evt.eventDate) metaBits.push(evt.eventDate);
+
+      var banner = document.createElement('div');
+      banner.className = 'ecb-banner' + (evt.bannerImageUrl ? ' has-image' : '');
+      if (evt.bannerImageUrl) banner.style.backgroundImage = 'url(' + evt.bannerImageUrl + ')';
+      banner.innerHTML =
+        '<div class="ecb-banner-left">' +
+          '<div class="ecb-top-row">' +
+            '<span class="ev-type-icon" style="width:30px; height:30px; font-size:14px; background:rgba(255,255,255,0.22); color:#fff;">' + eventTypeIcon_(evt.eventType, evt.isB2B, evt.isExhibition, evt.isCuratedEvent) + '</span>' +
+            '<span class="tag ' + statusClass + '">' + escapeHtml(evt.status) + '</span>' +
+            '<span class="tag type">' + escapeHtml(evt.eventType) + '</span>' +
+            (evt.isB2B ? '<span class="tag type">B2B</span>' : '') +
+            (evt.dietaryRequirements ? '<span class="tag type">Dietary</span>' : '') +
+          '</div>' +
+          '<h3>' + escapeHtml(evt.eventName) + '</h3>' +
+          '<p class="ecb-meta">' + metaBits.map(escapeHtml).join(' &middot; ') + '</p>' +
+          '<div class="ecb-actions">' +
+            '<button type="button" class="ecb-pill-btn" data-action="edit-parent">Edit</button>' +
+            '<button type="button" class="ecb-pill-btn" data-action="budget">💰 Budget</button>' +
+            '<button type="button" class="ecb-pill-btn" data-action="emails">✉️ Emails</button>' +
+            (isUmbrella ? '<button type="button" class="ecb-pill-btn" data-action="add-sub">+ Add Sub-Event</button>' : '') +
+            (evt.isExhibition ? '<button type="button" class="ecb-pill-btn" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
+            (evt.isB2B ? '<button type="button" class="ecb-pill-btn" data-action="table-alloc">🪑 Tables</button>' : '') +
+            (evt.isB2B ? '<button type="button" class="ecb-pill-btn" data-action="diary">📔 Diaries</button>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="ecb-banner-alerts">' + renderAlertsCondensedHtml_(evt.alerts) + '</div>';
+
+      banner.querySelector('[data-action="edit-parent"]').addEventListener('click', function(e) { e.stopPropagation(); openEventModal(evt); });
+      banner.querySelector('[data-action="budget"]').addEventListener('click', function(e) { e.stopPropagation(); openBudgetModal(evt.eventId, evt.eventName); });
+      banner.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, '', evt.eventName); });
+      var addSubBtn = banner.querySelector('[data-action="add-sub"]');
       if (addSubBtn) addSubBtn.addEventListener('click', function(e) { e.stopPropagation(); openEventModal(null, evt); });
-      var floorPlanBtn = header.querySelector('[data-action="floor-plan"]');
+      var floorPlanBtn = banner.querySelector('[data-action="floor-plan"]');
       if (floorPlanBtn) floorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(evt.eventId); });
+      var tableAllocBtn = banner.querySelector('[data-action="table-alloc"]');
+      if (tableAllocBtn) tableAllocBtn.addEventListener('click', function(e) { e.stopPropagation(); openTableAllocModal(evt.eventId, evt.eventName); });
+      var diaryBtn = banner.querySelector('[data-action="diary"]');
+      if (diaryBtn) diaryBtn.addEventListener('click', function(e) { e.stopPropagation(); openDiaryCreationModal(evt.eventId, evt.eventName); });
 
-      var subWrap = document.createElement('div');
-      subWrap.className = 'subevents-wrap';
+      var actionFull = document.createElement('div');
+      actionFull.className = 'ecb-action-full';
+      wireAlertsBox_(banner, actionFull, (evt.alerts && evt.alerts.items) || [], true);
 
-      header.addEventListener('click', function() { subWrap.classList.toggle('open'); });
+      card.appendChild(banner);
+      card.appendChild(actionFull);
 
       if (evt.subEvents.length === 0) {
-        subWrap.innerHTML = '<p style="color:#5f6368; font-size:13px;">' +
-          (isUmbrella
-            ? 'No sub-events yet. Click "+ Add Sub-Event" to create one — each needs its own Event Type (Curated Event, Exhibition, etc.).'
-            : 'This event has no sub-events. To add sub-events, first edit this event and set its Event Type to "Umbrella Event".') +
-          '</p>';
+        var hint = document.createElement('div');
+        hint.className = 'ecb-tabs-empty-hint';
+        hint.textContent = isUmbrella
+          ? 'No sub-events yet. Click "+ Add Sub-Event" to create one — each needs its own Event Type (Curated Event, Exhibition, etc.).'
+          : 'This event has no sub-events. To add sub-events, first edit this event and set its Event Type to "Umbrella Event".';
+        card.appendChild(hint);
       } else {
-        evt.subEvents.forEach(function(sub) {
-          var row = document.createElement('div');
-          row.className = 'subevent-row';
-          var subStatusClass = sub.status === 'Live' ? 'live' : (sub.status === 'Closed' ? 'closed' : 'draft');
-          var subCapBadge = capacityBadgeText(sub.capacityState);
-          var subCuratedOptionsBadge = optionsConfiguredBadgeText(sub);
-          row.innerHTML =
-            '<div><div class="name">' + escapeHtml(sub.eventName) + '</div>' +
-              '<div class="tags">' +
-                '<span class="tag ' + subStatusClass + '">' + escapeHtml(sub.status) + '</span>' +
-                '<span class="tag type">' + escapeHtml(sub.eventType || 'No type') + '</span>' +
-              '</div>' +
-              '<div style="font-size:12px; color:#5f6368; margin-top:4px;">' +
-                (sub.eventDate ? escapeHtml(sub.eventDate) : '') + (sub.eventTime ? ' · ' + escapeHtml(sub.eventTime) : '') +
-                (sub.location ? ' · ' + escapeHtml(sub.location) : '') +
-                (subCuratedOptionsBadge ? ' · ' + subCuratedOptionsBadge : (sub.price ? ' · ' + escapeHtml(sub.effectiveCurrency || currency) + ' ' + Number(sub.price).toFixed(2) : '')) +
-                (subCapBadge ? ' · ' + subCapBadge : '') +
-              '</div>' +
-            '</div>' +
-            '<div class="subevent-row-actions">' +
-              (sub.isExhibition ? '<button class="btn small secondary" data-action="floor-plan">🗺️ Floor Plan</button>' : '') +
-              '<button class="btn small secondary" data-action="emails">✉️ Emails</button>' +
-              '<button class="btn small secondary" data-action="edit">Edit</button>' +
-            '</div>';
-          row.querySelector('[data-action="edit"]').addEventListener('click', function() { openEventModal(sub, evt); });
-          row.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, sub.eventId, sub.eventName); });
-          var subFloorPlanBtn = row.querySelector('[data-action="floor-plan"]');
-          if (subFloorPlanBtn) subFloorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(sub.eventId); });
-          subWrap.appendChild(row);
-        });
+        var tabsWrap = document.createElement('div');
+        tabsWrap.className = 'ecb-tabs-wrap';
+        tabsWrap.innerHTML = '<div class="ecb-tabs">' +
+          evt.subEvents.map(function(sub) {
+            var urgency = worstUrgencyForEntity_((evt.alerts && evt.alerts.items) || [], sub.eventId);
+            return '<button type="button" class="ecb-tab" data-tab-id="' + escapeHtml(sub.eventId) + '">' + escapeHtml(sub.eventName) +
+              (urgency ? '<span class="tab-flag ' + urgency + '"></span>' : '') + '</button>';
+          }).join('') +
+        '</div>';
+
+        var tabPane = document.createElement('div');
+        tabPane.className = 'ecb-tab-pane';
+
+        wireTabs_(tabsWrap, tabPane, evt);
+
+        card.appendChild(tabsWrap);
+        card.appendChild(tabPane);
       }
 
-      card.appendChild(header);
-      card.appendChild(subWrap);
       wrap.appendChild(card);
     });
   }
@@ -2534,6 +2853,217 @@
   }
 
   /** "Manage Budget" link in the Dashboard summary — jumps to My Events and opens the full Budget modal for this event. */
+  /* ================= TABLE ALLOCATION (B2B event/sub-event cards in My Events) ================= */
+
+  function openTableAllocModal(entityId, entityName) {
+    document.getElementById('tableAllocModalTitle').textContent = '🪑 Table Allocation — ' + entityName;
+    document.getElementById('tableAllocModal').style.display = 'flex';
+    loadTableAllocModal(entityId);
+  }
+
+  function closeTableAllocModal() { document.getElementById('tableAllocModal').style.display = 'none'; }
+
+  function loadTableAllocModal(entityId) {
+    var el = document.getElementById('tableAllocModalBody');
+    el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+    google.script.run
+      .withSuccessHandler(function(options) { renderTableAllocModal(entityId, options); })
+      .withFailureHandler(function(err) { el.innerHTML = '<p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
+      .getB2BTableAllocationOptions(ADMIN_TOKEN, entityId);
+  }
+
+  function renderTableAllocModal(entityId, options) {
+    var el = document.getElementById('tableAllocModalBody');
+    if (!options.length) {
+      el.innerHTML = '<p style="color:var(--text-muted);">No registration types are configured for this event yet — add them under Settings &gt; Event Types first.</p>';
+      return;
+    }
+    el.innerHTML =
+      '<div class="form-group">' +
+        '<label for="tableAllocTypeSelect">Registration type</label>' +
+        '<select id="tableAllocTypeSelect" onchange="onTableAllocTypeChange()">' +
+          options.map(function(o) {
+            return '<option value="' + escapeHtml(o.label) + '">' + escapeHtml(o.label) + ' — ' + o.confirmedCount + ' confirmed</option>';
+          }).join('') +
+        '</select>' +
+        '<p class="type-config-hint" id="tableAllocHint" style="margin:6px 0 0;"></p>' +
+      '</div>' +
+      '<div id="tableAllocResultWrap"></div>' +
+      '<button type="button" class="btn" style="width:100%;" id="tableAllocRunBtn" onclick="runTableAllocation(\'' + entityId + '\')">Assign Tables</button>';
+    tableAllocOptionsCache = options;
+    onTableAllocTypeChange();
+  }
+
+  var tableAllocOptionsCache = [];
+
+  function onTableAllocTypeChange() {
+    var select = document.getElementById('tableAllocTypeSelect');
+    var picked = tableAllocOptionsCache.filter(function(o) { return o.label === select.value; })[0];
+    var hint = document.getElementById('tableAllocHint');
+    if (!picked) { hint.textContent = ''; return; }
+    hint.textContent = picked.alreadyAssignedCount
+      ? picked.alreadyAssignedCount + ' of ' + picked.confirmedCount + ' already have a table assigned — running this again replaces all of them.'
+      : 'Tables are assigned to every confirmed attendee of this type, sorted by Organization Name then Surname.';
+  }
+
+  function runTableAllocation(entityId) {
+    var registrationType = document.getElementById('tableAllocTypeSelect').value;
+    var btn = document.getElementById('tableAllocRunBtn');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Assigning…';
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false; btn.textContent = originalText;
+        renderTableAllocResult_(result);
+        // Patch the cached "already assigned" count for just this type in
+        // place, rather than reloading the whole modal from the server —
+        // a reload would replace tableAllocResultWrap with a fresh empty
+        // one and wipe out the success table this just rendered.
+        var picked = tableAllocOptionsCache.filter(function(o) { return o.label === result.registrationType; })[0];
+        if (picked) picked.alreadyAssignedCount = result.assignedCount;
+        onTableAllocTypeChange();
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false; btn.textContent = originalText;
+        document.getElementById('tableAllocResultWrap').innerHTML = '<p style="color:var(--error-color); font-size:12.5px;">' + escapeHtml(err.message) + '</p>';
+      })
+      .assignB2BTableNumbers(ADMIN_TOKEN, entityId, registrationType);
+  }
+
+  function renderTableAllocResult_(result) {
+    var wrap = document.getElementById('tableAllocResultWrap');
+    if (!result.assignedCount) {
+      wrap.innerHTML = '<p style="color:var(--text-muted); font-size:12.5px;">No confirmed attendees found for "' + escapeHtml(result.registrationType) + '" — nothing to assign.</p>';
+      return;
+    }
+    var shown = result.assignments.slice(0, 8);
+    var rows = shown.map(function(a) {
+      return '<tr><td><span class="table-chip">' + a.tableNumber + '</span></td><td>' + escapeHtml(a.fullName) + '</td><td>' + escapeHtml(a.companyName) + '</td></tr>';
+    }).join('');
+    var more = result.assignments.length > shown.length
+      ? '<tr><td colspan="3" style="color:var(--text-muted); font-style:italic;">+ ' + (result.assignments.length - shown.length) + ' more…</td></tr>' : '';
+    wrap.innerHTML =
+      '<p style="color:var(--success-color); font-size:12.5px; font-weight:700;">✓ ' + result.assignedCount + ' table(s) assigned.</p>' +
+      '<table class="preview-table"><thead><tr><th>Table</th><th>Attendee</th><th>Organization</th></tr></thead><tbody>' + rows + more + '</tbody></table>';
+  }
+
+  /* ================= DIARY CREATION (B2B event/sub-event cards in My Events) ================= */
+
+  var diaryTemplatesCache = {};
+
+  function openDiaryCreationModal(entityId, entityName) {
+    document.getElementById('diaryCreationModalTitle').textContent = '📔 Diary Creation — ' + entityName;
+    document.getElementById('diaryCreationModal').style.display = 'flex';
+    loadDiaryCreationModal(entityId);
+  }
+
+  function closeDiaryCreationModal() { document.getElementById('diaryCreationModal').style.display = 'none'; }
+
+  function loadDiaryCreationModal(entityId) {
+    var el = document.getElementById('diaryCreationModalBody');
+    el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+    google.script.run
+      .withSuccessHandler(function(templates) { renderDiaryCreationModal(entityId, templates); })
+      .withFailureHandler(function(err) { el.innerHTML = '<p style="color:var(--error-color);">' + escapeHtml(err.message) + '</p>'; })
+      .getB2BDiaryTemplates(ADMIN_TOKEN, entityId);
+  }
+
+  function renderDiaryCreationModal(entityId, templates) {
+    diaryTemplatesCache = templates;
+    var el = document.getElementById('diaryCreationModalBody');
+    var bothUploaded = !!(templates.buyer && templates.supplier);
+    el.innerHTML =
+      '<div class="diary-cols">' +
+        renderDiarySideHtml_('Buyer', templates.buyer) +
+        renderDiarySideHtml_('Supplier', templates.supplier) +
+      '</div>' +
+      '<p class="type-config-hint" style="margin:0 0 14px;">Times should line up across both sides — a meeting can only be requested where both attendees have the same time slot free. A break row (non-numeric Appointment) blocks that slot instead of leaving it open.</p>' +
+      '<div id="diaryGenResultWrap"></div>' +
+      '<button type="button" class="btn" style="width:100%;" id="diaryGenerateBtn" onclick="generateDiaries(\'' + entityId + '\')"' + (bothUploaded ? '' : ' disabled') + '>Generate Diaries</button>' +
+      (bothUploaded ? '' : '<p class="type-config-hint" style="margin:6px 0 0;">Upload both a Buyer and a Supplier template first.</p>');
+
+    ['Buyer', 'Supplier'].forEach(function(side) {
+      var input = document.getElementById('diaryUpload_' + side.toLowerCase());
+      if (input) input.addEventListener('change', function() { uploadDiaryTemplate(entityId, side, input); });
+    });
+  }
+
+  function renderDiarySideHtml_(side, tpl) {
+    var idSuffix = side.toLowerCase();
+    return '<div class="diary-side">' +
+      '<div class="side-label">' + side + ' template</div>' +
+      (tpl
+        ? '<div class="dropzone filled">✓ ' + tpl.slotCount + ' slot(s) — ' + (tpl.slotCount - tpl.breakCount) + ' meeting(s), ' + tpl.breakCount + ' break(s)</div>'
+        : '<div class="dropzone">No template uploaded yet</div>') +
+      '<span class="tpl-link" onclick="downloadDiaryTemplateStarter()">↓ Download starter template</span>' +
+      '&nbsp;&nbsp;' +
+      '<label class="tpl-link" style="cursor:pointer;">↑ Upload CSV<input type="file" accept=".csv" id="diaryUpload_' + idSuffix + '" style="display:none;"></label>' +
+    '</div>';
+  }
+
+  function downloadDiaryTemplateStarter() {
+    google.script.run
+      .withSuccessHandler(function(data) {
+        var blob = new Blob([data.csv], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', data.filename);
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      })
+      .withFailureHandler(function(err) { alert(err.message); })
+      .getB2BDiaryTemplateStarterCsv(ADMIN_TOKEN);
+  }
+
+  function uploadDiaryTemplate(entityId, side, inputEl) {
+    var file = inputEl.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      google.script.run
+        .withSuccessHandler(function() { loadDiaryCreationModal(entityId); })
+        .withFailureHandler(function(err) { alert('Could not save the ' + side + ' template: ' + err.message); inputEl.value = ''; })
+        .saveB2BDiaryTemplate(ADMIN_TOKEN, entityId, side, e.target.result);
+    };
+    reader.readAsText(file);
+  }
+
+  /** force=true is a deliberate re-submission after the admin confirmed the CONFIRM_REPLACE warning below — mirrors deleteOnboardingTypeBlock's own USAGE_COUNT confirm-then-retry shape. */
+  function generateDiaries(entityId, force) {
+    var btn = document.getElementById('diaryGenerateBtn');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating…';
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false; btn.textContent = originalText;
+        renderDiaryGenResult_(result);
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false; btn.textContent = originalText;
+        var m = /^CONFIRM_REPLACE:(\d+):(\w+)/.exec(err.message || '');
+        if (m && !force) {
+          if (confirm(m[2] + ' side already has ' + m[1] + ' meeting(s) reserved or booked. Regenerating deletes all of them. Continue?')) {
+            generateDiaries(entityId, true);
+          } else {
+            btn.disabled = false; btn.textContent = originalText;
+          }
+          return;
+        }
+        document.getElementById('diaryGenResultWrap').innerHTML = '<p style="color:var(--error-color); font-size:12.5px;">' + escapeHtml(err.message) + '</p>';
+      })
+      .generateB2BDiaries(ADMIN_TOKEN, entityId, !!force);
+  }
+
+  function renderDiaryGenResult_(result) {
+    var wrap = document.getElementById('diaryGenResultWrap');
+    wrap.innerHTML =
+      '<p style="color:var(--success-color); font-size:12.5px; font-weight:700;">✓ Diaries generated — ' +
+      result.buyer.attendeeCount + ' buyer(s) × ' + result.buyer.slotCount + ' slot(s), ' +
+      result.supplier.attendeeCount + ' supplier(s) × ' + result.supplier.slotCount + ' slot(s).</p>';
+  }
+
   function goToEventBudget(eventId) {
     var cached = eventDashboardCache[eventId];
     var eventName = (cached && cached.data && cached.data.eventName) || '';

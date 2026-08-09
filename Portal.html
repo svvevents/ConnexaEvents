@@ -219,13 +219,124 @@
        concern that would justify hiding the workspace behind a click). */
     .my-events-list { display: flex; flex-direction: column; gap: 20px; }
     .my-event-card {
-      background: white; border: 1px solid var(--border-color); border-left: 4px solid var(--primary-color);
-      border-radius: 14px; padding: 22px 24px 22px 21px; box-shadow: 0 4px 16px rgba(13,27,42,0.12);
+      background: white; border: 1px solid var(--border-color);
+      border-radius: 14px; box-shadow: 0 4px 16px rgba(13,27,42,0.12); overflow: hidden;
     }
-    .my-event-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-    .my-event-card-header h3 { margin: 0; font-size: 20px; font-weight: 800; color: var(--text-dark); }
-    .my-event-card-header .card-reg-status { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 12px; background: rgba(34,211,197,0.15); color: var(--success-color); white-space: nowrap; }
-    .my-event-card .ws-body { margin-top: 16px; }
+    .my-event-card .ws-body { padding: 18px 24px 22px; }
+
+    /* ---------- MY EVENTS: banner header — real cover image (evt.bannerImageUrl)
+       or the brand-gradient default. Title/dates/location overlay directly on
+       it behind a scrim so they stay legible over any uploaded photo, not
+       just our own gradient. */
+    .ev-banner {
+      position: relative; height: 120px; display: flex; flex-direction: column; justify-content: space-between;
+      padding: 12px 16px 14px; background-position: center;
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,0.16) 1px, transparent 1px),
+        linear-gradient(135deg, var(--navy-color) 0%, var(--primary-color) 55%, var(--mint-color) 100%);
+      background-size: 15px 15px, 100% 100%;
+    }
+    .ev-banner.has-image { background-size: cover; }
+    .ev-banner::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.12) 45%, rgba(0,0,0,0.60) 100%);
+    }
+    .ev-banner-top-row { position: relative; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .ev-banner-badge {
+      background: rgba(255,255,255,0.94); color: var(--navy-color); font-size: 10.5px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .04em; padding: 4px 10px; border-radius: 8px;
+    }
+    .ev-banner .card-reg-status {
+      font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 12px;
+      background: rgba(255,255,255,0.94); color: var(--success-color); white-space: nowrap;
+    }
+    .ev-banner .card-reg-status.waitlisted { color: var(--warning-color); }
+    .ev-banner-title-block { position: relative; z-index: 2; }
+    .ev-banner-title-block h3 { margin: 0 0 3px; font-size: 20px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.35); }
+    .ev-banner-title-block .ev-meta { margin: 0; font-size: 12.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .ev-banner-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ev-banner-details-btn {
+      font-family: inherit; border: none; cursor: pointer; white-space: nowrap;
+      background: rgba(255,255,255,0.18); color: #fff; font-size: 11px; font-weight: 700;
+      padding: 3px 10px; border-radius: 20px; transition: background .15s ease;
+    }
+    .ev-banner-details-btn:hover { background: rgba(255,255,255,0.3); }
+
+    /* ---------- MY EVENTS: info row (description + condensed Action Required) ---------- */
+    .ev-info-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 6px; }
+    .ev-info-row .ev-info-left { flex: 1; min-width: 220px; }
+    .ev-info-row .ev-desc { margin: 0 0 10px; font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .ev-info-row .action-condensed { width: 230px; flex-shrink: 0; }
+    @media (max-width: 640px) { .ev-info-row .action-condensed { width: 100%; } }
+
+    .action-condensed { border: 1px solid var(--border-color); border-radius: 10px; background: white; overflow: hidden; }
+    .action-condensed-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 12px;
+      background: #FBF4E6; cursor: pointer; border: none; width: 100%; font-family: inherit; text-align: left;
+    }
+    .action-condensed-head h4 { margin: 0; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--warning-color); display: flex; align-items: center; gap: 5px; }
+    .action-condensed-head .chev { font-size: 11px; color: var(--warning-color); transition: transform .18s ease; }
+    .action-condensed.expanded .action-condensed-head .chev { transform: rotate(180deg); }
+    .action-condensed-body { padding: 8px 12px 10px; }
+    .action-group-row {
+      display: flex; align-items: center; justify-content: space-between; padding: 5px 0; font-size: 12px;
+      cursor: pointer; background: none; border: none; width: 100%; font-family: inherit; color: inherit;
+    }
+    .action-group-row .lbl { display: flex; align-items: center; gap: 7px; color: var(--text-dark); font-weight: 600; }
+    .action-group-row .lbl .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .action-group-row .lbl .dot.red { background: var(--error-color); }
+    .action-group-row .lbl .dot.amber { background: var(--warning-color); }
+    .action-group-row .lbl .dot.neutral { background: var(--text-muted); opacity: .55; }
+    .action-group-row .count { font-weight: 800; font-size: 11.5px; min-width: 22px; text-align: center; padding: 2px 7px; border-radius: 9px; }
+    .action-group-row .count.red { color: var(--error-color); background: #F9EBEA; }
+    .action-group-row .count.amber { color: var(--warning-color); background: #FBF4E6; }
+    .action-group-row .count.neutral { color: var(--text-muted); background: #f1f3f4; }
+    .action-group-row.zero { opacity: .4; cursor: default; }
+    .action-condensed-clear { font-size: 12px; color: var(--text-muted); padding: 2px 0; margin: 0; }
+
+    .action-full { display: none; border-top: 1px solid var(--border-color); background: var(--bg-color); padding: 14px 0 4px; margin-top: 14px; }
+    .action-full.open { display: block; }
+    .action-full-group + .action-full-group { margin-top: 14px; }
+    .action-full-group-title {
+      display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .04em; margin: 0 0 6px; color: var(--text-muted);
+    }
+    .action-full-group-title .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .action-full-group-title .dot.red { background: var(--error-color); }
+    .action-full-group-title .dot.amber { background: var(--warning-color); }
+    .action-full-group-title .dot.neutral { background: var(--text-muted); opacity: .55; }
+    .action-full-group-title.red-text { color: var(--error-color); }
+    .action-full-group-title.amber-text { color: var(--warning-color); }
+    .action-full-item + .action-full-item { margin-top: 2px; }
+    .action-item-tag {
+      display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+      color: var(--category-tag-color); background: #F0EDF6; padding: 2px 7px; border-radius: 7px; margin: 8px 0 -2px;
+    }
+
+    /* ---------- MY EVENTS: always-visible sub-event tabs (Umbrella only, none active by default) ---------- */
+    .ev-tabs-wrap { position: relative; border-top: 1px solid var(--border-color); padding: 0 8px; margin: 4px 0 0; }
+    .ev-tabs-scroll-btn {
+      position: absolute; top: 0; bottom: 0; width: 28px; border: none; cursor: pointer; z-index: 2;
+      display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--text-muted);
+      background: linear-gradient(90deg, white 55%, transparent);
+    }
+    .ev-tabs-scroll-btn.right { right: 0; transform: scaleX(-1); }
+    .ev-tabs-scroll-btn:hover { color: var(--primary-color); }
+    .ev-tabs-scroll-btn[hidden] { display: none; }
+    .ev-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 0 22px; }
+    .ev-tabs::-webkit-scrollbar { display: none; }
+    .ev-tab {
+      font-family: inherit; border: none; background: transparent; cursor: pointer; white-space: nowrap;
+      font-size: 13px; font-weight: 700; color: var(--text-muted); padding: 12px 14px 11px;
+      border-bottom: 2px solid transparent; transition: color .12s ease, border-color .12s ease;
+    }
+    .ev-tab:hover { color: var(--text-dark); }
+    .ev-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    .ev-tab .tab-flag { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+    .ev-tab .tab-flag.red { background: var(--error-color); }
+    .ev-tab .tab-flag.amber { background: var(--warning-color); }
+    .ev-tab-pane { padding: 18px 22px 4px; }
+    .ev-join-more { padding: 4px 22px 18px; }
     .event-tile h3 {
       margin: 0 0 8px; font-size: 17px; font-weight: 700; padding-right: 70px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -279,15 +390,7 @@
     .event-detail-expand .expand-body-inner { padding: 20px; }
     .event-detail-expand .expand-iframe { width: 100%; height: 520px; border: none; display: block; }
 
-    /* ---------- MY EVENTS: unified workspace tabs ---------- */
-    .ws-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
-    .ws-tab {
-      font-family: inherit; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 700;
-      color: var(--text-muted); padding: 8px 14px; border-radius: 8px;
-    }
-    .ws-tab.active { background: var(--bg-color); color: var(--text-dark); }
-    .ws-tabpage { display: none; }
-    .ws-tabpage.active { display: block; }
+    /* ---------- MY EVENTS: milestone/action-row primitives (also used inside the grouped Action Required list and each sub-event tab pane) ---------- */
     .session-leave-btn { cursor: pointer; }
     .sec-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary-color); margin: 16px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
     .milestone-row-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -397,6 +500,17 @@
     .subevent-optin-cb { width: auto; margin: 2px 0 0; accent-color: var(--primary-color); flex-shrink: 0; }
     .subevent-card-body { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-color); display: none; }
     .subevent-card-body.open { display: block; }
+
+    /* ---------- Request Meeting: filter chips + candidate cards (reuses .subevent-card for the card shell) ---------- */
+    .req-chip {
+      font-family: inherit; border: 1px solid var(--border-color); background: #fff; color: var(--text-muted);
+      font-weight: 700; font-size: 12px; padding: 7px 13px; border-radius: 999px; cursor: pointer;
+    }
+    .req-chip.active { background: var(--navy-color); border-color: var(--navy-color); color: #fff; }
+    .pref-badge {
+      display: inline-block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+      color: var(--category-tag-color); background: #F0EDF6; padding: 2px 6px; border-radius: 6px; margin-top: 4px; margin-right: 4px;
+    }
 
     /* ---------- CAPACITY BADGES (shared by tiles, Curated Event / plain sub-event info, and Exhibition) ---------- */
     .capacity-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px; background: rgba(34,211,197,0.15); color: var(--success-color); }
@@ -868,6 +982,60 @@
     </div>
   </div>
 
+  <!-- Modal: Cancel Meeting — opened from a "Cancel Meeting" link on a Booked itinerary card -->
+  <div id="cancelMeetingModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:460px;">
+      <span class="modal-close" onclick="closeCancelMeetingModal()">&times;</span>
+      <h3 style="margin-top:0;">Cancel this meeting?</h3>
+      <p id="cancelMeetingSub" style="font-size:13px; color:var(--text-muted); margin-top:-8px;"></p>
+      <div class="form-group">
+        <label for="cancelMeetingMsgInput">Message (optional)</label>
+        <textarea id="cancelMeetingMsgInput" rows="3" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; font-family:inherit; font-size:13px;" placeholder="Let them know why, if you'd like…"></textarea>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted);">This frees up the slot for both of you and notifies them by email. This can't be undone from here — you'd need to send a new request.</p>
+      <div id="cancelMeetingMsgArea" style="display:none; padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:13px;"></div>
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="btn-secondary" onclick="closeCancelMeetingModal()">Keep Meeting</button>
+        <button type="button" class="btn-submit" id="btnConfirmCancelMeeting" style="background:var(--error-color); flex:1;" onclick="confirmCancelMeeting()">Cancel Meeting</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Request Meeting — opened from a "Request Meeting" link on an Empty itinerary card -->
+  <div id="requestMeetingModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:520px;">
+      <span class="modal-close" onclick="closeRequestMeetingModal()">&times;</span>
+      <h3 style="margin-top:0;">Request a meeting</h3>
+      <p id="requestMeetingSub" style="font-size:13px; color:var(--text-muted); margin-top:-8px;"></p>
+      <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;">
+        <button type="button" class="req-chip active" data-filter="all" onclick="setRequestMeetingFilter('all')">Show All</button>
+        <button type="button" class="req-chip" data-filter="mine" onclick="setRequestMeetingFilter('mine')">Show My Preferences</button>
+        <button type="button" class="req-chip" data-filter="theirs" onclick="setRequestMeetingFilter('theirs')">Show Their Preferences</button>
+      </div>
+      <div id="requestMeetingMsgArea" style="display:none; padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:13px;"></div>
+      <div id="requestMeetingList" style="max-height:380px; overflow-y:auto;"><p style="color:#5f6368;">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Modal: Block This Slot — opened from a "Block This Slot" link on an Empty itinerary card -->
+  <div id="blockSlotModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:440px;">
+      <span class="modal-close" onclick="closeBlockSlotModal()">&times;</span>
+      <h3 style="margin-top:0;">Block this slot?</h3>
+      <p id="blockSlotSub" style="font-size:13px; color:var(--text-muted); margin-top:-8px;"></p>
+      <div class="form-group">
+        <label for="blockSlotNoteInput">Note (optional — shown only to you)</label>
+        <input type="text" id="blockSlotNoteInput" placeholder="e.g. Speaking at the export workshop">
+      </div>
+      <p style="font-size:12px; color:var(--text-muted);">No one will be able to request a meeting with you in this slot until you unblock it. This only affects your own diary.</p>
+      <div id="blockSlotMsgArea" style="display:none; padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:13px;"></div>
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="btn-secondary" onclick="closeBlockSlotModal()">Cancel</button>
+        <button type="button" class="btn-submit" id="btnConfirmBlockSlot" style="flex:1;" onclick="confirmBlockSlot()">Block Slot</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Confirm Registration — clicking "Complete Registration" opens
        this overlay instead of swapping the main panel in place, so it's
        unmistakable that this final summary still needs the attendee's
@@ -1018,8 +1186,8 @@
     document.addEventListener('keydown', function(e) {
       if (e.key !== 'Escape') return;
       if (document.getElementById('drawerOverlay').classList.contains('open')) { closeDrawer(); return; }
-      var modalIds = ['prefDetailsModal', 'itinProfileModal', 'itinEmailModal', 'checkoutConfirmModal'];
-      var closers = { prefDetailsModal: closePrefModal, itinProfileModal: closeItinProfileModal, itinEmailModal: closeEmailItineraryModal, checkoutConfirmModal: closeCheckoutConfirmModal };
+      var modalIds = ['prefDetailsModal', 'itinProfileModal', 'itinEmailModal', 'checkoutConfirmModal', 'cancelMeetingModal', 'requestMeetingModal', 'blockSlotModal'];
+      var closers = { prefDetailsModal: closePrefModal, itinProfileModal: closeItinProfileModal, itinEmailModal: closeEmailItineraryModal, checkoutConfirmModal: closeCheckoutConfirmModal, cancelMeetingModal: closeCancelMeetingModal, requestMeetingModal: closeRequestMeetingModal, blockSlotModal: closeBlockSlotModal };
       for (var i = 0; i < modalIds.length; i++) {
         var el = document.getElementById(modalIds[i]);
         if (el && el.style.display === 'flex') { closers[modalIds[i]](); return; }
@@ -1436,6 +1604,54 @@
       return '&#128197;';
     }
 
+    /**
+     * My Events card banner: evt.bannerImageUrl (set via the admin's Cover
+     * Image control) or the brand-gradient default, with the event name
+     * and dates/location overlaid — see the .ev-banner::after scrim, which
+     * guarantees the title stays legible over any uploaded photo, not just
+     * our own gradient. Only a non-Umbrella event gets a type badge: an
+     * Umbrella's own eventType is always literally "Umbrella Event" (see
+     * EVENT_TYPE_UMBRELLA), not a meaningful label to show an attendee.
+     */
+    function renderEventBannerHtml(evt) {
+      var hasImage = !!evt.bannerImageUrl;
+      var style = hasImage ? ' style="background-image:url(' + escapeHtml(evt.bannerImageUrl) + ')"' : '';
+      var metaBits = [];
+      if (evt.eventDate) metaBits.push('📅 ' + escapeHtml(evt.eventDate));
+      if (evt.location) metaBits.push('📍 ' + escapeHtml(evt.location));
+
+      // Small, discrete — sits inline with the date/location rather than
+      // competing with them, and only exists at all when the admin
+      // actually configured a landing page for this event (see
+      // wireEventBannerDetailsButtons_ for the click handler).
+      var detailsBtn = evt.detailsPageUrl
+        ? '<button type="button" class="ev-banner-details-btn" data-details-entity-id="' + escapeHtml(evt.eventId) + '" data-details-entity-name="' + escapeHtml(evt.eventName) + '">Details</button>'
+        : '';
+
+      return '<div class="ev-banner' + (hasImage ? ' has-image' : '') + '"' + style + '>' +
+        '<div class="ev-banner-top-row">' +
+          (!evt.isUmbrella && evt.eventType ? '<span class="ev-banner-badge">' + escapeHtml(evt.eventType) + '</span>' : '<span></span>') +
+          '<span class="card-reg-status">✓ Registered</span>' +
+        '</div>' +
+        '<div class="ev-banner-title-block">' +
+          '<h3>' + escapeHtml(evt.eventName) + '</h3>' +
+          (metaBits.length || detailsBtn ? '<div class="ev-banner-meta-row">' +
+            (metaBits.length ? '<p class="ev-meta">' + metaBits.join('&nbsp;&nbsp;·&nbsp;&nbsp;') + '</p>' : '') +
+            detailsBtn +
+          '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    /** Wires the small "Details" button renderEventBannerHtml adds next to the date/location — opens the same drawer the old Event Details action-row button did. Scoped to `container` (a single card) since several My Events cards render this independently. */
+    function wireEventBannerDetailsButton_(container) {
+      var btn = container.querySelector('.ev-banner-details-btn');
+      if (!btn) return;
+      btn.addEventListener('click', function() {
+        openEventDetailsDrawer(btn.dataset.detailsEntityId, btn.dataset.detailsEntityName);
+      });
+    }
+
     function renderMyEventsGrid() {
       var container = document.getElementById('myEventsGrid');
       var registered = (portalState.tiles || []).filter(function(t) { return t.registered; });
@@ -1476,15 +1692,8 @@
       registered.forEach(function(evt) {
         var div = document.createElement('div');
         div.className = 'my-event-card';
-        div.innerHTML =
-          '<div class="my-event-card-header">' +
-            '<div style="display:flex; align-items:center; gap:12px; min-width:0;">' +
-              '<div class="ev-type-icon">' + eventTypeIcon_(evt.eventType, evt.isB2B, evt.isExhibition, evt.isCuratedEvent) + '</div>' +
-              '<h3>' + escapeHtml(evt.eventName) + '</h3>' +
-            '</div>' +
-            '<span class="card-reg-status">✓ Registered</span>' +
-          '</div>' +
-          '<div class="ws-body"><p>Loading…</p></div>';
+        div.innerHTML = renderEventBannerHtml(evt) + '<div class="ws-body"><p>Loading…</p></div>';
+        wireEventBannerDetailsButton_(div);
         grid.appendChild(div);
         loadMyEventWorkspace(evt, div.querySelector('.ws-body'));
       });
@@ -1526,26 +1735,83 @@
         .getUpdateRegistrationData(portalState.sessionToken, evt.eventId);
     }
 
-    /* ---- Unified "My Events" workspace: Overview + (Umbrella only) Sessions ---- */
+    /* ---- Unified "My Events" workspace: description/actions + (Umbrella only) always-visible sub-event tabs ---- */
+
+    /** Worst urgency among an entity's own PENDING milestones — null if none are due-soon/overdue (or it has no pending milestones at all). Drives each sub-event tab's little flag dot. */
+    function worstUrgencyForEntity_(milestones) {
+      var worst = null;
+      (milestones || []).forEach(function(m) {
+        if (m.status === 'Completed') return;
+        var u = urgencyOfDueDate_(m.dueDate);
+        if (u === 'red') worst = 'red';
+        else if (u === 'amber' && worst !== 'red') worst = 'amber';
+      });
+      return worst;
+    }
 
     /**
-     * Builds the tab strip and both tab pages once both data sources have
-     * loaded (see loadMyEventWorkspace). The Sessions tab only exists for
-     * an Umbrella event — a standalone event has no separate sub-events to
-     * manage, so its own registration/milestones live directly on Overview.
+     * Renders the description/actions info row (always visible) plus, for
+     * an Umbrella event, always-visible tabs — one per joined sub-event,
+     * none selected by default — instead of the old Overview/Sessions
+     * ws-tabs split. A standalone event has no sub-events to tab over, so
+     * its own milestones/actions live directly in the info row's Action
+     * Required panel instead.
      */
     function renderMyEventWorkspace(evt, milestoneData, updRegData, body) {
       var isUmbrella = milestoneData.isUmbrella;
-      var joinedCount = isUmbrella ? (milestoneData.subEvents || []).length : 0;
+      var items = buildActionItems_(milestoneData);
 
-      var html = '<div class="ws-tabs">' +
-        '<button type="button" class="ws-tab active" data-ws-tab="overview">Overview</button>' +
-        (isUmbrella ? '<button type="button" class="ws-tab" data-ws-tab="sessions">Sessions (' + joinedCount + ')</button>' : '') +
-      '</div>';
+      // Event Details (the admin-configured landing page link) now lives as
+      // a small button on the banner next to the date/location, not in
+      // this row — see renderEventBannerHtml. For an Umbrella event that
+      // was the ONLY thing this action row ever showed (its own
+      // eventType/isB2B/milestones are always null/false/empty), so it's
+      // skipped entirely now rather than rendering an empty row.
+      var html = '<div class="ev-info-row">' +
+          '<div class="ev-info-left">' +
+            (milestoneData.description ? '<p class="ev-desc">' + escapeHtml(milestoneData.description) + '</p>' : '') +
+            (isUmbrella ? '' : renderEntityActionButtonsHtml(evt.eventId, evt.eventName, evt.eventType, evt.isB2B, milestoneData.milestones || [], false)) +
+          '</div>' +
+          renderActionRequiredCondensedHtml_(items) +
+        '</div>' +
+        '<div class="action-full"></div>';
 
-      html += '<div class="ws-tabpage active" data-ws-page="overview">' + renderWorkspaceOverview(evt, milestoneData) + '</div>';
+      var joined = isUmbrella ? (milestoneData.subEvents || []) : [];
       if (isUmbrella) {
-        html += '<div class="ws-tabpage" data-ws-page="sessions">' + renderWorkspaceSessions(milestoneData, updRegData) + '</div>';
+        // Joined (tabs) and "available to join" are independent facts, not
+        // mutually exclusive — e.g. an attendee who just registered for the
+        // Umbrella but hasn't picked any sub-event yet legitimately sees
+        // BOTH "No sessions joined yet" AND a full "Join more sessions"
+        // list at once (this is the most common state right after
+        // registering). Matches the old flat Sessions tab's two
+        // independent `if` checks — kept independent here too.
+        if (joined.length) {
+          html += '<div class="ev-tabs-wrap">' +
+              '<button type="button" class="ev-tabs-scroll-btn left" aria-label="Scroll tabs left" hidden>&#8250;</button>' +
+              '<div class="ev-tabs">' +
+                joined.map(function(sub) {
+                  var urgency = worstUrgencyForEntity_(sub.milestones);
+                  return '<button type="button" class="ev-tab" data-ev-tab="' + escapeHtml(sub.eventId) + '">' + escapeHtml(sub.eventName) +
+                    (urgency ? '<span class="tab-flag ' + urgency + '"></span>' : '') + '</button>';
+                }).join('') +
+              '</div>' +
+              '<button type="button" class="ev-tabs-scroll-btn right" aria-label="Scroll tabs right" hidden>&#8250;</button>' +
+            '</div>' +
+            '<div class="ev-tab-pane"></div>';
+        } else {
+          html += '<div class="empty-tiles" style="margin:0 22px 18px;">No sessions joined yet.</div>';
+        }
+
+        var available = updRegData.availableSubEvents || [];
+        if (available.length) {
+          html += '<div class="ev-join-more">' +
+            '<h4 style="font-size:14px; margin:0 0 4px;">Join more sessions</h4>' +
+            '<p class="subevent-select-hint">Select any additional sessions you\'d like to join.</p>' +
+            '<div id="wsAvailableCards"></div>' +
+            '<button type="button" class="btn-submit" id="wsJoinSubmitBtn">Join Selected Sessions</button>' +
+            '<div class="ms-action-msg" id="wsJoinMsg" style="display:none; font-size:13px; margin-top:8px;"></div>' +
+          '</div>';
+        }
       }
 
       body.innerHTML = html;
@@ -1555,96 +1821,50 @@
       // at once, so every lookup here must stay scoped to THIS body rather
       // than document.getElementById, which would only ever find the
       // first tile's matching element.
-      body.querySelectorAll('.ws-tab').forEach(function(tab) {
-        tab.addEventListener('click', function() {
-          body.querySelectorAll('.ws-tab').forEach(function(t) { t.classList.remove('active'); });
-          body.querySelectorAll('.ws-tabpage').forEach(function(p) { p.classList.remove('active'); });
-          tab.classList.add('active');
-          body.querySelector('[data-ws-page="' + tab.dataset.wsTab + '"]').classList.add('active');
-        });
-      });
-
       wireEntityActionButtons(body, milestoneData);
       wireMilestoneActions(body, milestoneData, evt);
-      wireWorkspaceSessionActions(body, evt, updRegData);
+      wireActionRequired_(body, items, milestoneData, evt);
+      if (isUmbrella) {
+        wireEventTabs_(body, milestoneData, evt);
+        wireWorkspaceSessionActions(body, evt, updRegData);
+      }
     }
 
-    /**
-     * Overview tab: the event's own basic configured details (description,
-     * date/location) — not a readback of the attendee's own name/company,
-     * which they already know — and, only for a standalone (non-Umbrella)
-     * event, its own milestones + action row directly here. An Umbrella
-     * event's action row is just the plain "Event Details" button (it has
-     * no registration/milestones of its own; those all live per
-     * sub-event, shown on the Sessions tab instead). "Event Details" only
-     * appears when the admin configured a landing page URL for this event
-     * (see renderEntityActionButtonsHtml) — otherwise there's nothing
-     * beyond what's already shown here for it to open.
-     */
-    function renderWorkspaceOverview(evt, milestoneData) {
-      var html = '';
-      if (milestoneData.description) html += '<p style="color:var(--text-muted); line-height:1.6; margin-top:0;">' + escapeHtml(milestoneData.description) + '</p>';
-      html += '<p class="meta" style="margin:0 0 16px;">📅 ' + escapeHtml(milestoneData.eventDate || 'Date TBA') + '&nbsp;&nbsp;·&nbsp;&nbsp;📍 ' + escapeHtml(milestoneData.location || 'Location TBA') + '</p>';
+    /** Tab strip behavior (scroll affordance + switching) for an Umbrella event's always-visible sub-event tabs. Each pane reuses renderMyEventSubEventCard unchanged — the same card markup the old flat Sessions list used — so its action buttons and Leave control need the same wiring freshly re-applied every time the pane's content is replaced. */
+    function wireEventTabs_(body, milestoneData, evt) {
+      var tabsEl = body.querySelector('.ev-tabs');
+      var paneEl = body.querySelector('.ev-tab-pane');
+      var scrollLeftBtn = body.querySelector('.ev-tabs-scroll-btn.left');
+      var scrollRightBtn = body.querySelector('.ev-tabs-scroll-btn.right');
+      if (!tabsEl) return;
 
-      if (milestoneData.isUmbrella) {
-        html += '<div>' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, null, false, [], !!milestoneData.detailsPageUrl) + '</div>';
-      } else {
-        html += '<div style="margin-bottom:16px;">' + renderEntityActionButtonsHtml(evt.eventId, evt.eventName, evt.eventType, evt.isB2B, milestoneData.milestones, !!milestoneData.detailsPageUrl) + '</div>';
-        html += renderMilestonesListHtml(milestoneData.milestones || [], evt.eventId, evt.eventName);
+      function updateScrollButtons() {
+        var overflow = tabsEl.scrollWidth > tabsEl.clientWidth + 2;
+        scrollLeftBtn.hidden = !overflow || tabsEl.scrollLeft <= 2;
+        scrollRightBtn.hidden = !overflow || tabsEl.scrollLeft >= tabsEl.scrollWidth - tabsEl.clientWidth - 2;
       }
-      return html;
+      scrollLeftBtn.addEventListener('click', function() { tabsEl.scrollBy({ left: -140, behavior: 'smooth' }); });
+      scrollRightBtn.addEventListener('click', function() { tabsEl.scrollBy({ left: 140, behavior: 'smooth' }); });
+      tabsEl.addEventListener('scroll', updateScrollButtons);
+      updateScrollButtons();
+
+      tabsEl.querySelectorAll('.ev-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          tabsEl.querySelectorAll('.ev-tab').forEach(function(t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          var sub = (milestoneData.subEvents || []).find(function(s) { return s.eventId === tab.dataset.evTab; });
+          if (!sub) return;
+          paneEl.innerHTML = renderMyEventSubEventCard(sub, true);
+          wireEntityActionButtons(paneEl, milestoneData);
+          wireMilestoneActions(paneEl, milestoneData, evt);
+          wireSessionLeaveButtons_(paneEl, evt, body);
+        });
+      });
     }
 
-    /**
-     * Sessions tab (Umbrella only): joined sub-events — each with a real
-     * Leave control, the missing capability the old three-panel design
-     * never had — plus any sub-events still available to join. Replaces
-     * the old panel's "Sessions you've joined" (read-only) + separate
-     * "Join more sessions" split with one merged list, so an attendee
-     * doesn't have to reconcile two different sections for the full
-     * picture of what they're in.
-     */
-    function renderWorkspaceSessions(milestoneData, updRegData) {
-      // milestoneData.subEvents (not updRegData.joinedSubEvents) is the
-      // joined list to use here — it's the one that actually carries each
-      // sub-event's own milestones (see getMilestonesForAttendee), which
-      // updRegData.joinedSubEvents never included. Using the wrong one was
-      // exactly why Action Items only ever showed for a standalone
-      // top-level event and never for a session.
-      var joined = milestoneData.subEvents || [];
-      var available = updRegData.availableSubEvents || [];
-      var html = '';
-
-      if (joined.length) {
-        html += joined.map(function(sub) { return renderMyEventSubEventCard(sub, true); }).join('');
-      } else {
-        html += '<div class="empty-tiles">No sessions joined yet.</div>';
-      }
-
-      if (available.length) {
-        html += '<div class="subevent-select-section" style="margin-top:22px; padding-top:16px; border-top:1px solid #eee;">' +
-          '<h4 style="font-size:14px; margin:0 0 4px;">Join more sessions</h4>' +
-          '<p class="subevent-select-hint">Select any additional sessions you\'d like to join.</p>' +
-          '<div id="wsAvailableCards"></div>' +
-          '<button type="button" class="btn-submit" id="wsJoinSubmitBtn">Join Selected Sessions</button>' +
-          '<div class="ms-action-msg" id="wsJoinMsg" style="display:none; font-size:13px; margin-top:8px;"></div>' +
-        '</div>';
-      }
-
-      return html;
-    }
-
-    /**
-     * Wires the Sessions tab's two live actions: "Leave session" (calls
-     * the new withdrawSubEventRegistration, then reloads the whole
-     * workspace so the session moves back into "available to join") and
-     * the "Join Selected Sessions" flow reused from the old Update
-     * Registration panel (renderUpdateRegAvailableCards is unchanged;
-     * only where it's mounted and what happens on success are new). A
-     * no-op if the Sessions tab isn't in this render (standalone event).
-     */
-    function wireWorkspaceSessionActions(body, evt, updRegData) {
-      body.querySelectorAll('.session-leave-btn').forEach(function(btn) {
+    /** Shared by wireWorkspaceSessionActions (the "Join more sessions" block, present from initial render) and wireEventTabs_ (each freshly-rendered tab pane) — the confirm+withdraw+reload flow behind every "Leave session" control. Reloading always targets the outer workspace `body`, not whichever scope the button was found in, since leaving a session changes the tab list itself. */
+    function wireSessionLeaveButtons_(scopeEl, evt, body) {
+      scopeEl.querySelectorAll('.session-leave-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
           if (!confirm('Leave "' + btn.dataset.sessionName + '"? You can join it again later if it still has room.')) return;
           var originalText = btn.textContent;
@@ -1655,6 +1875,16 @@
             .withdrawSubEventRegistration(portalState.sessionToken, evt.eventId, btn.dataset.leaveSession);
         });
       });
+    }
+
+    /**
+     * Wires the "Join more sessions" block reused verbatim from the old
+     * Sessions tab (renderUpdateRegAvailableCards is unchanged; only where
+     * it's mounted is new) — a no-op if there's nothing available to join
+     * (standalone event, or an Umbrella with none left).
+     */
+    function wireWorkspaceSessionActions(body, evt, updRegData) {
+      wireSessionLeaveButtons_(body, evt, body);
 
       var availableWrap = body.querySelector('#wsAvailableCards');
       if (!availableWrap) return;
@@ -1893,6 +2123,148 @@
         (sub.description ? '<div class="agenda-desc" style="margin-top:6px;">' + escapeHtml(sub.description) + '</div>' : '') +
         renderMilestonesListHtml(sub.milestones || [], sub.eventId, sub.eventName) +
       '</div>';
+    }
+
+    /* ---- Action Required: cross-entity milestone aggregation (condensed box + expandable grouped list) ---- */
+
+    /**
+     * Flattens getMilestonesForAttendee's response into one list of pending
+     * actions, each tagged with the entity (top-level event or sub-event)
+     * it belongs to — an Umbrella's actions come from every joined
+     * sub-event's own milestones, a standalone event's from its own
+     * milestones directly. Sorted by dueDate ascending; items with no due
+     * date sort last (not urgent, but not hidden either).
+     */
+    function buildActionItems_(data) {
+      var items = [];
+      function addFrom(entityId, entityName, milestones) {
+        (milestones || []).forEach(function(m) {
+          if (m.status === 'Completed') return;
+          items.push({ entityId: entityId, entityName: entityName, milestone: m });
+        });
+      }
+      if (data.isUmbrella) {
+        (data.subEvents || []).forEach(function(sub) { addFrom(sub.eventId, sub.eventName, sub.milestones); });
+      } else {
+        addFrom(data.eventId, data.eventName, data.milestones);
+      }
+      items.sort(function(a, b) {
+        var da = a.milestone.dueDate, db = b.milestone.dueDate;
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da < db ? -1 : (da > db ? 1 : 0);
+      });
+      return items;
+    }
+
+    /** red = due today or overdue, amber = within 7 days, neutral = further out or no due date set. */
+    function urgencyOfDueDate_(dueDate) {
+      if (!dueDate) return 'neutral';
+      var due = new Date(dueDate + 'T00:00:00');
+      if (isNaN(due.getTime())) return 'neutral';
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      var days = Math.round((due - today) / 86400000);
+      if (days <= 0) return 'red';
+      if (days <= 7) return 'amber';
+      return 'neutral';
+    }
+
+    /** Condensed Action Required box: 3 grouped counts. Clicking the header or a specific (non-empty) group expands the full list into the sibling .action-full element — see wireActionRequired_. */
+    function renderActionRequiredCondensedHtml_(items) {
+      if (!items.length) {
+        return '<div class="action-condensed">' +
+          '<div class="action-condensed-head"><h4>&#9888; Action required</h4></div>' +
+          '<div class="action-condensed-body"><p class="action-condensed-clear">No outstanding actions.</p></div>' +
+        '</div>';
+      }
+      var groups = { red: 0, amber: 0, neutral: 0 };
+      items.forEach(function(it) { groups[urgencyOfDueDate_(it.milestone.dueDate)]++; });
+      var defs = [
+        { key: 'red', label: 'Overdue', dot: 'red' },
+        { key: 'amber', label: 'Due soon', dot: 'amber' },
+        { key: 'neutral', label: 'Upcoming', dot: 'neutral' }
+      ];
+      var rows = defs.map(function(d) {
+        var n = groups[d.key];
+        return '<button type="button" class="action-group-row' + (n === 0 ? ' zero' : '') + '" data-action-group="' + d.key + '"' + (n === 0 ? ' disabled' : '') + '>' +
+          '<span class="lbl"><span class="dot ' + d.dot + '"></span>' + d.label + '</span>' +
+          '<span class="count ' + d.key + '">' + n + '</span>' +
+        '</button>';
+      }).join('');
+      return '<div class="action-condensed">' +
+        '<button type="button" class="action-condensed-head"><h4>&#9888; Action required</h4><span class="chev">&#8964;</span></button>' +
+        '<div class="action-condensed-body">' + rows + '</div>' +
+      '</div>';
+    }
+
+    /**
+     * Full grouped action list. Each row reuses renderMilestoneRowHtml
+     * UNCHANGED — so wireMilestoneActions/wireEntityActionButtons keep
+     * wiring the exact same real buttons (Manage uploads / Review and
+     * confirm / Set your preferences) with zero changes to those
+     * functions — just grouped by urgency and sorted globally instead of
+     * appearing in per-entity order. isUmbrella controls whether each row
+     * gets a small tag naming which sub-event it belongs to (meaningless
+     * — and omitted — for a standalone event's own single-entity list).
+     */
+    function renderActionRequiredFullHtml_(items, isUmbrella) {
+      var groups = { red: [], amber: [], neutral: [] };
+      items.forEach(function(it) { groups[urgencyOfDueDate_(it.milestone.dueDate)].push(it); });
+      var defs = [
+        { key: 'red', label: 'Overdue', dot: 'red', cls: 'red-text' },
+        { key: 'amber', label: 'Due soon · within a week', dot: 'amber', cls: 'amber-text' },
+        { key: 'neutral', label: 'Upcoming', dot: 'neutral', cls: '' }
+      ];
+      return defs.map(function(d) {
+        if (!groups[d.key].length) return '';
+        var rows = groups[d.key].map(function(it) {
+          return '<div class="action-full-item">' +
+            (isUmbrella ? '<div><span class="action-item-tag">' + escapeHtml(it.entityName) + '</span></div>' : '') +
+            renderMilestoneRowHtml(it.milestone, it.entityId, it.entityName) +
+          '</div>';
+        }).join('');
+        return '<div class="action-full-group" data-action-group-section="' + d.key + '">' +
+          '<h5 class="action-full-group-title ' + d.cls + '"><span class="dot ' + d.dot + '"></span>' + d.label + ' (' + groups[d.key].length + ')</h5>' +
+          rows +
+        '</div>';
+      }).join('');
+    }
+
+    /**
+     * Wires one card's condensed Action Required box: clicking the header
+     * (or a specific non-empty group row) renders the full grouped list
+     * into the sibling .action-full element and wires its real action
+     * buttons via the existing wireEntityActionButtons/wireMilestoneActions
+     * (data/evt are this card's own getMilestonesForAttendee response and
+     * tile, exactly what those two already expect). Scoped to `container`
+     * since several My Events cards render this independently.
+     */
+    function wireActionRequired_(container, items, data, evt) {
+      var condensedHead = container.querySelector('.action-condensed-head');
+      var condensedBox = container.querySelector('.action-condensed');
+      var fullEl = container.querySelector('.action-full');
+      if (!condensedHead || !fullEl) return;
+
+      function setExpanded(expanded, scrollToGroup) {
+        condensedBox.classList.toggle('expanded', expanded);
+        fullEl.classList.toggle('open', expanded);
+        if (expanded) {
+          fullEl.innerHTML = renderActionRequiredFullHtml_(items, data.isUmbrella);
+          wireEntityActionButtons(fullEl, data);
+          wireMilestoneActions(fullEl, data, evt);
+          if (scrollToGroup) {
+            var sec = fullEl.querySelector('[data-action-group-section="' + scrollToGroup + '"]');
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      }
+
+      condensedHead.addEventListener('click', function() { setExpanded(!fullEl.classList.contains('open')); });
+      container.querySelectorAll('[data-action-group]').forEach(function(btn) {
+        btn.addEventListener('click', function() { setExpanded(true, btn.dataset.actionGroup); });
+      });
     }
 
     /* ---- Milestones: rendering + action dispatch ---- */
@@ -3897,7 +4269,61 @@
                 '<div class="itinerary-content" style="display:flex; justify-content:center; align-items:center;">' +
                   '<h3 style="margin:0; color:#5f6368; font-size:18px; text-transform:uppercase; letter-spacing:1px;">☕ ' + escapeHtml(m.appointment) + '</h3>' +
                 '</div>';
+            } else if (m.status === 'Empty' || m.status === 'Blocked' || m.status === 'Reserved') {
+              // Reserved distinguishes requester from recipient using
+              // requestedBy — only the recipient (never the requester,
+              // who's the one waiting) gets Accept/Reject. Blocked is
+              // always the viewer's own doing (a diary row only ever
+              // shows up on its own owner's itinerary), so it always gets
+              // an Unblock action.
+              var isMine = m.requestedBy && portalState.email && m.requestedBy === portalState.email.toLowerCase();
+              var isRecipient = m.status === 'Reserved' && !isMine;
+              var titleLabel = m.status === 'Empty' ? 'No meeting booked yet'
+                : m.status === 'Blocked' ? (m.blockNote ? 'Blocked by you — "' + m.blockNote + '"' : 'Blocked by you')
+                : (isMine ? 'Request sent — awaiting reply' : (m.companyName ? m.companyName + ' requested this meeting' : 'Awaiting response'));
+              var hasAction = m.status === 'Empty' || m.status === 'Blocked' || isRecipient;
+              card.style.background = '#f8f9fa'; card.style.borderStyle = 'dashed';
+              var actionHtml =
+                m.status === 'Empty' ? '<div style="margin-top:8px; display:flex; gap:16px;">' +
+                    '<span class="itinerary-action-link btn-request-meeting">Request Meeting</span>' +
+                    '<span class="itinerary-action-link btn-block-slot" style="color:var(--text-muted);">Block This Slot</span>' +
+                  '</div>'
+                : m.status === 'Blocked' ? '<div style="margin-top:8px;"><span class="itinerary-action-link btn-unblock-slot">Unblock this slot</span></div>'
+                : isRecipient ? '<div style="margin-top:8px; display:flex; gap:16px;">' +
+                    '<span class="itinerary-action-link btn-accept-meeting" style="color:var(--success-color);">Accept Meeting</span>' +
+                    '<span class="itinerary-action-link btn-reject-meeting" style="color:var(--error-color);">Reject Meeting</span>' +
+                  '</div>'
+                : '';
+              card.innerHTML =
+                '<div class="itinerary-time-box" style="background:var(--bg-color); color:var(--text-muted); border-right:1px dashed var(--border-color);">' +
+                  '<div style="font-size:11px; text-transform:uppercase; margin-bottom:2px;">Appt #' + escapeHtml(m.appointment) + '</div>' +
+                  '<div class="time-range">' + escapeHtml(m.startTime) + ' - ' + escapeHtml(m.endTime) + '</div>' +
+                  (m.tableNumber ? '<div class="location-tag">Table: ' + escapeHtml(m.tableNumber) + '</div>' : '') +
+                '</div>' +
+                (hasAction
+                  ? '<div class="itinerary-content">' +
+                      '<h3 style="margin:0; color:#5f6368; font-size:15px; font-weight:700;">' + escapeHtml(titleLabel) + '</h3>' +
+                      actionHtml +
+                    '</div>'
+                  : '<div class="itinerary-content" style="display:flex; justify-content:center; align-items:center;">' +
+                      '<h3 style="margin:0; color:#5f6368; font-size:15px; font-weight:700; text-align:center;">' + escapeHtml(titleLabel) + '</h3>' +
+                    '</div>');
+              var requestLink = card.querySelector('.btn-request-meeting');
+              if (requestLink) requestLink.addEventListener('click', function() { openRequestMeetingModal(m); });
+              var blockLink = card.querySelector('.btn-block-slot');
+              if (blockLink) blockLink.addEventListener('click', function() { openBlockSlotModal(m); });
+              var unblockLink = card.querySelector('.btn-unblock-slot');
+              if (unblockLink) unblockLink.addEventListener('click', function() { unblockSlot(m); });
+              var acceptLink = card.querySelector('.btn-accept-meeting');
+              if (acceptLink) acceptLink.addEventListener('click', function() { respondToMeetingRequest(m, true); });
+              var rejectLink = card.querySelector('.btn-reject-meeting');
+              if (rejectLink) rejectLink.addEventListener('click', function() { respondToMeetingRequest(m, false); });
             } else {
+              // status === 'Booked', OR a legacy/externally-imported row
+              // whose status doesn't match any of this app's own values —
+              // same always-show rendering this card had before Diary
+              // Creation introduced Empty/Blocked/Reserved, so an existing
+              // event's real meeting data never regresses.
               card.innerHTML =
                 '<div class="itinerary-time-box">' +
                   '<div style="font-size:11px; text-transform:uppercase; color:#5f6368; margin-bottom:2px;">Appt #' + escapeHtml(m.appointment) + '</div>' +
@@ -3911,15 +4337,199 @@
                   '</div>' +
                   '<p style="margin-top:6px;"><strong>Contact Person:</strong> ' + escapeHtml(m.fullName) + '</p>' +
                   '<p><strong>Meeting Type:</strong> ' + escapeHtml(m.meetingType) + '</p>' +
-                  '<div><span class="itinerary-action-link btn-view-profile">View Company Profile &amp; Description &rarr;</span></div>' +
+                  '<div style="display:flex; gap:16px; align-items:center; margin-top:8px; flex-wrap:wrap;">' +
+                    '<span class="itinerary-action-link btn-view-profile">View Company Profile &amp; Description &rarr;</span>' +
+                    (m.status === 'Booked' && m.meetingId ? '<span class="itinerary-action-link btn-cancel-meeting" style="color:var(--error-color);">Cancel Meeting</span>' : '') +
+                  '</div>' +
                 '</div>';
               card.querySelector('.btn-view-profile').addEventListener('click', function() { viewAttendeeCompanyProfile(m.companyName); });
+              var cancelLink = card.querySelector('.btn-cancel-meeting');
+              if (cancelLink) cancelLink.addEventListener('click', function() { openCancelMeetingModal(m); });
             }
             container.appendChild(card);
           });
         })
         .withFailureHandler(function(err) { container.innerHTML = '<p class="msg-error">' + err.message + '</p>'; })
         .getMyAttendeeItinerary(portalState.sessionToken, eventId);
+    }
+
+    /* ---- Cancel Meeting ---- */
+
+    var cancelMeetingTarget = null;
+
+    function openCancelMeetingModal(meeting) {
+      cancelMeetingTarget = meeting;
+      document.getElementById('cancelMeetingSub').textContent =
+        meeting.startTime + '–' + meeting.endTime + ' with ' + meeting.companyName + (meeting.fullName ? ' (' + meeting.fullName + ')' : '');
+      document.getElementById('cancelMeetingMsgInput').value = '';
+      document.getElementById('cancelMeetingMsgArea').style.display = 'none';
+      document.getElementById('cancelMeetingModal').style.display = 'flex';
+    }
+
+    function closeCancelMeetingModal() {
+      document.getElementById('cancelMeetingModal').style.display = 'none';
+      cancelMeetingTarget = null;
+    }
+
+    function confirmCancelMeeting() {
+      if (!cancelMeetingTarget) return;
+      var eventId = portalState.currentEvent.eventId;
+      var message = document.getElementById('cancelMeetingMsgInput').value.trim();
+      var btn = document.getElementById('btnConfirmCancelMeeting');
+      var msgArea = document.getElementById('cancelMeetingMsgArea');
+      btn.disabled = true; btn.textContent = 'Cancelling…';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          closeCancelMeetingModal();
+          btn.disabled = false; btn.textContent = 'Cancel Meeting';
+          loadItineraryModule(); // this meeting's slot now shows as Empty on both cards
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = 'Cancel Meeting';
+          msgArea.style.display = 'block';
+          msgArea.style.background = '#F9EBEA'; msgArea.style.color = 'var(--error-color)';
+          msgArea.textContent = err.message;
+        })
+        .cancelB2BMeeting(portalState.sessionToken, eventId, cancelMeetingTarget.meetingId, message);
+    }
+
+    /* ---- Request Meeting ---- */
+
+    var requestMeetingTarget = null; // the Empty itinerary row this modal was opened from
+    var requestMeetingFilter = 'all';
+
+    function openRequestMeetingModal(meeting) {
+      requestMeetingTarget = meeting;
+      requestMeetingFilter = 'all';
+      document.querySelectorAll('#requestMeetingModal .req-chip').forEach(function(chip) { chip.classList.toggle('active', chip.dataset.filter === 'all'); });
+      document.getElementById('requestMeetingSub').textContent = meeting.startTime + '–' + meeting.endTime + ' — showing attendees free at this time';
+      document.getElementById('requestMeetingMsgArea').style.display = 'none';
+      document.getElementById('requestMeetingModal').style.display = 'flex';
+      loadMeetingCandidates();
+    }
+
+    function closeRequestMeetingModal() {
+      document.getElementById('requestMeetingModal').style.display = 'none';
+      requestMeetingTarget = null;
+    }
+
+    function setRequestMeetingFilter(filter) {
+      requestMeetingFilter = filter;
+      document.querySelectorAll('#requestMeetingModal .req-chip').forEach(function(chip) { chip.classList.toggle('active', chip.dataset.filter === filter); });
+      loadMeetingCandidates();
+    }
+
+    function loadMeetingCandidates() {
+      if (!requestMeetingTarget) return;
+      var eventId = portalState.currentEvent.eventId;
+      var list = document.getElementById('requestMeetingList');
+      list.innerHTML = '<p style="color:#5f6368;">Loading…</p>';
+
+      google.script.run
+        .withSuccessHandler(renderMeetingCandidates)
+        .withFailureHandler(function(err) { list.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+        .getB2BMeetingCandidates(portalState.sessionToken, eventId, requestMeetingTarget.appointment, requestMeetingFilter);
+    }
+
+    function renderMeetingCandidates(candidates) {
+      var list = document.getElementById('requestMeetingList');
+      if (!candidates.length) {
+        list.innerHTML = '<p style="color:#5f6368; padding:8px 0;">No one matches this filter with this time slot still free.</p>';
+        return;
+      }
+      list.innerHTML = candidates.map(function(c, i) {
+        return '<div class="subevent-card" style="display:flex; justify-content:space-between; align-items:center; gap:10px;" data-candidate-idx="' + i + '">' +
+          '<div style="min-width:0;">' +
+            '<div class="subevent-card-name">' + escapeHtml(c.companyName || c.email) + '</div>' +
+            '<div class="subevent-card-meta">' + escapeHtml(c.fullName) + (c.membershipCategory ? ' · ' + escapeHtml(c.membershipCategory) : '') + '</div>' +
+            (c.isMyPreference ? '<span class="pref-badge">On your preference list</span>' : '') +
+            (c.isTheirPreference ? '<span class="pref-badge">Has you on their list</span>' : '') +
+          '</div>' +
+          '<button type="button" class="btn-submit" style="padding:8px 14px; font-size:12px; flex-shrink:0;">Request</button>' +
+        '</div>';
+      }).join('');
+      list.querySelectorAll('[data-candidate-idx]').forEach(function(el) {
+        var candidate = candidates[Number(el.dataset.candidateIdx)];
+        el.querySelector('button').addEventListener('click', function() { submitMeetingRequest(candidate); });
+      });
+    }
+
+    function submitMeetingRequest(candidate) {
+      var eventId = portalState.currentEvent.eventId;
+      var msgArea = document.getElementById('requestMeetingMsgArea');
+      msgArea.style.display = 'none';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          closeRequestMeetingModal();
+          loadItineraryModule(); // this slot now shows Reserved on both diaries
+        })
+        .withFailureHandler(function(err) {
+          msgArea.style.display = 'block';
+          msgArea.style.background = '#F9EBEA'; msgArea.style.color = 'var(--error-color)';
+          msgArea.textContent = err.message;
+        })
+        .requestB2BMeeting(portalState.sessionToken, eventId, requestMeetingTarget.appointment, candidate.email);
+    }
+
+    /* ---- Accept / Reject (recipient of a Reserved meeting only) ---- */
+
+    function respondToMeetingRequest(meeting, accept) {
+      if (!accept && !confirm('Reject this meeting request from ' + (meeting.companyName || 'this attendee') + '?')) return;
+      var eventId = portalState.currentEvent.eventId;
+      google.script.run
+        .withSuccessHandler(function() { loadItineraryModule(); })
+        .withFailureHandler(function(err) { alert(err.message); })
+        .respondToB2BMeeting(portalState.sessionToken, eventId, meeting.meetingId, accept);
+    }
+
+    /* ---- Block This Slot (attendee's own Empty slot only) ---- */
+
+    var blockSlotTarget = null;
+
+    function openBlockSlotModal(meeting) {
+      blockSlotTarget = meeting;
+      document.getElementById('blockSlotSub').textContent = meeting.startTime + '–' + meeting.endTime;
+      document.getElementById('blockSlotNoteInput').value = '';
+      document.getElementById('blockSlotMsgArea').style.display = 'none';
+      document.getElementById('blockSlotModal').style.display = 'flex';
+    }
+
+    function closeBlockSlotModal() {
+      document.getElementById('blockSlotModal').style.display = 'none';
+      blockSlotTarget = null;
+    }
+
+    function confirmBlockSlot() {
+      if (!blockSlotTarget) return;
+      var eventId = portalState.currentEvent.eventId;
+      var note = document.getElementById('blockSlotNoteInput').value.trim();
+      var btn = document.getElementById('btnConfirmBlockSlot');
+      var msgArea = document.getElementById('blockSlotMsgArea');
+      btn.disabled = true; btn.textContent = 'Blocking…';
+
+      google.script.run
+        .withSuccessHandler(function() {
+          closeBlockSlotModal();
+          btn.disabled = false; btn.textContent = 'Block Slot';
+          loadItineraryModule();
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = 'Block Slot';
+          msgArea.style.display = 'block';
+          msgArea.style.background = '#F9EBEA'; msgArea.style.color = 'var(--error-color)';
+          msgArea.textContent = err.message;
+        })
+        .blockB2BMeetingSlot(portalState.sessionToken, eventId, blockSlotTarget.appointment, note);
+    }
+
+    function unblockSlot(meeting) {
+      var eventId = portalState.currentEvent.eventId;
+      google.script.run
+        .withSuccessHandler(function() { loadItineraryModule(); })
+        .withFailureHandler(function(err) { alert(err.message); })
+        .unblockB2BMeetingSlot(portalState.sessionToken, eventId, meeting.appointment);
     }
 
     function viewAttendeeCompanyProfile(partnerEmail) {
