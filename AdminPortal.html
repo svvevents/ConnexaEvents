@@ -225,6 +225,16 @@
        price/capacity fallback anymore. */
     .type-config-wrap { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #fbfcfe; }
     .type-config-wrap > label.section-label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+    /* The one config block that matches the currently-chosen Event Type (Exhibition/Curated/B2B) is the
+       thing this form is actually FOR right now — give it real visual weight instead of the same gray
+       box as Milestones/Advanced Settings. Only one of these three is ever visible at a time (see
+       onEventTypeChange), so a static class here needs no JS toggling. */
+    .type-config-wrap.primary { border: 1.5px solid var(--primary-color); background: rgba(28,114,147,0.05); }
+    .type-config-wrap.primary > label.section-label { color: var(--primary-color); }
+    /* Milestones (and, via .advanced-settings below, everything nested in Advanced Settings) are
+       genuinely optional on every event regardless of type — a quiet left-rule instead of a full box
+       says so at a glance, rather than matching the weight of the type config that's actually required. */
+    .type-config-wrap.quiet { border: none; border-left: 2px solid var(--border-color); border-radius: 0; background: none; padding: 4px 0 4px 14px; }
     .type-config-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
     /* Mirrors the gradient default banner attendees see on the My Events card mockup, so this preview never drifts from what actually renders. */
     .event-banner-preview {
@@ -257,15 +267,19 @@
     .options-status.ok { background: rgba(46,125,91,0.1); color: var(--success-color); }
     .options-status.pending { background: #FBF4E6; color: var(--warning-color); }
 
-    /* ---------- Advanced settings accordion (New Event modal) ---------- */
-    .advanced-settings { border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 14px; }
-    .advanced-settings > summary { cursor: pointer; list-style: none; padding: 12px 14px; font-weight: 700; font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    /* ---------- Advanced settings accordion (New Event modal) ----------
+       Everything in here (currency, domains, cover image, Milestones) is
+       optional on every event regardless of type — a top divider instead
+       of a full bordered box keeps it visually quieter than the type
+       config above, which is the one thing this form is actually for. */
+    .advanced-settings { border: none; border-top: 1px solid var(--border-color); border-radius: 0; margin-bottom: 14px; padding-top: 6px; }
+    .advanced-settings > summary { cursor: pointer; list-style: none; padding: 8px 0; font-weight: 700; font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .advanced-settings > summary::-webkit-details-marker { display: none; }
     .advanced-settings > summary::before { content: '\25B8'; display: inline-block; transition: transform .15s ease; font-size: 11px; color: var(--text-muted); }
     .advanced-settings[open] > summary::before { transform: rotate(90deg); }
     .advanced-settings > summary .as-hint { font-weight: 400; font-size: 11.5px; color: var(--text-muted); }
-    .advanced-settings > #eventTopLevelOnlyFields { padding: 0 14px 14px; }
-    .advanced-settings > #milestonesConfigWrap { margin: 0 14px 14px; }
+    .advanced-settings > #eventTopLevelOnlyFields { padding: 4px 0 0; }
+    .advanced-settings > #milestonesConfigWrap { margin: 10px 0 0; }
     /* Settings panel: same remove-button look, not scoped to .type-config-row (used in rows with a different layout — Registration Fields' multi-input row). */
     .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
     .settings-field-row input[type="text"], .settings-field-row select { padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
@@ -775,7 +789,7 @@
 
   <!-- Event / Sub-Event Modal -->
   <div id="eventModal" class="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box wide">
       <span class="modal-close" onclick="closeEventModal()">&times;</span>
       <h3 id="eventModalTitle" style="margin-top:0;">New Event</h3>
       <div id="eventModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
@@ -783,9 +797,20 @@
       <input type="hidden" id="eventIdField">
       <input type="hidden" id="parentEventIdField">
 
-      <div class="form-group">
-        <label for="eventNameField">Event Name *</label>
-        <input type="text" id="eventNameField" placeholder="e.g. Annual Convention">
+      <div class="form-row">
+        <div class="form-group" style="flex:2;">
+          <label for="eventNameField">Event Name *</label>
+          <input type="text" id="eventNameField" placeholder="e.g. Annual Convention">
+        </div>
+        <div class="form-group">
+          <label for="eventStatusField">Status</label>
+          <select id="eventStatusField">
+            <option value="Draft">Draft</option>
+            <option value="Live">Live</option>
+            <option value="Closed">Closed</option>
+            <option value="Deleted">Deleted</option>
+          </select>
+        </div>
       </div>
       <div class="form-group">
         <label for="eventDescField">Description</label>
@@ -800,23 +825,14 @@
           <label for="eventTimeField">Event Time</label>
           <input type="time" id="eventTimeField">
         </div>
-      </div>
-      <div class="form-group">
-        <label for="eventLocationField">Location</label>
-        <input type="text" id="eventLocationField">
+        <div class="form-group" style="flex:2;">
+          <label for="eventLocationField">Location</label>
+          <input type="text" id="eventLocationField">
+        </div>
       </div>
       <div class="form-group">
         <label for="eventWebsiteField">Website</label>
         <input type="text" id="eventWebsiteField">
-      </div>
-      <div class="form-group">
-        <label for="eventStatusField">Status</label>
-        <select id="eventStatusField">
-          <option value="Draft">Draft</option>
-          <option value="Live">Live</option>
-          <option value="Closed">Closed</option>
-          <option value="Deleted">Deleted</option>
-        </select>
       </div>
 
       <div id="eventTypeFields">
@@ -879,7 +895,7 @@
         </div>
         <div id="eventTypeRegTypesHint" style="font-size:12px; color:#5f6368; margin-bottom:14px;"></div>
 
-        <div id="exhibitionConfigWrap" class="type-config-wrap" style="display:none;">
+        <div id="exhibitionConfigWrap" class="type-config-wrap primary" style="display:none;">
           <label class="section-label">Exhibition Floor Plan</label>
           <p class="type-config-hint">
             Booths, amenities, and landmarks are laid out visually in the Floor Plan Designer — attendees rank up to 3
@@ -920,7 +936,7 @@
           <button type="button" class="add-row-btn" onclick="addExhibitionAssetTypeRow()">+ Add Asset Type</button>
         </div>
 
-        <div id="curatedEventConfigWrap" class="type-config-wrap" style="display:none;">
+        <div id="curatedEventConfigWrap" class="type-config-wrap primary" style="display:none;">
           <label class="section-label">Curated Event Options *</label>
           <p class="type-config-hint">
             Give attendees a choice of options (e.g. different tour times or add-ons), each with its own Price
@@ -938,7 +954,7 @@
           </div>
         </div>
 
-        <div id="b2bMeetingsConfigWrap" class="type-config-wrap" style="display:none;">
+        <div id="b2bMeetingsConfigWrap" class="type-config-wrap primary" style="display:none;">
           <label class="section-label">B2B Pre-scheduled Meetings Options *</label>
           <p class="type-config-hint">
             Give attendees a single choice of Registration Types (sourced from the ClientOnboarding tab for "B2B
@@ -1024,7 +1040,7 @@
         </div>
       </div>
 
-      <div id="milestonesConfigWrap" class="type-config-wrap">
+      <div id="milestonesConfigWrap" class="type-config-wrap quiet">
         <label class="section-label">Milestones</label>
         <p class="type-config-hint">
           Tasks attendees must complete by a due date for this event/sub-event (e.g. upload artwork, confirm company
@@ -2957,7 +2973,7 @@
       typeOptionsHtml += '<option value="' + MILESTONE_TYPE_SET_PREFERENCES + '"' + (milestoneType === MILESTONE_TYPE_SET_PREFERENCES ? ' selected' : '') + '>Set preferences</option>';
     }
     row.innerHTML =
-      '<input type="text" class="ms-title" placeholder="Milestone title" value="' + escapeHtml(existing ? existing.title : '') + '">' +
+      '<input type="text" class="ms-title" placeholder="Milestone title" style="flex:1.4;" value="' + escapeHtml(existing ? existing.title : '') + '">' +
       '<input type="text" class="ms-desc" placeholder="Description (optional)" style="flex:2;" value="' + escapeHtml(existing ? (existing.description || '') : '') + '">' +
       '<input type="date" class="ms-due" style="max-width:150px;" value="' + escapeHtml(existing ? (existing.dueDate || '') : '') + '">' +
       '<select class="ms-type" style="max-width:170px;">' + typeOptionsHtml + '</select>' +
