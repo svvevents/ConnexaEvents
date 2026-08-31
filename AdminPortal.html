@@ -247,7 +247,9 @@
     .type-card .tc-blurb { font-size: 11.5px; color: var(--text-muted); margin: 4px 0 0; }
     .type-card.disabled { cursor: not-allowed; opacity: 0.55; }
     .type-card.disabled:hover { border-color: var(--border-color); }
-    .type-card-empty-hint { font-size: 11px; color: var(--warning-color); margin: 6px 0 0; }
+    .type-card-empty-hint { font-size: 11px; color: var(--warning-color); margin: 6px 0 4px; }
+    .tc-create-btn { background: none; border: 1px solid var(--primary-color); color: var(--primary-color); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .tc-create-btn:hover { background: rgba(28,114,147,0.08); }
     @media (max-width: 480px) { .type-card-grid { grid-template-columns: 1fr; } }
 
     /* ---------- Live "at least one priced option" checklist (Curated Event / B2B Meetings) ---------- */
@@ -839,6 +841,34 @@
           <select id="typeNameField" onchange="onTypeNameFieldChange_()"></select>
         </div>
 
+        <!-- Inline "create this Event Type" — opened from a disabled category card's "+ Create this type"
+             button (see renderTypeCategoryPicker_) when nothing configured yet matches that category, so
+             an admin isn't sent away to Settings mid-flow just to unblock one field here. -->
+        <div id="typeCreateInline" class="type-config-wrap" style="display:none;">
+          <label class="section-label" id="typeCreateInlineTitle">Create Event Type</label>
+          <p class="type-config-hint">
+            This becomes a reusable Event Type for this Umbrella. You can add more Registration Types, or
+            fine-tune this one, anytime from Settings &rarr; Event Types.
+          </p>
+          <div class="form-group">
+            <label for="typeCreateNameField">Event Type name</label>
+            <input type="text" id="typeCreateNameField" placeholder="e.g. Exhibition">
+          </div>
+          <div class="form-group">
+            <label>First Registration Type</label>
+            <div class="type-config-row">
+              <input type="text" id="typeCreateRegLabel" class="opt-label" placeholder="e.g. General Admission">
+              <input type="number" id="typeCreateRegPrice" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;">
+              <input type="text" id="typeCreateRegCapacity" class="opt-places" placeholder="Capacity (blank = unlimited)" style="max-width:170px;">
+            </div>
+          </div>
+          <div id="typeCreateMsg" style="display:none; padding:8px 10px; border-radius:6px; font-size:12px; margin-bottom:10px;"></div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn" id="btnSubmitTypeCreateInline" onclick="submitTypeCreateInline_(this)">Create Event Type</button>
+            <button type="button" class="btn secondary" onclick="cancelTypeCreateInline_()">Cancel</button>
+          </div>
+        </div>
+
         <!-- The real field every save/read function already uses — kept as the single source of truth,
              just no longer shown directly (see renderTypeCategoryPicker_/setEventType_). -->
         <div class="form-group" style="display:none;">
@@ -1238,6 +1268,13 @@
   }
   var onboardingData = {};
   var eventTypeOptions = { topLevelTypes: [], subEventTypes: [] };
+  // The New Event modal's own onboarding scope (parent Umbrella's id, or
+  // an existing top-level event's own id) — set alongside `scopeId` in
+  // openEventModal, read by submitTypeCreateInline_ so the inline "create
+  // this Event Type" flow calls saveClientOnboardingType against the same
+  // scope the modal's own dropdowns were loaded from, independent of
+  // whatever Umbrella the separate Settings panel currently has selected.
+  var currentModalScopeId_ = '';
   // Client-side cache of getEventDashboardData results, keyed by eventId:
   // { data, fetchedAt, pending }. Prefetched in the background as soon as
   // the executive summary lists which events exist (see
@@ -1867,6 +1904,7 @@
   function renderTypeCategoryPicker_(isSubEvent, isBrandNewTopLevel) {
     document.getElementById('newUmbrellaExplainer').style.display = isBrandNewTopLevel ? 'block' : 'none';
     document.getElementById('typeCategoryPicker').style.display = isBrandNewTopLevel ? 'none' : 'block';
+    cancelTypeCreateInline_();
     if (isBrandNewTopLevel) { document.getElementById('typeNamePicker').style.display = 'none'; return; }
 
     var currentType = document.getElementById('eventTypeField').value;
@@ -1883,8 +1921,14 @@
       card.className = 'type-card' + (isCurrent ? ' sel' : '') + (candidates.length ? '' : ' disabled');
       card.dataset.catKey = d.key;
       card.innerHTML = '<div class="tc-label">' + escapeHtml(d.label) + '</div><p class="tc-blurb">' + escapeHtml(d.blurb) + '</p>' +
-        (candidates.length ? '' : '<p class="type-card-empty-hint">Not set up yet for this event — add one in Settings &rarr; Event Types.</p>');
-      if (candidates.length) card.addEventListener('click', function() { selectTypeCategory_(d, isSubEvent); });
+        (candidates.length ? '' :
+          '<p class="type-card-empty-hint">Not set up yet for this event.</p>' +
+          '<button type="button" class="tc-create-btn">+ Create this type</button>');
+      if (candidates.length) {
+        card.addEventListener('click', function() { selectTypeCategory_(d, isSubEvent); });
+      } else {
+        card.querySelector('.tc-create-btn').addEventListener('click', function(e) { e.stopPropagation(); openTypeCreateInline_(d, isSubEvent); });
+      }
       cardsEl.appendChild(card);
     });
 
@@ -1926,6 +1970,99 @@
   function setEventType_(type) {
     document.getElementById('eventTypeField').value = type;
     onEventTypeChange();
+  }
+
+  var typeCreateCtx_ = null; // { def, isSubEvent } while the inline "create this Event Type" panel is open — null otherwise
+
+  /** Sensible starting values per category so the admin usually only has to glance at/adjust rather than type from nothing; both remain freely editable before Create. */
+  function typeCreateDefaults_(catKey) {
+    return {
+      standard: { name: 'Standard Registration', reg: 'General Admission' },
+      ranked: { name: 'Curated Event', reg: 'Attendee' },
+      exhibition: { name: 'Exhibition', reg: 'Booth' },
+      b2b: { name: 'B2B Pre-scheduled Meetings', reg: 'Attendee' }
+    }[catKey] || { name: '', reg: 'General Admission' };
+  }
+
+  /** Opened by a disabled category card's "+ Create this type" button (see renderTypeCategoryPicker_). Only ever reached for a real (non-fixed) category — Umbrella always has exactly one candidate and is never disabled. */
+  function openTypeCreateInline_(def, isSubEvent) {
+    typeCreateCtx_ = { def: def, isSubEvent: isSubEvent };
+    var defaults = typeCreateDefaults_(def.key);
+    document.getElementById('typeCreateInlineTitle').textContent = 'Create "' + def.label + '" Event Type';
+    document.getElementById('typeCreateNameField').value = defaults.name;
+    document.getElementById('typeCreateRegLabel').value = defaults.reg;
+    document.getElementById('typeCreateRegPrice').value = '';
+    document.getElementById('typeCreateRegCapacity').value = '';
+    document.getElementById('typeCreateMsg').style.display = 'none';
+    document.getElementById('typeCreateInline').style.display = 'block';
+    document.getElementById('typeCreateInline').scrollIntoView({ block: 'nearest' });
+  }
+
+  function cancelTypeCreateInline_() {
+    typeCreateCtx_ = null;
+    document.getElementById('typeCreateInline').style.display = 'none';
+  }
+
+  function showTypeCreateMsg_(text, isError) {
+    var el = document.getElementById('typeCreateMsg');
+    el.style.background = isError ? '#F9EBEA' : '#EAF2EF';
+    el.style.color = isError ? 'var(--error-color)' : 'var(--success-color)';
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  /**
+   * Creates a new admin-configured Event Type without leaving the New
+   * Event form — same saveClientOnboardingType RPC Settings' own Event
+   * Types tab uses (see saveOnboardingTypeBlock), just scoped to THIS
+   * modal's own Umbrella (currentModalScopeId_) and pre-filled with the
+   * category the admin clicked from rather than asking them to pick
+   * B2B/Exhibition/Curated Event flags a second time. Deliberately quick
+   * to fill (one Registration Type, no schedule/disable/hide controls —
+   * those stay a Settings-only refinement, editable anytime afterward).
+   */
+  function submitTypeCreateInline_(btnEl) {
+    var name = document.getElementById('typeCreateNameField').value.trim();
+    var regLabel = document.getElementById('typeCreateRegLabel').value.trim();
+    if (!name) { showTypeCreateMsg_('Event Type name is required.', true); return; }
+    if (!regLabel) { showTypeCreateMsg_('A Registration Type name is required (e.g. "General Admission").', true); return; }
+    if (!typeCreateCtx_) return;
+
+    var def = typeCreateCtx_.def;
+    var isSubEvent = typeCreateCtx_.isSubEvent;
+    var payload = {
+      isB2B: def.key === 'b2b',
+      isExhibition: def.key === 'exhibition',
+      isCuratedEvent: def.key === 'ranked',
+      registrationTypes: [{
+        label: regLabel,
+        price: parseFloat(document.getElementById('typeCreateRegPrice').value) || 0,
+        capacity: document.getElementById('typeCreateRegCapacity').value.trim(),
+        disabled: false, hidden: false, availableFrom: '', availableUntil: ''
+      }]
+    };
+
+    btnEl.disabled = true; btnEl.textContent = 'Creating…';
+    google.script.run
+      .withSuccessHandler(function() {
+        loadOnboardingData(currentModalScopeId_, function() {
+          btnEl.disabled = false; btnEl.textContent = 'Create Event Type';
+          cancelTypeCreateInline_();
+          // Rebuild the hidden <select>'s <option> list from the just-refreshed
+          // eventTypeOptions BEFORE anything tries to set its value to the type
+          // just created — a <select> silently ignores .value = 'x' when no
+          // matching <option> exists yet, which is exactly the stale state
+          // right after this RPC call.
+          populateEventTypeDropdown(isSubEvent, false);
+          renderTypeCategoryPicker_(isSubEvent, false);
+          selectTypeCategory_(def, isSubEvent); // the type just created is now (typically the only) candidate in this category
+        });
+      })
+      .withFailureHandler(function(err) {
+        btnEl.disabled = false; btnEl.textContent = 'Create Event Type';
+        showTypeCreateMsg_(err.message, true);
+      })
+      .saveClientOnboardingType(ADMIN_TOKEN, currentModalScopeId_, name, payload);
   }
 
   /* ================= MY EVENTS ================= */
@@ -2322,6 +2459,7 @@
     var scopeId = isSubEvent
       ? (parentEvent ? parentEvent.eventId : existingEvent.parentEventId)
       : (existingEvent ? existingEvent.eventId : '');
+    currentModalScopeId_ = scopeId;
     var isBrandNewTopLevel = !existingEvent && !isSubEvent;
 
     var finishOpen = function() {
