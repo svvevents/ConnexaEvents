@@ -434,9 +434,14 @@
     .profile-confirm-banner .btn-secondary { flex-shrink: 0; white-space: nowrap; }
     .reg-cart-wrap { background: var(--bg-color); border: 1px solid #eee; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; }
     .reg-cart-wrap h4 { margin: 0 0 10px; font-size: 13px; color: var(--text-muted); }
-    .reg-cart-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f1f3f4; }
+    .reg-cart-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f1f3f4; gap: 10px; }
     .reg-cart-row:last-child { border-bottom: none; }
+    .reg-cart-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reg-cart-actions { display: flex; gap: 12px; flex-shrink: 0; }
+    .reg-cart-edit, .reg-cart-duplicate { color: var(--primary-color); cursor: pointer; font-size: 12px; text-decoration: underline; white-space: nowrap; }
     .reg-cart-remove { color: var(--error-color); cursor: pointer; font-size: 12px; text-decoration: underline; }
+    .reg-lookup-note { font-size: 12px; color: var(--success-color); background: rgba(46,125,91,0.08); border-radius: 6px; padding: 8px 10px; margin: -8px 0 14px; }
+    .reg-lookup-clear { margin-left: 6px; color: var(--text-muted); text-decoration: underline; cursor: pointer; }
     .reg-actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
     .reg-actions .btn-secondary { background: #eef1f5; color: var(--text-dark); border: none; padding: 10px 20px; font-size: 14px; font-weight: 700; border-radius: 8px; cursor: pointer; }
 
@@ -3007,7 +3012,7 @@
       html += '<div id="regAttendeeFields"></div>';
       html += '<div class="reg-actions">' +
         '<button type="button" class="btn-secondary" id="btnAddAttendee">+ Register Additional Attendee</button>' +
-        '<button type="button" class="btn-submit" id="btnCompleteRegistration">Complete Registration</button>' +
+        '<button type="button" class="btn-submit" id="btnCompleteRegistration">Review &amp; Register</button>' +
       '</div>';
       body.innerHTML = html;
 
@@ -3051,6 +3056,7 @@
           '<div class="form-group"><label for="regAttSurname">Surname *</label><input type="text" id="regAttSurname" placeholder="e.g. Doe"></div>' +
         '</div>' +
         '<div class="form-group"><label for="regAttEmail">Email *</label><input type="email" id="regAttEmail" placeholder="e.g. you@company.com" aria-describedby="regAttEmailHelp"><small id="regAttEmailHelp" class="field-help">We\'ll reuse their job title, company and other details automatically if they\'ve registered before</small></div>' +
+        '<div id="regLookupNote" class="reg-lookup-note" style="display:none;"></div>' +
       '</div>';
 
       if (formDef.registrationTypes && formDef.registrationTypes.length && !b2bUsesRankedOptions) {
@@ -3495,6 +3501,36 @@
         membershipCategory: info.membershipCategory || '',
         website: info.website || ''
       };
+
+      // Previously silent — the help text under Email promises this
+      // happens, but nothing on screen ever confirmed it did, or gave a
+      // way to undo it if it matched the wrong person. See "Polish the
+      // Finish Line" in the registration UX audit.
+      var noteEl = document.getElementById('regLookupNote');
+      if (noteEl) {
+        if (info.exists && (info.firstName || info.surname)) {
+          var name = (info.firstName + ' ' + info.surname).trim();
+          noteEl.innerHTML = '&#10003; Found existing details for ' + escapeHtml(name) + ' — filled in automatically. ' +
+            '<span class="reg-lookup-clear" id="regLookupClear">Not them? Clear</span>';
+          noteEl.style.display = 'block';
+          document.getElementById('regLookupClear').addEventListener('click', clearLookupMatch_);
+        } else {
+          noteEl.style.display = 'none';
+          noteEl.innerHTML = '';
+        }
+      }
+    }
+
+    /** "Not them? Clear" — undoes applyLookupToFields' autofill without touching the email the attendee already typed, since the point is "this matched the wrong person," not "I mistyped the address." */
+    function clearLookupMatch_() {
+      currentAttendeeLookup = { exists: false, domain: '' };
+      currentAttendeeDeferredInfo = {};
+      document.getElementById('regAttFirstName').value = '';
+      document.getElementById('regAttSurname').value = '';
+      document.getElementById('regAttFirstName').focus();
+      var noteEl = document.getElementById('regLookupNote');
+      noteEl.style.display = 'none';
+      noteEl.innerHTML = '';
     }
 
     function showRegFormError(text) {
@@ -3619,7 +3655,14 @@
       regCart.attendees.forEach(function(a, idx) {
         var row = document.createElement('div');
         row.className = 'reg-cart-row';
-        row.innerHTML = '<span>' + escapeHtml(a.fullName) + ' (' + escapeHtml(a.email) + ')</span><button type="button" class="reg-cart-remove text-link-btn">Remove</button>';
+        row.innerHTML = '<span>' + escapeHtml(a.fullName) + ' (' + escapeHtml(a.email) + ')</span>' +
+          '<span class="reg-cart-actions">' +
+            '<button type="button" class="reg-cart-edit text-link-btn">Edit</button>' +
+            '<button type="button" class="reg-cart-duplicate text-link-btn">Duplicate</button>' +
+            '<button type="button" class="reg-cart-remove text-link-btn">Remove</button>' +
+          '</span>';
+        row.querySelector('.reg-cart-edit').addEventListener('click', function() { editCartAttendee(idx); });
+        row.querySelector('.reg-cart-duplicate').addEventListener('click', function() { duplicateCartAttendee(idx); });
         row.querySelector('.reg-cart-remove').addEventListener('click', function() {
           regCart.attendees.splice(idx, 1);
           renderCartList();
@@ -3627,6 +3670,111 @@
         });
         list.appendChild(row);
       });
+    }
+
+    /** Minimal CSS.escape polyfill-of-sorts for building an attribute-value selector safely — every id this is used with (subEventId, extra-field fieldName) is server-provided, but this avoids assuming that stays true forever. */
+    function cssAttrEscape_(s) {
+      return String(s).replace(/["\\]/g, '\\$&');
+    }
+
+    /**
+     * Rebuilds the in-progress form's selections (sub-event opt-ins,
+     * ranked options, per-entity Registration Type, extra-field answers)
+     * from a previously-saved attendee — shared by editCartAttendee
+     * (which also prefills Name/Email and removes the attendee from the
+     * cart first) and duplicateCartAttendee (which leaves Name/Email
+     * blank so the next person just needs those two fields).
+     *
+     * renderAttendeeFields('') resets attendeeOptIns/attendeeRankState/
+     * attendeeRegTypeSelections as one of its first steps. For an
+     * Umbrella event that's fine here, since each sub-event's own panel
+     * renders lazily off its checkbox's change event — strictly AFTER
+     * this function sets state below. A standalone event's own ranked
+     * panel (Exhibition, or Curated/B2B with options) renders eagerly
+     * INSIDE renderAttendeeFields itself, before this function gets a
+     * chance to set anything, so that branch re-invokes its own panel
+     * renderer a second time once state is actually in place.
+     */
+    function applyAttendeeSelectionsToForm_(attendee) {
+      renderAttendeeFields('');
+      var formDef = regCart.formDef;
+
+      (attendee.subEventSelections || []).forEach(function(sel) {
+        if (!formDef.isUmbrella) return;
+        var cb = document.querySelector('.subevent-optin-cb[data-subevent="' + cssAttrEscape_(sel.subEventId) + '"]');
+        if (!cb) return;
+        if (sel.rankedOptionIds) attendeeRankState[sel.subEventId] = sel.rankedOptionIds.slice();
+        if (sel.registrationType) attendeeRegTypeSelections[sel.subEventId] = sel.registrationType;
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change'));
+        // readCurrentAttendeeForm reads attendeeRegTypeSelections (set
+        // above) regardless of what this <select> visually shows, but
+        // leaving it on "-- Select --" would make a correctly-restored
+        // edit look wrong on screen.
+        if (sel.registrationType) {
+          var regSel = document.querySelector('select[data-regtype-for="' + cssAttrEscape_(sel.subEventId) + '"]');
+          if (regSel) regSel.value = sel.registrationType;
+        }
+        // Extra-field answers have no state variable at all — readCurrentAttendeeForm
+        // reads them straight off the DOM at submit time — so they can only be restored here.
+        Object.keys(sel.extraFields || {}).forEach(function(fieldName) {
+          var el = document.querySelector('[data-subgroup="' + cssAttrEscape_(sel.subEventId) + '"][data-subextra="' + cssAttrEscape_(fieldName) + '"]');
+          if (el) el.value = sel.extraFields[fieldName];
+        });
+      });
+
+      if (!formDef.isUmbrella) {
+        var standaloneSel = (attendee.subEventSelections || [])[0];
+        if (standaloneSel && standaloneSel.rankedOptionIds) {
+          attendeeRankState[STANDALONE_KEY] = standaloneSel.rankedOptionIds.slice();
+          var panelEl = document.getElementById('standaloneTypePanel');
+          if (panelEl && formDef.isExhibition) {
+            renderExhibitionPanel(panelEl, formDef.exhibitionTables || [], formDef.exhibitionDecor || [], STANDALONE_KEY, '', formDef.currency, formDef.canvasWidth, formDef.canvasHeight);
+          } else if (panelEl) {
+            renderCuratedOptionsPanel(panelEl, formDef.curatedEventOptions, STANDALONE_KEY, '', formDef.isB2B ? 1 : (formDef.maxOptionsPerAttendee != null ? formDef.maxOptionsPerAttendee : Infinity));
+          }
+        }
+      }
+
+      var regTypeEl = document.getElementById('regAttType');
+      if (regTypeEl && attendee.registrationType) regTypeEl.value = attendee.registrationType;
+
+      Object.keys(attendee.extraFields || {}).forEach(function(fieldName) {
+        var el = document.querySelector('#regAttendeeFields [data-extra="' + cssAttrEscape_(fieldName) + '"]');
+        if (el) el.value = attendee.extraFields[fieldName];
+      });
+
+      renderOrderSummary();
+    }
+
+    /** Reopens an already-added attendee for correction — removes them from the cart first, so the existing "+ Register Additional Attendee" / "Review & Register" actions naturally save the edit back (or include it) without needing a separate "Save changes" button. */
+    function editCartAttendee(idx) {
+      var attendee = regCart.attendees[idx];
+      if (!attendee) return;
+      regCart.attendees.splice(idx, 1);
+      renderCartList();
+      applyAttendeeSelectionsToForm_(attendee);
+
+      document.getElementById('regAttFirstName').value = attendee.firstName;
+      document.getElementById('regAttSurname').value = attendee.surname;
+      document.getElementById('regAttEmail').value = attendee.email;
+      currentAttendeeDeferredInfo = {
+        jobTitle: attendee.jobTitle, mobile: attendee.mobile, linkedIn: attendee.linkedIn,
+        dietaryRequirements: attendee.dietaryRequirements, dietaryOther: attendee.dietaryOther,
+        companyName: attendee.companyData.companyName, companyDescription: attendee.companyData.companyDescription,
+        membershipType: attendee.companyData.membershipType, membershipCategory: attendee.companyData.membershipCategory,
+        website: attendee.companyData.website
+      };
+      currentAttendeeLookup = { exists: !attendee.wasNewCompany, domain: attendee.companyData.domain || '' };
+      document.getElementById('regAttFirstName').focus();
+    }
+
+    /** Copies one attendee's session/option choices into a fresh form for the next person — the common case of a team registering together for identical sessions — without touching Name/Email, which the next attendee still needs to enter themselves. */
+    function duplicateCartAttendee(idx) {
+      var attendee = regCart.attendees[idx];
+      if (!attendee) return;
+      applyAttendeeSelectionsToForm_(attendee);
+      document.getElementById('regAttFirstName').focus();
     }
 
     function handleAddAttendee() {
@@ -3870,7 +4018,7 @@
       html += '<div id="checkoutMsg" style="display:none;"></div>';
       html += '<div class="reg-actions">' +
         '<button type="button" class="btn-secondary" id="btnBackToEdit">Back to Edit</button>' +
-        '<button type="button" class="btn-submit" id="btnConfirmCheckout">Confirm &amp; Submit</button>' +
+        '<button type="button" class="btn-submit" id="btnConfirmCheckout">Confirm Registration</button>' +
       '</div>';
 
       body.innerHTML = html;
@@ -3919,13 +4067,21 @@
           }
 
           html += renderRegistrationSummaryHtml(res.registrationSummary || []);
+          // Was setTimeout(collapseRegisterExpand, 4000) — the receipt
+          // above is the only record an attendee gets of what was just
+          // submitted (allocation results, waiting-list status, the
+          // total due), so it stayed only as long as a fixed timer
+          // allowed rather than until the attendee was actually done
+          // reading it. See "Polish the Finish Line" in the registration
+          // UX audit.
+          html += '<div class="reg-actions"><button type="button" class="btn-submit" id="btnRegistrationDone">Done</button></div>';
 
           closeCheckoutConfirmModal();
           document.getElementById('expandBody').innerHTML = html;
+          document.getElementById('btnRegistrationDone').addEventListener('click', collapseRegisterExpand);
 
           renderMyEventsGrid();
           renderRegisterGrid();
-          setTimeout(collapseRegisterExpand, 4000);
         })
         .withFailureHandler(function(err) {
           btn.disabled = false;
