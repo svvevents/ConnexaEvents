@@ -10,19 +10,19 @@
   <script src="https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js"></script>
   <style>
     :root {
-      --primary-color: <?!= branding.primaryColor ?>;
-      --navy-color: <?!= branding.navyColor ?>;
-      --accent-color: <?!= branding.accentColor ?>;
-      --mint-color: <?!= branding.mintColor ?>;
-      --bg-color: <?!= branding.pageBgColor ?>;
-      --font-family: <?!= branding.fontFamily ?>;
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --accent-color: #D98E04;
+      --mint-color: #22D3C5;
+      --bg-color: #F4F6F8;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --text-dark: var(--navy-color);
-      --text-muted: <?!= branding.mutedTextColor ?>;
+      --text-muted: #5B6472;
       --border-color: #dfe3ea;
-      --success-color: <?!= branding.successColor ?>;
-      --warning-color: <?!= branding.warningColor ?>;
-      --error-color: <?!= branding.errorColor ?>;
-      --category-tag-color: <?!= branding.categoryTagColor ?>;
+      --success-color: #2E7D5B;
+      --warning-color: #D98E04;
+      --error-color: #C0392B;
+      --category-tag-color: #6C4FA0;
     }
     * { box-sizing: border-box; }
     body { font-family: var(--font-family); margin: 0; padding: 0; background: var(--bg-color); color: var(--text-dark); -webkit-font-smoothing: antialiased; }
@@ -143,6 +143,9 @@
       line-height: 16px; padding: 0; font-weight: 800;
     }
 
+    /* Drag-to-select box, drawn while the admin drags across empty canvas space (see initCanvasMarquee_) */
+    .fp-marquee { position: absolute; border: 1px dashed var(--primary-color); background: rgba(28,114,147,0.10); pointer-events: none; z-index: 20; }
+
     /* Booth: default element look (plain, neutral) */
     .fp-type-booth { background: #55606e; }
 
@@ -166,26 +169,63 @@
     }
   </style>
 
-  <?!= include('SharedStyles'); ?>
+  <!-- Phase 07 Stage C: SharedStyles.html inlined, same as Portal.html/AdminPortal.html -- keep in sync by hand. -->
+  <style>
+    .tile, .kpi-card, .section, .event-card, .modal-box, .fp-toolbar, .fp-picker-box,
+    .mini-event-card, .event-tile, .subevent-card {
+      box-shadow: 0 1px 2px rgba(27,42,74,0.05), 0 6px 18px rgba(27,42,74,0.045);
+    }
+    .icon-badge {
+      width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1;
+    }
+    .icon-badge.tint-primary { background: color-mix(in srgb, var(--primary-color) 14%, transparent); color: var(--primary-color); }
+    .icon-badge.tint-mint    { background: color-mix(in srgb, var(--mint-color) 18%, transparent); color: var(--mint-color); }
+    .icon-badge.tint-gold    { background: color-mix(in srgb, var(--accent-color) 16%, transparent); color: var(--accent-color); }
+    .icon-badge.tint-success { background: color-mix(in srgb, var(--success-color) 16%, transparent); color: var(--success-color); }
+    .icon-badge.tint-navy    { background: color-mix(in srgb, var(--navy-color) 10%, transparent); color: var(--navy-color); }
+    .tile.tile-v2 { display: flex; align-items: center; gap: 12px; text-align: left; }
+    .tile.tile-v2 .tile-v2-body { min-width: 0; }
+    .tile.tile-v2 .val { line-height: 1.15; }
+    .tag.live::before, .tag.draft::before, .tag.closed::before {
+      content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      margin-right: 5px; vertical-align: middle; background: currentColor;
+    }
+    .ev-type-icon {
+      width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; margin-right: 4px;
+      background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color);
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    .donut-wrap { display: flex; align-items: center; gap: 16px; }
+    .donut-wrap svg { flex-shrink: 0; }
+    .donut-legend { display: flex; flex-direction: column; gap: 6px; }
+    .donut-legend .legend-item { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dark); }
+    .donut-legend .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  </style>
+
+  <!-- Phase 07 Stage C: Supabase client + shim, same precedent as Portal.html/AdminPortal.html. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="supabase-shim.js"></script>
 </head>
 <body>
 
-<? if (!adminEmail) { ?>
-  <div class="session-expired">
-    <div class="session-expired-box">
-      <h2>Session Expired</h2>
-      <p>Your admin session could not be verified or has expired.</p>
-      <a href="<?= portalUrl ?>">&larr; Return to login</a>
-    </div>
+<!-- Phase 07: adminEmail was server-templated; both screens are always in
+     the DOM now, checkAdminSession_ (bottom script block) shows exactly
+     one based on a real supabaseClient.auth.getSession() check. -->
+<div class="session-expired" id="sessionExpiredScreen" style="display:none;">
+  <div class="session-expired-box">
+    <h2>Session Expired</h2>
+    <p>Your admin session could not be verified or has expired.</p>
+    <a href="Portal.html">&larr; Return to login</a>
   </div>
-<? } else { ?>
+</div>
 
-  <div class="admin-screen">
+  <div class="admin-screen" id="adminScreen" style="display:none;">
     <div class="admin-header">
       <h1>Exhibition Floor Plan Builder</h1>
       <div class="who">
-        <?= adminEmail ?>
-        <a class="exit-link" href="<?= portalUrl ?>?admin=1&token=<?= token ?>">&larr; Back to Admin Portal</a>
+        <span id="shellAdminEmail"></span>
+        <a class="exit-link" href="AdminPortal.html">&larr; Back to Admin Portal</a>
       </div>
     </div>
 
@@ -217,8 +257,8 @@
             <button type="button" class="btn secondary" onclick="toggleFpDropdown('decor')">+ Decorations ▾</button>
             <div class="fp-dropdown-menu" id="decorMenu"></div>
           </div>
-          <button type="button" class="btn secondary" id="btnCopyElement" onclick="copySelectedElement()" disabled title="Select an element first">Copy</button>
-          <button type="button" class="btn secondary" id="btnPasteElement" onclick="pasteClipboardElement()" disabled title="Copy an element first">Paste</button>
+          <button type="button" class="btn secondary" id="btnCopyElement" onclick="copySelectedElements()" disabled title="Select one or more elements first">Copy</button>
+          <button type="button" class="btn secondary" id="btnPasteElement" onclick="pasteClipboardElements()" disabled title="Copy something first">Paste</button>
           <button type="button" class="btn secondary" onclick="openSeatGenModal()">⊞ Generate Seats</button>
           <button class="btn" id="btnSaveLayout" onclick="saveLayout()">Save Layout</button>
         </div>
@@ -267,15 +307,27 @@
     </div>
   </div>
 
-<? } ?>
-
 <script>
-  // JSON.stringify (server-side), not the HTML-escaped print scriptlet —
-  // INITIAL_EVENT_ID in particular is an unvalidated URL param at render
-  // time (see the same note in AdminResetPassword.html).
-  var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
-  var INITIAL_EVENT_ID = <?!= JSON.stringify(eventId) ?>;
-  var PORTAL_URL = <?!= JSON.stringify(portalUrl) ?>;
+  // Phase 07: ADMIN_TOKEN is a vestigial positional arg every shim FN_MAP
+  // entry ignores, same as AdminPortal.html. INITIAL_EVENT_ID now reads
+  // straight off the real URL query param instead of a server-templated
+  // value.
+  var ADMIN_TOKEN = null;
+  var INITIAL_EVENT_ID = new URLSearchParams(window.location.search).get('eventId') || '';
+  var PORTAL_URL = 'Portal.html';
+
+  function checkAdminSession_() {
+    supabaseClient.auth.getSession().then(function (sessionRes) {
+      var session = sessionRes && sessionRes.data && sessionRes.data.session;
+      if (!session) {
+        document.getElementById('sessionExpiredScreen').style.display = 'flex';
+        return;
+      }
+      document.getElementById('shellAdminEmail').textContent = session.user.email;
+      document.getElementById('adminScreen').style.display = 'flex';
+      initFloorPlanPage_();
+    });
+  }
 
   // Mirrors the backend's FLOORPLAN_CANVAS_WIDTH / HEIGHT / GRID_SIZE
   // constants (Code.gs) — the server re-validates and re-snaps everything
@@ -284,6 +336,10 @@
   var CANVAS_WIDTH = 800;
   var CANVAS_HEIGHT = 600;
   var GRID_SIZE = 20;
+  // Small separation between a freshly-added element and the one it's
+  // placed below (see addElementFromSpec) — one grid step keeps it exact
+  // and visually distinct without wasting canvas space.
+  var NEW_ELEMENT_GAP = GRID_SIZE;
   var CURRENT_FLOORPLAN_SIZE_KEY = 'small';
   // Mirrors the backend's FLOORPLAN_SIZES (Code.gs) — used only to name the
   // current/needed size in the Generate Seats overflow message and to offer
@@ -300,7 +356,7 @@
   // getFloorPlanCanvasSize_ in Code.gs), so the caption's leading
   // "W × H canvas" text is built from CANVAS_WIDTH/CANVAS_HEIGHT once
   // loaded, rather than hardcoded — this suffix is the fixed part.
-  var FP_CANVAS_CAPTION_SUFFIX = 'snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove · click an element to select it, then Copy/Paste (or Ctrl+C / Ctrl+V) to duplicate it with its current size.';
+  var FP_CANVAS_CAPTION_SUFFIX = 'snaps to a 20px grid · drag to move, drag an edge/corner to resize, click a label to rename, × to remove · click an element to select it (Shift-click, or drag a box over empty canvas, to select multiple) — Copy/Paste (or Ctrl+C / Ctrl+V) duplicates the whole selection, dragging any selected element moves them all together.';
 
   // Toolbar element presets. "booth" is the generic, flat-priced Asset;
   // the rest are Decorations (static, non-bookable). Custom Asset Types
@@ -321,7 +377,6 @@
   var currentEventId = '';
   var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass, assetTypeId }]
   var elementsById = {};   // elementId -> element object (same references as in `elements`)
-  var addCounter = 0;
 
   // This Exhibition's own Asset Types (label/price tiers, from TypeConfig
   // — see normalizeExhibitionAssetTypes_ in Code.gs) plus its flat
@@ -330,21 +385,38 @@
   var EXHIBITION_FLAT_PRICE = 0;
   var EXHIBITION_CURRENCY = 'USD';
 
-  // Copy/paste: tracks the single currently-selected element (by id) and
-  // whatever was last copied, so "Paste" can duplicate an element's
-  // current size/type without re-adding and re-resizing it from scratch.
-  var selectedElementId = null;
-  var clipboardElement = null;
+  // Selection: every currently-selected element id, in the order each was
+  // added to the selection (Shift/Ctrl-click toggles one in/out, dragging a
+  // box over empty canvas selects everything it overlaps — see
+  // selectElement/toggleSelection/initCanvasMarquee_).
+  var selectedElementIds = [];
+  // Copy/paste: a snapshot of every selected element at Copy time, each
+  // with its position stored as an offset from the group's own top-left —
+  // Paste reproduces them as a new group with that same relative layout
+  // (see copySelectedElements/pasteClipboardElements).
+  var clipboardElements = [];
+  // Cascades each repeated Paste further from the copied originals (reset
+  // to 0 on every fresh Copy) so pasting twice doesn't stack the new copies
+  // exactly on top of each other.
+  var pasteOffsetCount = 0;
+  // The most recently added-via-toolbar (or pasted, or seat-generated)
+  // element — a fresh "+ Asset"/"+ Decoration" click stacks directly below
+  // this one (see addElementFromSpec). Stale references (the element got
+  // deleted since) just fall back to the default start position.
+  var lastAddedElementId = null;
 
   document.addEventListener('DOMContentLoaded', function() {
-    if (!ADMIN_TOKEN) return; // session-expired branch is shown server-side instead
+    checkAdminSession_();
+  });
 
+  function initFloorPlanPage_() {
+    initCanvasMarquee_();
     if (INITIAL_EVENT_ID) {
       loadFloorPlan(INITIAL_EVENT_ID);
     } else {
       populateEventPicker();
     }
-  });
+  }
 
   /* ---------------- Event picker ---------------- */
 
@@ -426,8 +498,10 @@
         document.getElementById('fpCanvasCaption').textContent = CANVAS_WIDTH + ' × ' + CANVAS_HEIGHT + ' canvas · ' + FP_CANVAS_CAPTION_SUFFIX;
         elements = [];
         elementsById = {};
-        selectedElementId = null;
-        clipboardElement = null;
+        selectedElementIds = [];
+        clipboardElements = [];
+        pasteOffsetCount = 0;
+        lastAddedElementId = null;
         updateCopyPasteButtons();
 
         (data.elements || []).forEach(function(el) { addElementToCanvas(el, false); });
@@ -602,9 +676,10 @@
     var totalHeight = g.startY + g.rows * g.height;
     if (totalWidth > CANVAS_WIDTH || totalHeight > CANVAS_HEIGHT) { updateSeatGenPreview(); return; }
 
+    var createdEl;
     for (var r = 0; r < g.rows; r++) {
       for (var c = 0; c < g.seatsPerRow; c++) {
-        addElementToCanvas({
+        createdEl = addElementToCanvas({
           elementId: '',
           x: g.startX + c * g.width,
           y: g.startY + r * g.height,
@@ -617,6 +692,9 @@
         }, true);
       }
     }
+    // So the next toolbar "+ Asset"/"+ Decoration" stacks below the seat
+    // grid just generated, not below whatever was on the canvas before it.
+    if (createdEl) lastAddedElementId = createdEl.elementId;
     closeSeatGenModal();
     showFpMsg('Generated ' + (g.rows * g.seatsPerRow) + ' seat(s).', false);
   }
@@ -644,15 +722,12 @@
    * booths (see nextInstanceLabel).
    */
   function addElementFromSpec(spec, fallbackLabel) {
-    // Cascade each newly-added element a little so they don't stack
-    // exactly on top of one another; still grid-aligned.
-    var offset = (addCounter * GRID_SIZE) % (GRID_SIZE * 8);
-    addCounter++;
+    var pos = nextAddPosition_(spec.width, spec.height);
 
     var el = {
       elementId: '',
-      x: snap(20 + offset),
-      y: snap(20 + offset),
+      x: pos.x,
+      y: pos.y,
       width: spec.width,
       height: spec.height,
       type: spec.type,
@@ -660,9 +735,39 @@
       cssClass: spec.cssClass,
       assetTypeId: spec.assetTypeId || ''
     };
-    addElementToCanvas(el, true);
-    selectElement(el.elementId);
-    return el;
+    var createdEl = addElementToCanvas(el, true);
+    selectElement(createdEl.elementId);
+    lastAddedElementId = createdEl.elementId;
+    return createdEl;
+  }
+
+  /**
+   * Where a brand-new element should land: directly below lastAddedElementId
+   * (same X, one NEW_ELEMENT_GAP below its bottom edge) so a run of "+
+   * Asset" clicks builds a tidy vertical stack instead of the old diagonal
+   * cascade. Wraps to a new column (back near the top) if stacking further
+   * down would run off the bottom of the canvas; falls back to the default
+   * top-left start position for the very first element, or if the last-
+   * added element was since deleted.
+   */
+  function nextAddPosition_(width, height) {
+    var ref = lastAddedElementId ? elementsById[lastAddedElementId] : null;
+    var x, y;
+    if (ref) {
+      x = ref.x;
+      y = ref.y + ref.height + NEW_ELEMENT_GAP;
+      if (y + height > CANVAS_HEIGHT) {
+        x = ref.x + ref.width + NEW_ELEMENT_GAP;
+        y = 20;
+      }
+    } else {
+      x = 20;
+      y = 20;
+    }
+    return {
+      x: snap(Math.max(0, Math.min(x, CANVAS_WIDTH - width))),
+      y: snap(Math.max(0, Math.min(y, CANVAS_HEIGHT - height)))
+    };
   }
 
   /**
@@ -724,17 +829,23 @@
       evt.stopPropagation();
       removeElement(el.elementId);
     });
-    div.addEventListener('click', function() {
-      selectElement(el.elementId);
+    div.addEventListener('click', function(evt) {
+      // The native `click` that follows a real drag-release (mouseup on
+      // the same element it started on) would otherwise collapse a
+      // multi-selection back down to just this one element right after
+      // group-moving it — see dragEndListener/justDraggedElementId.
+      if (justDraggedElementId === el.elementId) { justDraggedElementId = null; return; }
+      selectElement(el.elementId, evt.shiftKey || evt.ctrlKey || evt.metaKey);
     });
     // Tabbing to an element selects it too, same as a click — so keyboard
     // users get the same visible ".selected" outline before nudging/resizing it.
     div.addEventListener('focus', function() {
-      selectElement(el.elementId);
+      selectElement(el.elementId, false);
     });
 
     document.getElementById('fpCanvas').appendChild(div);
     makeInteractive(div, el);
+    return el;
   }
 
   function removeElement(elementId) {
@@ -742,54 +853,187 @@
     if (div) div.remove();
     delete elementsById[elementId];
     elements = elements.filter(function(e) { return e.elementId !== elementId; });
-    if (selectedElementId === elementId) {
-      selectedElementId = null;
+    var idx = selectedElementIds.indexOf(elementId);
+    if (idx !== -1) {
+      selectedElementIds.splice(idx, 1);
       updateCopyPasteButtons();
     }
   }
 
+  /** Deletes every currently-selected element (Delete/Backspace key — see the keydown handler below). Iterates a copy since removeElement mutates selectedElementIds as it goes. */
+  function removeSelectedElements() {
+    selectedElementIds.slice().forEach(function(id) { removeElement(id); });
+  }
+
   /* ---------------- Selection + Copy/Paste ---------------- */
 
-  function selectElement(elementId) {
-    selectedElementId = elementId;
+  /**
+   * additive=true (Shift/Ctrl-click) toggles this one element in/out of the
+   * existing selection; additive=false/omitted replaces the selection with
+   * just this element — same convention as most design tools.
+   */
+  function selectElement(elementId, additive) {
+    if (additive) {
+      toggleSelection(elementId);
+    } else {
+      setSelection([elementId]);
+    }
+  }
+
+  function toggleSelection(elementId) {
+    var next = selectedElementIds.slice();
+    var idx = next.indexOf(elementId);
+    if (idx === -1) next.push(elementId); else next.splice(idx, 1);
+    setSelection(next);
+  }
+
+  function setSelection(ids) {
+    selectedElementIds = ids.slice();
     document.querySelectorAll('.fp-element.selected').forEach(function(n) { n.classList.remove('selected'); });
-    var div = document.querySelector('.fp-element[data-id="' + elementId + '"]');
-    if (div) div.classList.add('selected');
+    selectedElementIds.forEach(function(id) {
+      var div = document.querySelector('.fp-element[data-id="' + id + '"]');
+      if (div) div.classList.add('selected');
+    });
     updateCopyPasteButtons();
+  }
+
+  function clearSelection() {
+    setSelection([]);
   }
 
   function updateCopyPasteButtons() {
-    document.getElementById('btnCopyElement').disabled = !selectedElementId;
-    document.getElementById('btnPasteElement').disabled = !clipboardElement;
+    document.getElementById('btnCopyElement').disabled = !selectedElementIds.length;
+    document.getElementById('btnPasteElement').disabled = !clipboardElements.length;
   }
 
-  function copySelectedElement() {
-    var el = selectedElementId ? elementsById[selectedElementId] : null;
-    if (!el) return;
-    clipboardElement = { type: el.type, width: el.width, height: el.height, cssClass: el.cssClass, assetTypeId: el.assetTypeId, label: el.label };
+  /** Copies every selected element, preserving their positions relative to the group's own top-left so Paste can reproduce the same layout. */
+  function copySelectedElements() {
+    var selectedEls = selectedElementIds.map(function(id) { return elementsById[id]; }).filter(Boolean);
+    if (!selectedEls.length) return;
+    var minX = Math.min.apply(null, selectedEls.map(function(e) { return e.x; }));
+    var minY = Math.min.apply(null, selectedEls.map(function(e) { return e.y; }));
+    clipboardElements = selectedEls.map(function(e) {
+      return {
+        type: e.type, width: e.width, height: e.height, cssClass: e.cssClass, assetTypeId: e.assetTypeId, label: e.label,
+        offsetX: e.x - minX, offsetY: e.y - minY
+      };
+    });
+    pasteOffsetCount = 0;
     updateCopyPasteButtons();
-    showFpMsg('Copied "' + el.label + '". Click Paste (or Ctrl+V) to duplicate it.', false);
+    showFpMsg('Copied ' + selectedEls.length + ' element' + (selectedEls.length > 1 ? 's' : '') + '. Click Paste (or Ctrl+V) to duplicate ' + (selectedEls.length > 1 ? 'them' : 'it') + '.', false);
+  }
+
+  /* ---------------- Marquee: drag a box over empty canvas to select multiple ---------------- */
+
+  var marqueeStart = null;   // { x, y } canvas-local coords where the current drag began, or null when no marquee drag is in progress
+  var marqueeAdditive = false; // Shift/Ctrl held at mousedown — add the box's contents to the existing selection instead of replacing it
+  var marqueeDiv = null;     // the visible dashed selection-box element, created on mousedown and removed on mouseup
+
+  /**
+   * Wires mousedown on the canvas BACKGROUND (evt.target === canvas — a
+   * mousedown that lands on an actual element instead bubbles from that
+   * element, whose own interact.js draggable handles it, never reaching
+   * here) to draw a rubber-band box and select every element it overlaps
+   * on release. A release with almost no movement is treated as a plain
+   * click on empty space — clears the selection instead.
+   */
+  function initCanvasMarquee_() {
+    var canvas = document.getElementById('fpCanvas');
+
+    canvas.addEventListener('mousedown', function(evt) {
+      if (evt.target !== canvas || evt.button !== 0) return;
+      var rect = canvas.getBoundingClientRect();
+      marqueeStart = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+      marqueeAdditive = evt.shiftKey || evt.ctrlKey || evt.metaKey;
+      marqueeDiv = document.createElement('div');
+      marqueeDiv.className = 'fp-marquee';
+      canvas.appendChild(marqueeDiv);
+      updateMarqueeRect_(marqueeStart.x, marqueeStart.y, marqueeStart.x, marqueeStart.y);
+      evt.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(evt) {
+      if (!marqueeStart) return;
+      var rect = canvas.getBoundingClientRect();
+      updateMarqueeRect_(marqueeStart.x, marqueeStart.y, evt.clientX - rect.left, evt.clientY - rect.top);
+    });
+
+    document.addEventListener('mouseup', function(evt) {
+      if (!marqueeStart) return;
+      var rect = canvas.getBoundingClientRect();
+      finishMarquee_(marqueeStart.x, marqueeStart.y, evt.clientX - rect.left, evt.clientY - rect.top);
+      marqueeStart = null;
+      if (marqueeDiv) { marqueeDiv.remove(); marqueeDiv = null; }
+    });
+  }
+
+  function updateMarqueeRect_(x0, y0, x1, y1) {
+    if (!marqueeDiv) return;
+    marqueeDiv.style.left = Math.min(x0, x1) + 'px';
+    marqueeDiv.style.top = Math.min(y0, y1) + 'px';
+    marqueeDiv.style.width = Math.abs(x1 - x0) + 'px';
+    marqueeDiv.style.height = Math.abs(y1 - y0) + 'px';
+  }
+
+  // Below this many px of actual movement, a mousedown+mouseup on empty
+  // canvas is treated as a plain click (deselect) rather than a marquee drag.
+  var MARQUEE_MIN_DRAG = 4;
+
+  function finishMarquee_(x0, y0, x1, y1) {
+    var left = Math.min(x0, x1), top = Math.min(y0, y1);
+    var width = Math.abs(x1 - x0), height = Math.abs(y1 - y0);
+    if (width < MARQUEE_MIN_DRAG && height < MARQUEE_MIN_DRAG) {
+      if (!marqueeAdditive) clearSelection();
+      return;
+    }
+    var right = left + width, bottom = top + height;
+    var hits = elements.filter(function(e) {
+      return e.x < right && (e.x + e.width) > left && e.y < bottom && (e.y + e.height) > top;
+    }).map(function(e) { return e.elementId; });
+
+    if (marqueeAdditive) {
+      var merged = selectedElementIds.slice();
+      hits.forEach(function(id) { if (merged.indexOf(id) === -1) merged.push(id); });
+      setSelection(merged);
+    } else {
+      setSelection(hits);
+    }
   }
 
   /**
-   * Pastes the last-copied element as a brand-new one on the canvas,
-   * keeping its size/type/Asset Type (the whole point — resize a booth
-   * once, then copy/paste it instead of re-adding and re-resizing every
-   * time) but getting a FRESH auto-generated label via nextInstanceLabel,
-   * same as adding a new instance from the toolbar.
+   * Pastes everything on the clipboard as a brand-new group on the canvas,
+   * keeping each element's size/type/Asset Type AND its position relative
+   * to the rest of the group (the whole point — resize/arrange a cluster
+   * of booths once, then copy/paste the whole thing instead of re-building
+   * it), but getting a FRESH auto-generated label via nextInstanceLabel,
+   * same as adding a new instance from the toolbar. Each repeated Paste
+   * (without an intervening Copy) cascades the group a bit further from
+   * the originals so repeats don't stack exactly on top of each other, and
+   * the newly-pasted group becomes the new selection so it can be
+   * immediately dragged into place.
    */
-  function pasteClipboardElement() {
-    if (!clipboardElement) return;
-    var fallbackLabel = clipboardElement.assetTypeId
-      ? (EXHIBITION_ASSET_TYPES.filter(function(a) { return a.id === clipboardElement.assetTypeId; })[0] || {}).label || clipboardElement.label
-      : clipboardElement.label;
-    addElementFromSpec({
-      type: clipboardElement.type,
-      width: clipboardElement.width,
-      height: clipboardElement.height,
-      cssClass: clipboardElement.cssClass,
-      assetTypeId: clipboardElement.assetTypeId
-    }, fallbackLabel);
+  function pasteClipboardElements() {
+    if (!clipboardElements.length) return;
+    pasteOffsetCount++;
+    var delta = pasteOffsetCount * GRID_SIZE;
+    var newIds = [];
+    clipboardElements.forEach(function(c) {
+      var fallbackLabel = c.assetTypeId
+        ? (EXHIBITION_ASSET_TYPES.filter(function(a) { return a.id === c.assetTypeId; })[0] || {}).label || c.label
+        : c.label;
+      var createdEl = addElementToCanvas({
+        elementId: '',
+        x: snap(Math.max(0, Math.min(delta + c.offsetX, CANVAS_WIDTH - c.width))),
+        y: snap(Math.max(0, Math.min(delta + c.offsetY, CANVAS_HEIGHT - c.height))),
+        width: c.width, height: c.height, type: c.type,
+        label: nextInstanceLabel(c.type, c.assetTypeId, fallbackLabel),
+        cssClass: c.cssClass, assetTypeId: c.assetTypeId
+      }, true);
+      newIds.push(createdEl.elementId);
+    });
+    setSelection(newIds);
+    lastAddedElementId = newIds[newIds.length - 1];
+    showFpMsg('Pasted ' + newIds.length + ' element' + (newIds.length > 1 ? 's' : '') + '.', false);
   }
 
   document.addEventListener('keydown', function(evt) {
@@ -801,21 +1045,22 @@
     if (inEditableField) return;
     var isCopy = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'c';
     var isPaste = (evt.ctrlKey || evt.metaKey) && evt.key.toLowerCase() === 'v';
-    if (isCopy) { evt.preventDefault(); copySelectedElement(); }
-    if (isPaste) { evt.preventDefault(); pasteClipboardElement(); }
+    if (isCopy) { evt.preventDefault(); copySelectedElements(); }
+    if (isPaste) { evt.preventDefault(); pasteClipboardElements(); }
 
-    // Keyboard equivalent of the mouse drag/resize below: arrows nudge the
-    // selected element by one grid step, Shift+arrow resizes it on the
-    // Right/Down (grow) or Left/Up (shrink) edge — same GRID_SIZE increment
-    // and canvas bounds the mouse path already snaps/clamps to.
+    // Keyboard equivalent of the mouse drag/resize below: arrows nudge
+    // every selected element by one grid step, Shift+arrow resizes each on
+    // the Right/Down (grow) or Left/Up (shrink) edge — same GRID_SIZE
+    // increment and canvas bounds the mouse path already snaps/clamps to.
     var isArrow = evt.key === 'ArrowUp' || evt.key === 'ArrowDown' || evt.key === 'ArrowLeft' || evt.key === 'ArrowRight';
-    if (isArrow && selectedElementId) {
-      var el = elementsById[selectedElementId];
-      var div = document.querySelector('.fp-element[data-id="' + selectedElementId + '"]');
-      if (el && div) {
-        evt.preventDefault();
-        var dx = evt.key === 'ArrowLeft' ? -GRID_SIZE : (evt.key === 'ArrowRight' ? GRID_SIZE : 0);
-        var dy = evt.key === 'ArrowUp' ? -GRID_SIZE : (evt.key === 'ArrowDown' ? GRID_SIZE : 0);
+    if (isArrow && selectedElementIds.length) {
+      evt.preventDefault();
+      var dx = evt.key === 'ArrowLeft' ? -GRID_SIZE : (evt.key === 'ArrowRight' ? GRID_SIZE : 0);
+      var dy = evt.key === 'ArrowUp' ? -GRID_SIZE : (evt.key === 'ArrowDown' ? GRID_SIZE : 0);
+      selectedElementIds.forEach(function(id) {
+        var el = elementsById[id];
+        var div = document.querySelector('.fp-element[data-id="' + id + '"]');
+        if (!el || !div) return;
         if (evt.shiftKey) {
           el.width = Math.min(Math.max(GRID_SIZE, snap(el.width + dx)), CANVAS_WIDTH - el.x);
           el.height = Math.min(Math.max(GRID_SIZE, snap(el.height + dy)), CANVAS_HEIGHT - el.y);
@@ -827,22 +1072,38 @@
           div.style.left = el.x + 'px';
           div.style.top = el.y + 'px';
         }
-      }
+      });
       return;
     }
 
-    if ((evt.key === 'Delete' || evt.key === 'Backspace') && selectedElementId) {
+    if ((evt.key === 'Delete' || evt.key === 'Backspace') && selectedElementIds.length) {
       evt.preventDefault();
-      removeElement(selectedElementId);
+      removeSelectedElements();
     }
   });
 
   /* ---------------- interact.js: drag + resize with 20px grid snap ---------------- */
 
+  // Set while a drag gesture is moving a whole multi-selection together
+  // (see dragStartListener) — { positions: { elementId: {x,y} } at drag
+  // start, totalDx, totalDy accumulated across the gesture }. Computing
+  // each element's live position from its OWN start position plus the
+  // total accumulated delta (rather than compounding a snap() on top of
+  // e.x every single move event) keeps the whole group's relative layout
+  // exact for the entire drag instead of letting independent per-frame
+  // rounding slowly drift them apart.
+  var groupDragStart = null;
+  // Set by dragEndListener to the id of whichever element a real drag
+  // gesture just ended on — the native `click` that follows immediately
+  // after (mouseup fires it) checks this so it doesn't collapse a
+  // multi-selection back down to one element right after moving it (see
+  // the click listener in addElementToCanvas).
+  var justDraggedElementId = null;
+
   function makeInteractive(div, el) {
     interact(div)
       .draggable({
-        listeners: { move: dragMoveListener },
+        listeners: { start: dragStartListener, move: dragMoveListener, end: dragEndListener },
         modifiers: [
           interact.modifiers.snap({
             targets: [interact.snappers.grid({ x: GRID_SIZE, y: GRID_SIZE })],
@@ -866,7 +1127,36 @@
         inertia: false
       });
 
+    function dragStartListener(event) {
+      var draggedId = event.target.dataset.id;
+      if (selectedElementIds.length > 1 && selectedElementIds.indexOf(draggedId) !== -1) {
+        var positions = {};
+        selectedElementIds.forEach(function(id) {
+          var e = elementsById[id];
+          if (e) positions[id] = { x: e.x, y: e.y };
+        });
+        groupDragStart = { positions: positions, totalDx: 0, totalDy: 0 };
+      } else {
+        groupDragStart = null;
+      }
+    }
+
     function dragMoveListener(event) {
+      if (groupDragStart) {
+        groupDragStart.totalDx += event.dx;
+        groupDragStart.totalDy += event.dy;
+        Object.keys(groupDragStart.positions).forEach(function(id) {
+          var e = elementsById[id];
+          var target = document.querySelector('.fp-element[data-id="' + id + '"]');
+          if (!e || !target) return;
+          var start = groupDragStart.positions[id];
+          e.x = Math.max(0, Math.min(snap(start.x + groupDragStart.totalDx), CANVAS_WIDTH - e.width));
+          e.y = Math.max(0, Math.min(snap(start.y + groupDragStart.totalDy), CANVAS_HEIGHT - e.height));
+          target.style.left = e.x + 'px';
+          target.style.top = e.y + 'px';
+        });
+        return;
+      }
       var target = event.target;
       var e = elementsById[target.dataset.id];
       if (!e) return;
@@ -874,6 +1164,11 @@
       e.y = snap(e.y + event.dy);
       target.style.left = e.x + 'px';
       target.style.top = e.y + 'px';
+    }
+
+    function dragEndListener(event) {
+      groupDragStart = null;
+      justDraggedElementId = event.target.dataset.id;
     }
 
     function resizeMoveListener(event) {

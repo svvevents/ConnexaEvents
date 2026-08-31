@@ -408,6 +408,27 @@ const MEMBERSHIP_COLUMNS = [
   'Membership Category', 'Domain', 'Website'
 ];
 
+// Free/personal email providers — a "domain" shared by unrelated members of
+// the public, not one company. The Membership Details directory keys a
+// company's info by domain (see getCompanyDirectoryEntry_/
+// upsertCompanyDirectoryEntry_) precisely because a real company domain
+// reliably identifies ONE organization; for these providers that
+// assumption breaks completely, so both reading AND writing a directory
+// entry are skipped for them (see isPersonalEmailDomain_) — otherwise the
+// first random gmail.com user to register anywhere would have their
+// company silently attached to, and shown/locked for, every other
+// unrelated gmail.com attendee.
+const PERSONAL_EMAIL_DOMAINS_ = [
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'rocketmail.com',
+  'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'passport.com',
+  'icloud.com', 'me.com', 'mac.com', 'aol.com', 'protonmail.com', 'proton.me',
+  'gmx.com', 'gmx.net', 'zoho.com', 'yandex.com', 'mail.com', 'inbox.com'
+];
+
+function isPersonalEmailDomain_(domain) {
+  return PERSONAL_EMAIL_DOMAINS_.indexOf(String(domain || '').trim().toLowerCase()) !== -1;
+}
+
 /* =========================================================================
    EXECUTION-LEVEL MEMOIZATION CACHE
    ----------------------------------------------------------------------
@@ -1486,6 +1507,74 @@ function getEventCapacityState_(entity) {
 }
 
 /**
+ * Confirmed-registration count for one specific event/sub-event, scoped to
+ * ONE Registration Type label — only ever called for a "plain" entity (no
+ * ranked allocation), where a chosen Registration Type is recorded
+ * directly on the registration row (Registrations.RegistrationType for a
+ * standalone top-level event, SubEventRegistrations.OptionLabel for a
+ * sub-event opt-in — see recordPlainSubEventOptIn_).
+ */
+function getRegistrationTypeConfirmedCount_(entity, regTypeLabel) {
+  const label = String(regTypeLabel || '');
+  if (entity.parentEventId) {
+    return getSubEventRegsRaw_().filter(r => r.subEventId === entity.eventId && r.status === 'Confirmed' && r.optionLabel === label).length;
+  }
+  return getRegistrationsRaw_().filter(r => r.eventId === entity.eventId && r.registrationType === label).length;
+}
+
+/**
+ * Live capacity state for one (entity, Registration Type) pair — same
+ * shape as buildCapacityState_/getEventCapacityState_, just scoped to the
+ * CHOSEN type's own configured Capacity instead of a flat per-entity
+ * Places value (which no longer exists for a plain EventType — capacity
+ * now lives entirely on the Registration Type, see the Capacity note on
+ * ONBOARDING_HEADERS_). Always scoped to THIS entity alone: an EventType
+ * shared by several sibling sub-events under the same Umbrella gives each
+ * of them their own independent cap against the same configured number,
+ * never a pooled total across siblings. Falls back to unlimited when no
+ * type was chosen, or the chosen label isn't a configured type (e.g. a
+ * stale/tampered client payload).
+ */
+function getRegistrationTypeCapacityState_(topEventId, entity, regTypeLabel) {
+  if (!regTypeLabel) return buildCapacityState_(null, 0);
+  const onboarding = getOnboardingData_(topEventId);
+  const regTypeDef = ((onboarding[entity.eventType] && onboarding[entity.eventType].registrationTypes) || [])
+    .find(rt => rt.label === regTypeLabel);
+  const capacity = regTypeDef ? regTypeDef.capacity : null;
+  const confirmed = getRegistrationTypeConfirmedCount_(entity, regTypeLabel);
+  return buildCapacityState_(capacity, confirmed);
+}
+
+/**
+ * Batch version of the above check, used by submitEventRegistrationBatch
+ * for a standalone top-level event with no ranked allocation (a plain
+ * EventType, or legacy Curated Event/B2B with no options configured — see
+ * usesRegistrationTypeCapacityCheck). Groups this batch's attendees by
+ * their chosen Registration Type (blank/none is unconstrained — every
+ * attendee here is either registering with a real type or the event has
+ * none configured) and checks each group's size against that type's own
+ * remaining room for THIS event. Throws on the first type that doesn't
+ * fit; called once as a fast pre-lock check and again, authoritatively,
+ * once the lock is held and caches are fresh (same two-phase pattern as
+ * the duplicate-email check right next to each call site).
+ */
+function checkRegistrationTypeCapacityForBatch_(event, attendeesList) {
+  const countsByType = {};
+  attendeesList.forEach(a => {
+    const label = String((a && a.registrationType) || '').trim();
+    if (label) countsByType[label] = (countsByType[label] || 0) + 1;
+  });
+  Object.keys(countsByType).forEach(label => {
+    const capacityState = getRegistrationTypeCapacityState_(event.eventId, event, label);
+    if (capacityState.unlimited) return;
+    const remaining = Math.max(0, capacityState.capacity - capacityState.confirmed);
+    if (countsByType[label] > remaining) {
+      throw new Error('Only ' + remaining + ' of ' + capacityState.label + ' remain for "' + label + '" on "' + event.eventName + '".');
+    }
+  });
+}
+
+/**
  * Formats a price + currency pair consistently for summaries/receipts.
  * Zero/blank price renders as "Free" rather than "0.00 USD".
  */
@@ -1932,7 +2021,7 @@ function getUmbrellaChildren(eventId) {
         // comparing eventType against a hardcoded string — see Phase 8 of
         // the Event Type flags plan.
         isB2B: e.isB2B, isExhibition: e.isExhibition, isCuratedEvent: e.isCuratedEvent,
-        registrationTypes: regTypes.filter(rt => !rt.hidden).map(computeRegTypeEffectiveState_),
+        registrationTypes: regTypes.filter(rt => !rt.hidden).map(rt => computeRegTypeEffectiveState_(rt, e)),
         extraFields: getExtraFieldsForType_(e.eventType, eventId),
         currency: parentCurrency
       };
@@ -2451,27 +2540,28 @@ function allocateCuratedEventSelections_(topEventId, entity, optionIds, email, f
 /**
  * Records a simple (non-allocated) opt-in into a plain sub-event under an
  * Umbrella Event — this covers "Curated Event" sub-events that have NO
- * TypeConfig options configured (see DECISION note at top of file), which
- * carry a flat event-level price/capacity rather than per-option
- * allocation. Enforces capacity (if limited) before recording; throws if
- * the sub-event is full so the caller can surface a clear error.
+ * TypeConfig options configured (see DECISION note at top of file), priced
+ * AND capacity-capped via the chosen Registration Type (see the Capacity
+ * note on ONBOARDING_HEADERS_) rather than a flat event-level fallback.
+ * Enforces capacity (if limited) before recording; throws if that type is
+ * full for THIS sub-event so the caller can surface a clear error.
  */
 function recordPlainSubEventOptIn_(topEventId, subEvent, email, fullName, extraFields, registrationType) {
   const leaseId = acquireEntityLock_(subEvent.eventId, 15000);
   try {
-    const capacityState = getEventCapacityState_(subEvent);
-    if (!capacityState.unlimited && capacityState.isFull) {
-      throw new Error('"' + subEvent.eventName + '" is full (' + capacityState.label + ').');
-    }
     const regTypeLabel = registrationType || '';
+    const onboarding = getOnboardingData_(topEventId);
+    const regTypeDef = ((onboarding[subEvent.eventType] && onboarding[subEvent.eventType].registrationTypes) || [])
+      .find(rt => rt.label === regTypeLabel);
+    const capacityState = getRegistrationTypeCapacityState_(topEventId, subEvent, regTypeLabel);
+    if (!capacityState.unlimited && capacityState.isFull) {
+      throw new Error('"' + regTypeLabel + '" for "' + subEvent.eventName + '" is full (' + capacityState.label + ').');
+    }
     // A chosen Registration Type's own Price replaces the flat sub-event
     // Price fallback (same precedence as Portal.html's getSelectionPriceInfo)
     // — falls back to the flat price when no type was chosen or its price
     // isn't set, so a legacy sub-event with no Registration Types behaves
     // exactly as before.
-    const onboarding = getOnboardingData_(topEventId);
-    const regTypeDef = ((onboarding[subEvent.eventType] && onboarding[subEvent.eventType].registrationTypes) || [])
-      .find(rt => rt.label === regTypeLabel);
     const optionPrice = (regTypeDef && typeof regTypeDef.price === 'number' && regTypeDef.price > 0) ? regTypeDef.price : getEventPrice_(subEvent);
     const optionCurrency = getEventCurrency_(subEvent);
     const registrationId = mintId_('SER');
@@ -2605,6 +2695,7 @@ function getOnboardingData_(umbrellaEventId) {
   const hiddenIdx = idx('hidden');
   const fromIdx = idx('availablefrom');
   const untilIdx = idx('availableuntil');
+  const capacityIdx = idx('capacity');
   const bool_ = function(row, i) { return i !== -1 && (row[i] === true || String(row[i]).toUpperCase() === 'TRUE'); };
 
   for (let i = 1; i < data.length; i++) {
@@ -2632,7 +2723,9 @@ function getOnboardingData_(umbrellaEventId) {
         disabled: bool_(row, disabledIdx),
         hidden: bool_(row, hiddenIdx),
         availableFrom: fromIdx !== -1 && row[fromIdx] ? String(row[fromIdx]) : '',
-        availableUntil: untilIdx !== -1 && row[untilIdx] ? String(row[untilIdx]) : ''
+        availableUntil: untilIdx !== -1 && row[untilIdx] ? String(row[untilIdx]) : '',
+        // null = unlimited, never 0 — same convention as the old flat Places field (see parsePlaces_).
+        capacity: capacityIdx !== -1 ? parsePlaces_(row[capacityIdx]) : null
       });
     }
   }
@@ -2649,17 +2742,22 @@ function getOnboardingData_(umbrellaEventId) {
 // rows exactly like IsB2B. Mutually exclusive with IsB2B and each other,
 // enforced in saveClientOnboardingType — a type is at most one of
 // B2B / Exhibition / Curated Event, or "Standard" if all three are false.
-// Price / Disabled / Hidden / AvailableFrom / AvailableUntil: per-ROW
-// (per Registration Type, not per-type). Price is a number; blank/0 means
-// "no override, use the entity's flat Price". Disabled is a manual
-// override; AvailableFrom/AvailableUntil are an optional scheduled
+// Price / Capacity / Disabled / Hidden / AvailableFrom / AvailableUntil:
+// per-ROW (per Registration Type, not per-type). Price is a number, no
+// flat per-event fallback anymore (see the DECISION note at the top of
+// this file). Capacity (blank = unlimited, see parsePlaces_) caps
+// registrations for that type PER EVENT — an EventType shared by several
+// sibling sub-events under the same Umbrella gives each of them their
+// own independent cap against this same number, never a pooled total
+// across them (see getRegistrationTypeCapacityState_). Disabled is a
+// manual override; AvailableFrom/AvailableUntil are an optional scheduled
 // window — effective disabled state is computed fresh at read time
 // (now outside the window, OR the manual flag), never stored, since "now"
 // keeps moving. Hidden removes the type from the registration form
 // entirely, but existing registrations that already reference it are
 // never re-validated against the live list, so they keep working.
 const ONBOARDING_HEADERS_ = ['EventType', 'RegistrationType', 'IsB2B', 'ParentEventID',
-  'IsExhibition', 'IsCuratedEvent', 'Price', 'Disabled', 'Hidden', 'AvailableFrom', 'AvailableUntil'];
+  'IsExhibition', 'IsCuratedEvent', 'Price', 'Disabled', 'Hidden', 'AvailableFrom', 'AvailableUntil', 'Capacity'];
 
 /**
  * Was read-only-by-direct-sheet-edit until now (see getOnboardingData_'s
@@ -2732,9 +2830,11 @@ function saveClientOnboardingType(token, umbrellaEventId, eventType, payload) {
   const seen = {};
   const regTypes = ((payload && payload.registrationTypes) || [])
     .map(function(rt) {
+      const parsedCapacity = parsePlaces_(rt && rt.capacity); // null = unlimited
       return {
         label: String((rt && rt.label) || '').trim(),
         price: (rt && rt.price !== '' && rt.price != null && !isNaN(Number(rt.price))) ? Math.max(0, Number(rt.price)) : 0,
+        capacity: parsedCapacity === null ? '' : String(parsedCapacity),
         disabled: !!(rt && rt.disabled),
         hidden: !!(rt && rt.hidden),
         availableFrom: String((rt && rt.availableFrom) || '').trim(),
@@ -2776,7 +2876,7 @@ function saveClientOnboardingType(token, umbrellaEventId, eventType, payload) {
     const otherRows = data.filter(function(row) { return !claimedByThisSave(row); });
     const newRows = regTypes.map(function(rt) {
       return [type, rt.label, isB2B, scope, isExhibition, isCuratedEvent,
-        rt.price, rt.disabled, rt.hidden, rt.availableFrom, rt.availableUntil];
+        rt.price, rt.disabled, rt.hidden, rt.availableFrom, rt.availableUntil, rt.capacity];
     });
     const finalRows = otherRows.concat(newRows);
 
@@ -3195,16 +3295,23 @@ function createOrUpdateEvent(token, payload) {
     isB2B: isB2B, isExhibition: isExhibition, isCuratedEvent: isCuratedEvent,
     registrationTypes: (onboarding && onboarding[eventType]) ? onboarding[eventType].registrationTypes : null
   }) : '[]';
-  // Same validation already applied to per-option prices inside
-  // normalizeTypeConfig_ — an unparseable value here used to silently
-  // become 0 (free) with no signal to the admin, unlike its sibling
-  // fields, which is an easy way for a typo to quietly zero out a
-  // revenue-bearing event's price.
+  // Neither Price nor Places has a field on the admin form anymore — every
+  // EventType is priced AND capacity-capped via its Registration Types
+  // instead (see the Capacity note on ONBOARDING_HEADERS_). payload.price/
+  // payload.places are therefore always absent from a real save now; the
+  // `present` flags below exist so editing an event that already has a
+  // legacy value in one of these columns (from before this cutover) can't
+  // silently get it zeroed out on its next unrelated save — an omitted
+  // field just leaves whatever's already on the row untouched (see the
+  // two write sites below). A caller that DOES still send one (an old
+  // client, or a direct API call) keeps working exactly as before.
   const priceRaw = payload.price;
-  if (priceRaw !== '' && priceRaw !== null && priceRaw !== undefined && isNaN(Number(priceRaw))) {
+  const pricePresent = priceRaw !== undefined;
+  if (pricePresent && priceRaw !== '' && priceRaw !== null && isNaN(Number(priceRaw))) {
     throw new Error('Please enter a valid price.');
   }
   const priceValue = Math.max(0, Number(priceRaw) || 0);
+  const placesPresent = payload.places !== undefined;
   const placesRaw = (payload.places === undefined || payload.places === null) ? '' : String(payload.places).trim();
   // Round-trip through parsePlaces_ so an invalid value fails safe to
   // "Unlimited" rather than silently becoming 0/full, then re-serialize.
@@ -3277,9 +3384,11 @@ function createOrUpdateEvent(token, payload) {
           // top-level always, sub-event only under an Umbrella Event.
           setCol('EventType', eventType || '');
           setCol('TypeConfig', typeConfigJson);
-          // Price/Places now apply on ANY row.
-          setCol('Price', priceValue);
-          setCol('Places', placesToStore);
+          // Price/Places have no field on the form anymore (see the
+          // `present` note above) — only overwrite when a caller actually
+          // sent one; otherwise leave this row's existing value alone.
+          if (pricePresent) setCol('Price', priceValue);
+          if (placesPresent) setCol('Places', placesToStore);
           setCol('MaxOptionsPerAttendee', maxOptsToStore);
           setCol('FloorPlanSize', floorPlanSizeToStore);
           setCol('ShowChosenByToAttendees', showChosenByToStore);
@@ -5404,15 +5513,18 @@ function getExtraFieldsForType_(eventType, umbrellaEventId) {
  */
 
 /**
- * Collapses a Registration Type's manual Disabled flag and its optional
- * AvailableFrom/AvailableUntil scheduling window into one effective
- * "disabled" boolean — computed fresh on every call since "now" keeps
- * moving, never stored. The client only ever needs to know "can this be
- * picked right now," not the reason, so it renders exactly like a
- * manually-disabled option either way. Hidden types are filtered out by
- * the caller before this even runs (see getRegistrationFormDefinition).
+ * Collapses a Registration Type's manual Disabled flag, its optional
+ * AvailableFrom/AvailableUntil scheduling window, AND whether it's full
+ * for THIS specific entity (see getRegistrationTypeCapacityState_ — never
+ * pooled across sibling sub-events sharing the same EventType) into one
+ * effective "disabled" boolean — computed fresh on every call since both
+ * "now" and live registration counts keep moving, never stored. The
+ * client only ever needs to know "can this be picked right now," not the
+ * reason, so it renders exactly like a manually-disabled option either
+ * way. Hidden types are filtered out by the caller before this even runs
+ * (see getRegistrationFormDefinition).
  */
-function computeRegTypeEffectiveState_(rt) {
+function computeRegTypeEffectiveState_(rt, entity) {
   const now = new Date();
   let scheduledOut = false;
   if (rt.availableFrom) {
@@ -5423,7 +5535,9 @@ function computeRegTypeEffectiveState_(rt) {
     const until = new Date(rt.availableUntil);
     if (!isNaN(until.getTime()) && now > until) scheduledOut = true;
   }
-  return Object.assign({}, rt, { disabled: !!rt.disabled || scheduledOut });
+  const capacityState = getRegistrationTypeCapacityState_(entity.parentEventId || entity.eventId, entity, rt.label);
+  const isFull = !capacityState.unlimited && capacityState.isFull;
+  return Object.assign({}, rt, { disabled: !!rt.disabled || scheduledOut || isFull, isFull: isFull });
 }
 
 function getRegistrationFormDefinition(sessionToken, eventId) {
@@ -5458,7 +5572,7 @@ function getRegistrationFormDefinition(sessionToken, eventId) {
     // manual Disabled flag collapsed with any AvailableFrom/AvailableUntil
     // scheduling window into one effective "disabled" boolean (see
     // computeRegTypeEffectiveState_).
-    registrationTypes: regTypes.filter(rt => !rt.hidden).map(computeRegTypeEffectiveState_),
+    registrationTypes: regTypes.filter(rt => !rt.hidden).map(rt => computeRegTypeEffectiveState_(rt, event)),
     extraFields: extraFields,
     price: getEventPrice_(event),
     currency: getEventCurrency_(event),
@@ -5513,11 +5627,16 @@ function checkAttendeeRegistration(email, eventId) {
 
 /**
  * Company auto-suggest (B2B events only) - looks up the global Membership
- * Details directory by email domain, same behaviour as before.
+ * Details directory by email domain, same behaviour as before. Skipped
+ * entirely for a personal email provider (gmail.com, outlook.com, etc.) —
+ * see isPersonalEmailDomain_ — since that "domain" is shared by unrelated
+ * people, not one company; matching on it would leak whichever stranger's
+ * company happened to register from that provider first.
  */
 function lookupCompanyByDomain(email) {
   email = (email || '').trim().toLowerCase();
   const domain = email.split('@')[1] || '';
+  if (isPersonalEmailDomain_(domain)) return { found: false, data: { domain: domain } };
   const raw = getMembershipRaw_();
   const domainColIdx = raw.idx['Domain'];
 
@@ -5598,7 +5717,7 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
   // Fast-path capacity check so an obviously-over-capacity batch fails
   // immediately without waiting on the lock. NOT sufficient alone to
   // prevent two concurrent batches from jointly overshooting a limited
-  // standalone event's capacity — see the authoritative re-check inside
+  // Registration Type's capacity — see the authoritative re-check inside
   // the lock below, which is what actually prevents the race. Umbrella
   // Events have no direct Registrations-based capacity concept here (no
   // registration record of its own). A standalone event using RANKED
@@ -5607,17 +5726,10 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
   // allocateChoice_ — so it's excluded from this whole-event check both
   // here and in the authoritative re-check. Everything else (e.g. a
   // standalone "Curated Event" with no options, or a "B2B Pre-scheduled
-  // Meetings" event) is checked this way.
-  const usesWholeEventCapacityCheck = !event.isUmbrella && !entityUsesRankedAllocation_(event);
-  if (usesWholeEventCapacityCheck) {
-    const capacityState = getEventCapacityState_(event);
-    if (!capacityState.unlimited) {
-      const remaining = Math.max(0, capacityState.capacity - capacityState.confirmed);
-      if (attendees.length > remaining) {
-        throw new Error('Only ' + remaining + ' of ' + capacityState.label + ' remain for "' + event.eventName + '".');
-      }
-    }
-  }
+  // Meetings" event) is checked per chosen Registration Type instead —
+  // see checkRegistrationTypeCapacityForBatch_.
+  const usesRegistrationTypeCapacityCheck = !event.isUmbrella && !entityUsesRankedAllocation_(event);
+  if (usesRegistrationTypeCapacityCheck) checkRegistrationTypeCapacityForBatch_(event, attendees);
 
   // The admin's RegistrationFormFields "Required" flag was only ever
   // enforced client-side (see getExtraFieldsForType_, which is what the
@@ -5667,22 +5779,22 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
       });
     }
 
-    // Company Details are always collected on the registration form now
-    // (not just for events flagged IsB2B — see renderAttendeeFields in
-    // Portal.html), so this is unconditional: every attendee's company
-    // affiliation is captured, which is also what lets displayLabel
-    // (below) resolve to the real company name instead of falling back to
-    // the attendee's own name for non-B2B entities (e.g. Exhibition booths
-    // under a plain Umbrella Event).
+    // Company Details no longer have visible fields on the registration
+    // form (see renderAttendeeFields in Portal.html) — whatever the
+    // domain/company lookup silently found is submitted as-is, so
+    // companyName can legitimately be blank for a genuinely new company
+    // (deferred to a later "confirm your details" pass rather than
+    // blocking registration here). displayLabel (below) falls back to the
+    // attendee's own name when it's blank, same as it always has for
+    // non-B2B entities.
     let companyRow = ['', '', '', '', '', ''];
     const c = a.companyData || {};
-    if (!c.companyName) throw new Error('Company Name is required for ' + email + '.');
     // sanitizeForSheet_ guards every column here against formula/CSV
     // injection (see its doc comment) — safe to apply blanket-wide even to
     // the non-free-text columns since it's a no-op unless a value starts
     // with =, +, -, or @.
     companyRow = MEMBERSHIP_COLUMNS.map(col => sanitizeForSheet_(c[headerToKey_(col)] || ''));
-    if (a.wasNewCompany) {
+    if (a.wasNewCompany && c.companyName) {
       getMembershipSheet_().appendRow(companyRow);
     }
 
@@ -5725,18 +5837,10 @@ function submitEventRegistrationBatch(sessionToken, eventId, attendees) {
     // AUTHORITATIVE capacity re-check — same reasoning as the duplicate
     // re-check above: two concurrent batch submissions could both pass
     // the pre-lock capacity check believing there's room, then both reach
-    // here. Only a fresh read taken INSIDE the lock (registrationCounts
-    // was just invalidated above) can catch that; this is what actually
-    // closes the race, not the pre-lock check.
-    if (usesWholeEventCapacityCheck) {
-      const freshCapacityState = getEventCapacityState_(event);
-      if (!freshCapacityState.unlimited) {
-        const remaining = Math.max(0, freshCapacityState.capacity - freshCapacityState.confirmed);
-        if (attendees.length > remaining) {
-          throw new Error('Only ' + remaining + ' of ' + freshCapacityState.label + ' remain for "' + event.eventName + '".');
-        }
-      }
-    }
+    // here. Only a fresh read taken INSIDE the lock (the registrations
+    // cache was just invalidated above) can catch that; this is what
+    // actually closes the race, not the pre-lock check.
+    if (usesRegistrationTypeCapacityCheck) checkRegistrationTypeCapacityForBatch_(event, attendees);
 
     const pricePerRegistrant_ = getEventPrice_(event); // top-level event's own price, if any (0 for most Umbrella events)
     // Sheets writes aren't transactional — if something throws partway
@@ -8096,10 +8200,16 @@ function getBusinessTypeOptions_() {
   return Array.from(seen).sort((a, b) => a.localeCompare(b));
 }
 
-/** Read-only lookup of a domain's row in the Membership Details directory, keyed by header name. */
+/**
+ * Read-only lookup of a domain's row in the Membership Details directory,
+ * keyed by header name. Always null for a personal email provider (see
+ * isPersonalEmailDomain_) — there's no legitimate single "company" to
+ * return, and doing so would leak one gmail.com/outlook.com/etc. user's
+ * company onto every other unrelated attendee at the same provider.
+ */
 function getCompanyDirectoryEntry_(domain) {
   domain = (domain || '').trim().toLowerCase();
-  if (!domain) return null;
+  if (!domain || isPersonalEmailDomain_(domain)) return null;
 
   const raw = getMembershipRaw_();
   if (raw.idx['Domain'] === undefined) return null;
@@ -8120,11 +8230,13 @@ function getCompanyDirectoryEntry_(domain) {
  * Company Name / Business Type afterwards; everyone else at the domain sees
  * them read-only (see lookupAttendeeInfo_'s companyLocked). A pre-existing
  * row with no recorded creator is left untouched rather than silently
- * claimed by whoever happens to save next.
+ * claimed by whoever happens to save next. No-op for a personal email
+ * provider (see isPersonalEmailDomain_) — that domain isn't one company,
+ * so nothing should ever get "claimed" there for later lookups to leak.
  */
 function upsertCompanyDirectoryEntry_(email, domain, payload) {
   domain = (domain || '').trim().toLowerCase();
-  if (!domain || !payload.companyName) return;
+  if (!domain || !payload.companyName || isPersonalEmailDomain_(domain)) return;
 
   const sheet = getMembershipSheet_();
   let raw = getMembershipRaw_();

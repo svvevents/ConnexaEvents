@@ -1,0 +1,17 @@
+CREATE TABLE `buyer_meetings` (
+  `ID` int NOT NULL AUTO_INCREMENT,
+  `BUYER_ID` int DEFAULT NULL,
+  `BUYER_ORG` text,
+  `BUYER_FULLNAME` text,
+  `TABLE_NUMBER` int DEFAULT NULL,
+  `APPOINTMENT` varchar(50) NOT NULL,
+  `START` text,
+  `END` text,
+  `STATUS` varchar(45) DEFAULT 'FREE',
+  `SUPPLIER_ID` int DEFAULT NULL,
+  `SUPPLIER_FULLNAME` text,
+  `SUPPLIER_ORG` text,
+  `MEETING_TYPE` varchar(45) DEFAULT NULL,
+  PRIMARY KEY (`ID`),
+  KEY `idx_bm_buyer_status_appt` (`BUYER_ID`,`STATUS`,`APPOINTMENT`)
+) ENGINE=InnoDB AUTO_INCREMENT=3027 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

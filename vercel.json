@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/unsubscribe", "destination": "/Unsubscribe.html" },
+    { "source": "/meetingresponse", "destination": "/MeetingResponse.html" },
+    { "source": "/Portal", "destination": "/Portal.html" },
+    { "source": "/AdminPortal", "destination": "/AdminPortal.html" },
+    { "source": "/AdminFloorPlan", "destination": "/AdminFloorPlan.html" }
+  ]
+}

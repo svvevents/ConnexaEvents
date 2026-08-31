@@ -9,19 +9,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --primary-color: <?!= branding.primaryColor ?>;
-      --navy-color: <?!= branding.navyColor ?>;
-      --accent-color: <?!= branding.accentColor ?>;
-      --mint-color: <?!= branding.mintColor ?>;
-      --bg-color: <?!= branding.pageBgColor ?>;
-      --font-family: <?!= branding.fontFamily ?>;
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --accent-color: #D98E04;
+      --mint-color: #22D3C5;
+      --bg-color: #F4F6F8;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --text-dark: var(--navy-color);
-      --text-muted: <?!= branding.mutedTextColor ?>;
+      --text-muted: #5B6472;
       --border-color: #dfe3ea;
-      --success-color: <?!= branding.successColor ?>;
-      --warning-color: <?!= branding.warningColor ?>;
-      --error-color: <?!= branding.errorColor ?>;
-      --category-tag-color: <?!= branding.categoryTagColor ?>;
+      --success-color: #2E7D5B;
+      --warning-color: #D98E04;
+      --error-color: #C0392B;
+      --category-tag-color: #6C4FA0;
     }
     * { box-sizing: border-box; }
     body { font-family: var(--font-family); margin: 0; padding: 0; background: var(--bg-color); color: var(--text-dark); -webkit-font-smoothing: antialiased; }
@@ -58,10 +58,17 @@
 
     /* My Events */
     .event-card { background: white; border: 1px solid var(--border-color); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
+    .event-status-group { margin-bottom: 22px; }
+    .event-status-group summary { cursor: pointer; list-style: none; font-size: 14px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 2px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+    .event-status-group summary::-webkit-details-marker { display: none; }
+    .event-status-group summary::before { content: '\25B8'; display: inline-block; margin-right: 6px; transition: transform 0.15s; }
+    .event-status-group[open] summary::before { transform: rotate(90deg); }
+    .event-status-group .event-card:last-child { margin-bottom: 0; }
     .tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px; }
     .tag.live { background: rgba(34,211,197,0.15); color: var(--success-color); }
     .tag.draft { background: #FBF4E6; color: var(--warning-color); }
     .tag.closed { background: #F9EBEA; color: var(--error-color); }
+    .tag.deleted { background: #ECECEC; color: var(--text-muted); }
     .tag.type { background: #F0EDF6; color: var(--category-tag-color); }
     .empty-state { color: var(--text-muted); background: white; border: 1px dashed var(--border-color); border-radius: 12px; padding: 40px; text-align: center; }
 
@@ -211,9 +218,11 @@
     /* Per-option TypeConfig editors: Exhibition's floor-plan tables live in
        the separate Floor Plan Designer, but its OPTIONAL Asset Type price
        tiers (label/price) are edited right here, same as Curated Event's
-       ranked options (label/price/places, with "Unlimited" support) —
-       alongside the flat Price/Places fallback used when no options (or no
-       Asset Types) are configured (#eventPricingFields). */
+       ranked options (label/price/places, with "Unlimited" support). Every
+       other EventType is priced AND capacity-capped via its Registration
+       Types instead (see the Event Type setup screen /
+       renderOnboardingRegTypeRowHtml_) — there's no flat per-event
+       price/capacity fallback anymore. */
     .type-config-wrap { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 14px; background: #fbfcfe; }
     .type-config-wrap > label.section-label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
     .type-config-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 10px; }
@@ -314,24 +323,124 @@
     .comm-body-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; min-height: 200px; line-height: 1.6; }
   </style>
 
-  <?!= include('SharedStyles'); ?>
+  <!-- Phase 07: SharedStyles.html inlined -- was <?!= include('SharedStyles') ?>,
+       no server-side templating step exists once this is a static file.
+       Content unchanged from SharedStyles.html; keep both in sync by hand
+       until a future stage introduces a real build step, if ever. -->
+  <style>
+    /* ---------- Elevation polish (pure CSS, no markup change needed) ---------- */
+    .tile, .kpi-card, .section, .event-card, .modal-box, .fp-toolbar, .fp-picker-box,
+    .mini-event-card, .event-tile, .subevent-card {
+      box-shadow: 0 1px 2px rgba(27,42,74,0.05), 0 6px 18px rgba(27,42,74,0.045);
+    }
+
+    /* ---------- Icon badge: small tinted square, used inside tiles/cards ---------- */
+    .icon-badge {
+      width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1;
+    }
+    .icon-badge.tint-primary { background: color-mix(in srgb, var(--primary-color) 14%, transparent); color: var(--primary-color); }
+    .icon-badge.tint-mint    { background: color-mix(in srgb, var(--mint-color) 18%, transparent); color: var(--mint-color); }
+    .icon-badge.tint-gold    { background: color-mix(in srgb, var(--accent-color) 16%, transparent); color: var(--accent-color); }
+    .icon-badge.tint-success { background: color-mix(in srgb, var(--success-color) 16%, transparent); color: var(--success-color); }
+    .icon-badge.tint-navy    { background: color-mix(in srgb, var(--navy-color) 10%, transparent); color: var(--navy-color); }
+
+    /* ---------- Tile v2: icon + value/label row, built by tileHtmlIconed() ---------- */
+    .tile.tile-v2 { display: flex; align-items: center; gap: 12px; text-align: left; }
+    .tile.tile-v2 .tile-v2-body { min-width: 0; }
+    .tile.tile-v2 .val { line-height: 1.15; }
+
+    /* ---------- Status dot on existing .tag pills (no markup change) ---------- */
+    .tag.live::before, .tag.draft::before, .tag.closed::before, .tag.deleted::before {
+      content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      margin-right: 5px; vertical-align: middle; background: currentColor;
+    }
+
+    /* ---------- Event-type icon, used by renderEventsList() ---------- */
+    .ev-type-icon {
+      width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; margin-right: 4px;
+      background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color);
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+
+    /* ---------- Donut chart + legend, built by renderDonutChart() ---------- */
+    .donut-wrap { display: flex; align-items: center; gap: 16px; }
+    .donut-wrap svg { flex-shrink: 0; }
+    .donut-legend { display: flex; flex-direction: column; gap: 6px; }
+    .donut-legend .legend-item { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dark); }
+    .donut-legend .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  </style>
+
+  <script>
+    function tileHtmlIconed(val, lbl, icon, tint) {
+      return '<div class="tile tile-v2">' +
+        '<div class="icon-badge tint-' + tint + '">' + icon + '</div>' +
+        '<div class="tile-v2-body"><div class="val">' + val + '</div><div class="lbl">' + lbl + '</div></div>' +
+      '</div>';
+    }
+
+    function renderDonutChart(containerEl, entries, opts) {
+      opts = opts || {};
+      var colorFn = opts.colorFn || function(label, i) {
+        var palette = ['var(--primary-color)', 'var(--mint-color)', 'var(--accent-color)', 'var(--navy-color)', 'var(--success-color)', 'var(--warning-color)'];
+        return palette[i % palette.length];
+      };
+      entries = (entries || []).filter(function(e) { return e.value > 0; });
+      var total = entries.reduce(function(s, e) { return s + e.value; }, 0);
+      if (!entries.length || total <= 0) {
+        containerEl.innerHTML = '<p class="empty-state">No data yet.</p>';
+        return;
+      }
+      var r = 15.9;
+      var offset = 25;
+      var segments = '';
+      var legend = '';
+      entries.forEach(function(e, i) {
+        var pct = (e.value / total) * 100;
+        var color = colorFn(e.label, i);
+        segments += '<circle cx="21" cy="21" r="' + r + '" fill="transparent" style="stroke:' + color + '" ' +
+          'stroke-width="6" stroke-dasharray="' + pct.toFixed(2) + ' 100" stroke-dashoffset="' + offset.toFixed(2) + '"></circle>';
+        legend += '<div class="legend-item"><span class="legend-dot" style="background:' + color + '"></span>' +
+          donutEscapeHtml_(e.label) + ' · ' + e.value + '</div>';
+        offset -= pct;
+      });
+      containerEl.innerHTML =
+        '<div class="donut-wrap">' +
+          '<svg width="76" height="76" viewBox="0 0 42 42">' +
+            '<circle cx="21" cy="21" r="' + r + '" fill="transparent" stroke="var(--border-color)" stroke-width="6"></circle>' +
+            segments +
+          '</svg>' +
+          '<div class="donut-legend">' + legend + '</div>' +
+        '</div>';
+    }
+
+    function donutEscapeHtml_(str) {
+      var div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+  </script>
 </head>
 <body>
 
-<? if (!adminEmail) { ?>
-  <div class="session-expired">
-    <div class="session-expired-box">
-      <h2>Session Expired</h2>
-      <p>Your admin session could not be verified or has expired.</p>
-      <a href="<?= portalUrl ?>">&larr; Return to login</a>
-    </div>
+<!-- Phase 07: adminEmail was server-templated (Apps Script only rendered
+     this page at all once its own session check passed). Now a static
+     file, both screens are always in the DOM; checkAdminSession_ (see
+     bottom script block) shows exactly one based on a real
+     supabaseClient.auth.getSession() check on load, same pattern
+     Portal.html's tryRestoreAttendeeSession_ already established. -->
+<div class="session-expired" id="sessionExpiredScreen" style="display:none;">
+  <div class="session-expired-box">
+    <h2>Session Expired</h2>
+    <p>Your admin session could not be verified or has expired.</p>
+    <a href="Portal.html">&larr; Return to login</a>
   </div>
-<? } else { ?>
+</div>
 
-  <div class="admin-screen">
+  <div class="admin-screen" id="adminScreen" style="display:none;">
     <div class="admin-header">
       <h1>Admin Portal</h1>
-      <div class="who"><?= adminEmail ?> <a class="exit-link" href="#" onclick="adminLogoutClick(); return false;">Log out</a> <a class="exit-link" href="<?= portalUrl ?>">Exit to Main Portal</a></div>
+      <div class="who"><span id="shellAdminEmail"></span> <a class="exit-link" href="#" onclick="adminLogoutClick(); return false;">Log out</a> <a class="exit-link" href="Portal.html">Exit to Main Portal</a></div>
     </div>
 
     <div class="admin-body">
@@ -339,7 +448,7 @@
         <div class="admin-nav-item active" id="admin-nav-events" role="button" tabindex="0">My Events</div>
         <div class="admin-nav-item" id="admin-nav-dashboard" role="button" tabindex="0">Dashboard</div>
         <div class="admin-nav-item" id="admin-nav-comms" role="button" tabindex="0">✉️ Communications</div>
-        <div class="admin-nav-item" id="admin-nav-databridge" role="button" tabindex="0">🔗 Matching Engine Export</div>
+        <div class="admin-nav-item" id="admin-nav-databridge" role="button" tabindex="0">🔗 B2B Matching</div>
         <div class="admin-nav-item" id="admin-nav-settings" role="button" tabindex="0">⚙️ Settings</div>
       </div>
 
@@ -349,7 +458,13 @@
         <div id="admin-panel-events" class="admin-panel active">
           <div class="panel-header-row">
             <h2>My Events</h2>
-            <button class="btn" onclick="openEventModal()">+ New Event</button>
+            <div style="display:flex; align-items:center; gap:16px;">
+              <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:500; color:var(--text-muted); cursor:pointer; user-select:none;">
+                <input type="checkbox" id="showClosedDeletedToggle" onchange="renderEventsList(allEventsTreeCache)">
+                Show closed &amp; deleted events
+              </label>
+              <button class="btn" onclick="openEventModal()">+ New Event</button>
+            </div>
           </div>
           <div id="eventsListWrap"><p>Loading events...</p></div>
         </div>
@@ -537,35 +652,25 @@
         <!-- ============ MATCHING ENGINE EXPORT (B2B SQL bridge) ============ -->
         <div id="admin-panel-databridge" class="admin-panel">
           <div class="panel-header-row">
-            <h2>Matching Engine Export</h2>
+            <h2>B2B Matching</h2>
           </div>
 
           <div class="section">
-            <h3>Generate SQL for the offline matching engine</h3>
+            <h3>Run B2B Meeting Matching</h3>
             <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
-              Picks a "B2B Pre-scheduled Meetings" event or sub-event and builds a downloadable
-              <code>.sql</code> file of <code>INSERT</code> statements for the <code>attendees</code> and
-              <code>preferences</code> tables in your local MySQL matching engine. Confirmed attendees only
-              (waitlisted are excluded). Nothing is sent anywhere automatically — download the file and run
-              it yourself against your database.
+              Picks a "B2B Pre-scheduled Meetings" event or sub-event and runs the matching engine directly
+              against confirmed attendees' mutual preferences (waitlisted are excluded) — no external tool or
+              file needed, matches are written straight to this event's meetings.
             </p>
             <div class="form-group">
               <label for="dataBridgeEntityPicker">B2B Event / Sub-Event</label>
               <select id="dataBridgeEntityPicker"><option value="">-- Select a B2B event --</option></select>
             </div>
-            <button class="btn" id="btnGenerateDataBridgeSql" onclick="generateDataBridgeSql()">Generate SQL</button>
+            <button class="btn" id="btnGenerateDataBridgeSql" onclick="generateDataBridgeSql()">Run Matching</button>
             <div id="dataBridgeMsg" style="display:none; padding:10px; border-radius:8px; margin-top:14px; font-size:13px;"></div>
 
             <div id="dataBridgeResult" style="display:none; margin-top:18px;">
               <div id="dataBridgeSummary" style="font-size:13px; margin-bottom:10px;"></div>
-              <div id="dataBridgeSkippedWrap" style="display:none; margin-bottom:12px;">
-                <div style="font-weight:700; font-size:12.5px; color:var(--text-dark); margin-bottom:4px;">Skipped preference rows:</div>
-                <ul id="dataBridgeSkippedList" style="margin:0; padding-left:18px; font-size:12.5px; color:var(--text-muted);"></ul>
-              </div>
-              <textarea id="dataBridgeSqlText" readonly rows="16" style="width:100%; font-family:monospace; font-size:12px;"></textarea>
-              <div style="margin-top:10px;">
-                <button class="btn secondary" onclick="downloadDataBridgeSql()">Download .sql</button>
-              </div>
             </div>
           </div>
         </div>
@@ -681,6 +786,7 @@
           <option value="Draft">Draft</option>
           <option value="Live">Live</option>
           <option value="Closed">Closed</option>
+          <option value="Deleted">Deleted</option>
         </select>
       </div>
 
@@ -782,21 +888,6 @@
         each sub-event below individually. Add sub-events with "+ Add Sub-Event" — each one needs its own Event Type.
       </p>
 
-      <div id="eventPricingFields" class="type-config-wrap" style="display:none;">
-        <label class="section-label" id="pricingFieldsLabel">Pricing &amp; Capacity</label>
-        <p class="type-config-hint" id="pricingFieldsHint">A single price and place count for the whole event (e.g. a Curated Event). Leave Places blank for no limit.</p>
-        <div class="form-row">
-          <div class="form-group">
-            <label id="priceFieldLabel" for="priceField">Price per Registrant<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span></label>
-            <input type="number" id="priceField" min="0" step="0.01" placeholder="0.00">
-          </div>
-          <div class="form-group" id="placesFieldWrap">
-            <label for="placesField">Places / Capacity</label>
-            <input type="text" id="placesField" placeholder="Blank = Unlimited">
-          </div>
-        </div>
-      </div>
-
       <div id="eventTopLevelOnlyFields">
         <div class="checkbox-row">
           <input type="checkbox" id="dietaryReqField">
@@ -808,7 +899,7 @@
         </div>
         <div class="form-group">
           <label for="currencyField">Currency</label>
-          <select id="currencyField" onchange="updatePriceCurrencySuffix()">
+          <select id="currencyField">
             <option value="USD">USD ($)</option>
             <option value="EUR">EUR (€)</option>
             <option value="GBP">GBP (£)</option>
@@ -1037,20 +1128,44 @@
     </div>
   </div>
 
-<? } ?>
+<!-- Phase 07: Supabase client + the google.script.run compatibility shim,
+     same precedent as Portal.html. Must load before this page's own
+     script block, which calls google.script.run.* immediately in several
+     init paths (populateDataBridgeEntityPicker etc.). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="supabase-shim.js"></script>
 
 <script>
-  // JSON.stringify (server-side) for consistency with the same fix applied
-  // to AdminResetPassword.html/Unsubscribe.html/AdminFloorPlan.html — token
-  // here is only ever echoed after already passing validateAdminToken_, so
-  // this one was not exploitable, but there's no reason for it to be the
-  // one place in the app relying on that distinction to stay safe.
-  var ADMIN_TOKEN = <?!= JSON.stringify(token) ?>;
-  var PORTAL_URL = <?!= JSON.stringify(portalUrl) ?>;
+  // Phase 07: ADMIN_TOKEN is a vestigial positional arg every shim FN_MAP
+  // entry ignores (Supabase Auth's own session replaces it entirely, same
+  // as Portal.html's old sessionToken) -- kept only so every existing
+  // google.script.run.xxx(ADMIN_TOKEN, ...) call site needed zero edits.
+  var ADMIN_TOKEN = null;
+  var PORTAL_URL = 'Portal.html';
   // Set when this page was reached via a "change canvas size" link from the
   // Floor Plan Designer (?openEvent=<id>) — auto-opens that event's edit
   // modal once the events list has loaded, see loadEventsList().
-  var OPEN_EVENT_ID = <?!= JSON.stringify(openEventId) ?>;
+  var OPEN_EVENT_ID = new URLSearchParams(window.location.search).get('openEvent') || '';
+
+  /**
+   * Real, client-side replacement for the old server-side adminEmail
+   * gate: no Supabase session at all -> Session Expired screen. RPCs
+   * still independently reject a non-admin session (is_tenant_admin
+   * check in every function) -- this is just the UI-level gate, same
+   * division of responsibility Portal.html's own session check has.
+   */
+  function checkAdminSession_() {
+    supabaseClient.auth.getSession().then(function (sessionRes) {
+      var session = sessionRes && sessionRes.data && sessionRes.data.session;
+      if (!session) {
+        document.getElementById('sessionExpiredScreen').style.display = 'flex';
+        return;
+      }
+      document.getElementById('shellAdminEmail').textContent = session.user.email;
+      document.getElementById('adminScreen').style.display = 'flex';
+      initAdminPortal_();
+    });
+  }
 
   // Explicitly ends the session server-side (revokes the cached token)
   // before returning to login, rather than just navigating away and
@@ -1066,7 +1181,6 @@
   }
   var onboardingData = {};
   var eventTypeOptions = { topLevelTypes: [], subEventTypes: [] };
-  var currentParentForModal = null;
   // Client-side cache of getEventDashboardData results, keyed by eventId:
   // { data, fetchedAt, pending }. Prefetched in the background as soon as
   // the executive summary lists which events exist (see
@@ -1093,7 +1207,6 @@
   var MILESTONE_TYPE_CONFIRM_INFO = 'ConfirmInfo';
   var MILESTONE_TYPE_FILE_UPLOAD = 'FileUpload';
   var MILESTONE_TYPE_SET_PREFERENCES = 'SetPreferences';
-  var CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', INR: '₹' };
 
   /** Renders a capacity state (from getEventCapacityState_ on the backend) as a short display string. */
   function capacityBadgeText(capacityState) {
@@ -1108,16 +1221,25 @@
     return evt.typeConfig.length + (evt.typeConfig.length === 1 ? ' option configured' : ' options configured');
   }
 
+  // Phase 07: the nav-wiring/initial-load work this used to gate behind
+  // "if (!ADMIN_TOKEN) return" (ADMIN_TOKEN is now a vestigial constant,
+  // see above) is split in two: nav listeners wire up unconditionally
+  // (harmless — adminScreen just stays display:none until a real session
+  // is confirmed), and the actual data loads move into initAdminPortal_,
+  // called only from checkAdminSession_ once a real session exists.
   document.addEventListener('DOMContentLoaded', function() {
-    if (!ADMIN_TOKEN) return;
     document.getElementById('admin-nav-events').addEventListener('click', function() { switchAdminPanel('events'); });
     document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
     document.getElementById('admin-nav-comms').addEventListener('click', function() { switchAdminPanel('comms'); });
     document.getElementById('admin-nav-databridge').addEventListener('click', function() { switchAdminPanel('databridge'); });
     document.getElementById('admin-nav-settings').addEventListener('click', function() { switchAdminPanel('settings'); });
+    checkAdminSession_();
+  });
+
+  function initAdminPortal_() {
     loadOnboardingData();
     loadEventsList();
-  });
+  }
 
   // Keyboard support for the div-based controls above (nav items, comm
   // tabs, event-card headers, filter chips) that only have a mouse
@@ -1436,6 +1558,7 @@
     return '<div class="type-config-row" style="flex-wrap:wrap; align-items:center; gap:6px;">' +
       '<input type="text" class="ob-regtype-label" value="' + escapeHtml(rt.label || '') + '" placeholder="Registration Type" style="flex:2; min-width:120px;">' +
       '<input type="number" class="ob-regtype-price" value="' + (typeof rt.price === 'number' ? rt.price : '') + '" placeholder="Price" step="0.01" min="0" style="width:90px;">' +
+      '<input type="text" class="ob-regtype-capacity" value="' + escapeHtml(rt.capacity !== null && rt.capacity !== undefined ? String(rt.capacity) : '') + '" placeholder="Capacity (blank = unlimited)" style="width:150px;">' +
       '<label style="font-size:11px; font-weight:normal; display:flex; align-items:center; gap:3px; white-space:nowrap;"><input type="checkbox" class="ob-regtype-disabled"' + (rt.disabled ? ' checked' : '') + '> Disabled</label>' +
       '<label style="font-size:11px; font-weight:normal; display:flex; align-items:center; gap:3px; white-space:nowrap;"><input type="checkbox" class="ob-regtype-hidden"' + (rt.hidden ? ' checked' : '') + '> Hidden</label>' +
       '<label style="font-size:10px; font-weight:normal; display:flex; align-items:center; gap:3px; white-space:nowrap;">From <input type="date" class="ob-regtype-from" value="' + escapeHtml(rt.availableFrom || '') + '" style="width:130px;"></label>' +
@@ -1507,6 +1630,7 @@
       return {
         label: row.querySelector('.ob-regtype-label').value.trim(),
         price: parseFloat(row.querySelector('.ob-regtype-price').value) || 0,
+        capacity: row.querySelector('.ob-regtype-capacity').value.trim(), // '' = Unlimited, same convention the old flat Places field used
         disabled: row.querySelector('.ob-regtype-disabled').checked,
         hidden: row.querySelector('.ob-regtype-hidden').checked,
         availableFrom: row.querySelector('.ob-regtype-from').value,
@@ -1795,7 +1919,7 @@
   }
 
   function renderSubEventPaneHtml_(sub, evt) {
-    var subStatusClass = sub.status === 'Live' ? 'live' : (sub.status === 'Closed' ? 'closed' : 'draft');
+    var subStatusClass = statusTagClass_(sub.status);
     var subCapBadge = capacityBadgeText(sub.capacityState);
     var subCuratedOptionsBadge = optionsConfiguredBadgeText(sub);
     var metaBits = [];
@@ -1842,7 +1966,7 @@
 
   function wireSubEventPaneActions_(paneEl, sub, evt) {
     paneEl.querySelector('[data-action="edit"]').addEventListener('click', function() { openEventModal(sub, evt); });
-    paneEl.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, sub.eventId, sub.eventName); });
+    paneEl.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, sub.eventId, sub.eventName, sub.isB2B); });
     var floorPlanBtn = paneEl.querySelector('[data-action="floor-plan"]');
     if (floorPlanBtn) floorPlanBtn.addEventListener('click', function(e) { e.stopPropagation(); launchFloorPlanDesigner(sub.eventId); });
     var tableAllocBtn = paneEl.querySelector('[data-action="table-alloc"]');
@@ -1868,14 +1992,55 @@
     });
   }
 
+  /** Shared by the top-level event card and each sub-event tab pane so a status introduced in one place (e.g. 'Deleted') can't fall through to the 'draft' bucket in the other. */
+  function statusTagClass_(status) {
+    if (status === 'Live') return 'live';
+    if (status === 'Closed') return 'closed';
+    if (status === 'Deleted') return 'deleted';
+    return 'draft';
+  }
+
+  var EVENT_STATUS_GROUPS = ['Draft', 'Live', 'Closed', 'Deleted'];
+  // Draft/Live are the working set an admin needs day-to-day; Closed/Deleted
+  // are history that would otherwise bury them as the event list grows, so
+  // they're opt-in via the "Show closed & deleted events" toggle rather than
+  // just collapsed-by-default -- unchecking it should make the list exactly
+  // as short as it was before Closed/Deleted existed.
   function renderEventsList(events) {
     var wrap = document.getElementById('eventsListWrap');
     if (!events.length) {
       wrap.innerHTML = '<div class="empty-state">No events yet. Click "+ New Event" to create your first one.</div>';
       return;
     }
+
+    var showClosedDeleted = document.getElementById('showClosedDeletedToggle').checked;
+    var groups = { Draft: [], Live: [], Closed: [], Deleted: [] };
+    events.forEach(function(evt) { (groups[evt.status] || groups.Draft).push(evt); });
+
+    var visibleStatuses = showClosedDeleted ? EVENT_STATUS_GROUPS : ['Draft', 'Live'];
     wrap.innerHTML = '';
-    events.forEach(function(evt) {
+    var shown = 0;
+    visibleStatuses.forEach(function(status) {
+      var list = groups[status];
+      if (!list.length) return;
+      shown += list.length;
+      var details = document.createElement('details');
+      details.className = 'event-status-group';
+      details.open = true;
+      var summary = document.createElement('summary');
+      summary.textContent = status + ' (' + list.length + ')';
+      details.appendChild(summary);
+      list.forEach(function(evt) { details.appendChild(buildEventCardEl_(evt)); });
+      wrap.appendChild(details);
+    });
+
+    if (!shown) {
+      wrap.innerHTML = '<div class="empty-state">No draft or live events' +
+        (showClosedDeleted ? '' : ' — check "Show closed &amp; deleted events" above to see the rest') + '.</div>';
+    }
+  }
+
+  function buildEventCardEl_(evt) {
       var card = document.createElement('div');
       card.className = 'event-card';
 
@@ -1883,7 +2048,7 @@
       var currency = evt.effectiveCurrency || 'USD';
       var capBadge = capacityBadgeText(evt.capacityState);
       var curatedOptionsBadge = optionsConfiguredBadgeText(evt);
-      var statusClass = evt.status === 'Live' ? 'live' : (evt.status === 'Closed' ? 'closed' : 'draft');
+      var statusClass = statusTagClass_(evt.status);
 
       var metaBits = [evt.totalRegistrations + ' registration(s)', evt.subEvents.length + ' sub-event(s)'];
       if (curatedOptionsBadge) metaBits.push(curatedOptionsBadge);
@@ -1919,7 +2084,7 @@
 
       banner.querySelector('[data-action="edit-parent"]').addEventListener('click', function(e) { e.stopPropagation(); openEventModal(evt); });
       banner.querySelector('[data-action="budget"]').addEventListener('click', function(e) { e.stopPropagation(); openBudgetModal(evt.eventId, evt.eventName); });
-      banner.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, '', evt.eventName); });
+      banner.querySelector('[data-action="emails"]').addEventListener('click', function(e) { e.stopPropagation(); openCommAutomationModal(evt.eventId, '', evt.eventName, evt.isB2B); });
       var addSubBtn = banner.querySelector('[data-action="add-sub"]');
       if (addSubBtn) addSubBtn.addEventListener('click', function(e) { e.stopPropagation(); openEventModal(null, evt); });
       var floorPlanBtn = banner.querySelector('[data-action="floor-plan"]');
@@ -1963,13 +2128,11 @@
         card.appendChild(tabPane);
       }
 
-      wrap.appendChild(card);
-    });
+      return card;
   }
 
   function openEventModal(existingEvent, parentEvent) {
     document.getElementById('eventModalMsg').style.display = 'none';
-    currentParentForModal = parentEvent || null;
     var isSubEvent = !!(parentEvent || (existingEvent && existingEvent.parentEventId));
 
     document.getElementById('eventIdField').value = existingEvent ? existingEvent.eventId : '';
@@ -1985,9 +2148,6 @@
     document.getElementById('detailsPageUrlField').value = existingEvent ? (existingEvent.detailsPageUrl || '') : '';
     document.getElementById('allowedDomainsField').value = existingEvent && existingEvent.allowedDomains ? existingEvent.allowedDomains.join(', ') : '';
     document.getElementById('showChosenByField').checked = existingEvent ? !!existingEvent.showChosenByToAttendees : false;
-    // Price/Places now apply to ANY row (top-level or sub-event).
-    document.getElementById('priceField').value = existingEvent ? (existingEvent.price || 0) : '';
-    document.getElementById('placesField').value = existingEvent && existingEvent.places !== null && existingEvent.places !== undefined ? existingEvent.places : '';
     // Exhibition only; the asset-count field is just a one-time helper for
     // suggesting a size and isn't itself persisted, so it's always blank on open.
     document.getElementById('exhibitionAssetCountField').value = '';
@@ -2163,16 +2323,6 @@
     document.getElementById('milestoneRows').innerHTML = '';
   }
 
-  /** The currency shown next to "Price per Registrant" — the event's own currency if top-level, else the parent's. */
-  function updatePriceCurrencySuffix() {
-    var isSubEvent = !!currentParentForModal || document.getElementById('parentEventIdField').value;
-    var currency = isSubEvent
-      ? ((currentParentForModal && (currentParentForModal.currencyRaw || currentParentForModal.effectiveCurrency)) || 'USD')
-      : (document.getElementById('currencyField').value || 'USD');
-    var symbol = CURRENCY_SYMBOLS[currency] || currency;
-    document.getElementById('priceCurrencySuffix').textContent = ' (' + symbol + ' ' + currency + ')';
-  }
-
   /** Suggests a Floor Plan Canvas Size from the "how many assets" helper field — the admin can still change the Canvas Size dropdown afterward. */
   function suggestFloorPlanSize() {
     var count = Number(document.getElementById('exhibitionAssetCountField').value) || 0;
@@ -2229,25 +2379,6 @@
       document.getElementById('chosenByReportWrap').innerHTML = '';
     }
 
-    // Price/Places apply to every EventType except "Umbrella Event" (no
-    // registration record of its own), Curated Event, and B2B
-    // Pre-scheduled Meetings — those last two are ALWAYS priced via their
-    // options list above now (no flat fallback for new/re-saved events;
-    // see the DECISION note in Code.gs for the legacy-data exception).
-    // Exhibition gets Price ONLY — a single flat price applied per booked
-    // booth — since capacity there is simply the number of "Booth"
-    // elements placed in the Floor Plan Designer, not a manually-entered
-    // Places count.
-    var showPricing = !!type && type !== UMBRELLA_TYPE && !isCuratedEvent && !isB2BMeetings;
-    document.getElementById('eventPricingFields').style.display = showPricing ? 'block' : 'none';
-    document.getElementById('placesFieldWrap').style.display = isExhibition ? 'none' : 'block';
-    document.getElementById('priceFieldLabel').innerHTML = (isExhibition ? 'Price per Booth' : 'Price per Registrant') +
-      '<span id="priceCurrencySuffix" style="font-weight:normal; color:#5f6368;"></span>';
-    document.getElementById('pricingFieldsLabel').textContent = 'Pricing & Capacity';
-    document.getElementById('pricingFieldsHint').textContent = isExhibition
-      ? 'Fallback price for any booth with no Asset Type (see Asset Types above). Applied once per booth when an attendee\'s booking is confirmed.'
-      : 'A single price and place count for the whole event. Leave Places blank for no limit.';
-    updatePriceCurrencySuffix();
     syncMilestoneTypeOptions();
   }
 
@@ -2549,10 +2680,6 @@
   function saveEvent() {
     var eventType = document.getElementById('eventTypeField').value;
     var eventTypeFlags = onboardingData[eventType] || {};
-    // Read raw, don't fall back to 0 here — a non-numeric value should be
-    // rejected below, not silently saved as free (same fix applied
-    // server-side; see createOrUpdateEvent).
-    var priceFieldValue = document.getElementById('priceField').value.trim();
     var payload = {
       eventId: document.getElementById('eventIdField').value,
       parentEventId: document.getElementById('parentEventIdField').value,
@@ -2566,8 +2693,6 @@
       eventType: eventType,
       dietaryRequirements: document.getElementById('dietaryReqField').checked,
       detailsPageUrl: document.getElementById('detailsPageUrlField').value.trim(),
-      price: priceFieldValue === '' ? 0 : parseFloat(priceFieldValue),
-      places: document.getElementById('placesField').value.trim(), // '' = Unlimited
       currency: document.getElementById('currencyField').value, // top-level only; ignored for sub-events
       allowedDomains: document.getElementById('allowedDomainsField').value, // top-level only; ignored for sub-events; server normalizes/splits
       showChosenByToAttendees: document.getElementById('showChosenByField').checked, // any entity level; only meaningful for B2B Pre-scheduled Meetings
@@ -2582,7 +2707,6 @@
 
     if (!payload.eventName) { showModalMsg('Event Name is required.', true); return; }
     if (!payload.eventType) { showModalMsg('Please select an Event Type for this event.', true); return; }
-    if (priceFieldValue !== '' && isNaN(parseFloat(priceFieldValue))) { showModalMsg('Please enter a valid price.', true); return; }
 
     var optionsError = validateOptionsRequired(eventType, payload.typeConfig);
     if (optionsError) { showModalMsg(optionsError, true); return; }
@@ -3306,6 +3430,24 @@
     return div.innerHTML;
   }
 
+  /**
+   * Real bug found during Stage B write-action testing: every inline
+   * onclick="fn(...)" that embeds a JS argument via JSON.stringify(value)
+   * (template/campaign row action buttons, merge-tag insert chips) was
+   * broken -- JSON.stringify always double-quotes strings, which
+   * prematurely closes the double-quoted onclick="..." attribute itself,
+   * silently truncating the handler and corrupting the DOM with a bogus
+   * extra attribute. Never caught before because these exact rows
+   * (a real template/campaign with a real id) were never rendered
+   * against live Supabase data until this session. Use this instead of
+   * a bare JSON.stringify(...) anywhere the result gets embedded inside
+   * a double-quoted HTML attribute -- &quot; round-trips through HTML
+   * parsing back to a literal " without ending the attribute early.
+   */
+  function jsAttr_(value) {
+    return JSON.stringify(value).replace(/"/g, '&quot;');
+  }
+
   /* =========================================================================
      COMMUNICATIONS — Templates, Automated Emails (per event/sub-event),
      New Campaign (audience -> preview -> send), Campaigns & Log, Settings.
@@ -3326,6 +3468,11 @@
     ]},
     { group: 'Portal', tags: [
       ['portal.url', 'Portal URL'], ['portal.unsubscribeUrl', 'Unsubscribe link']
+    ]},
+    { group: 'Meeting (B2B Meeting Requested only)', tags: [
+      ['meeting.requesterName', 'Requester name'], ['meeting.requesterCompany', 'Requester company'],
+      ['meeting.slotLabel', 'Time slot'], ['meeting.eventName', 'Event name'],
+      ['meeting.acceptUrl', 'Accept link'], ['meeting.rejectUrl', 'Reject link']
     ]},
     { group: 'Blocks', tags: [
       ['block.itineraryTable', 'Itinerary table (rendered)']
@@ -3387,8 +3534,8 @@
         '<td style="padding:8px 10px;"><span class="tag type">' + escapeHtml(t.category) + '</span></td>' +
         '<td style="padding:8px 10px;"><span class="tag ' + (t.status === 'Active' ? 'live' : 'draft') + '">' + escapeHtml(t.status) + '</span></td>' +
         '<td style="padding:8px 10px; text-align:right;">' +
-          '<button class="btn small secondary" onclick="openCommTemplateEditor(' + JSON.stringify(t.templateId) + ')">Edit</button> ' +
-          '<button class="btn small secondary" onclick="deleteCommTemplateAction(' + JSON.stringify(t.templateId) + ')">Archive</button>' +
+          '<button class="btn small secondary" onclick="openCommTemplateEditor(' + jsAttr_(t.templateId) + ')">Edit</button> ' +
+          '<button class="btn small secondary" onclick="deleteCommTemplateAction(' + jsAttr_(t.templateId) + ')">Archive</button>' +
         '</td></tr>';
     });
     wrap.innerHTML = html + '</tbody></table></div>';
@@ -3400,9 +3547,7 @@
     allEventsTreeCache.forEach(function(evt) { sel.innerHTML += '<option value="' + evt.eventId + '">' + escapeHtml(evt.eventName) + '</option>'; });
   }
 
-  /* ================= MATCHING ENGINE EXPORT (B2B SQL bridge) ================= */
-  var dataBridgeSqlCache = null;
-  var dataBridgeFilenameCache = 'matching_engine_export.sql';
+  /* ================= B2B MATCHING ENGINE ================= */
 
   function populateDataBridgeEntityPicker() {
     var sel = document.getElementById('dataBridgeEntityPicker');
@@ -3432,42 +3577,21 @@
 
     var btn = document.getElementById('btnGenerateDataBridgeSql');
     var originalText = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Generating…';
+    btn.disabled = true; btn.textContent = 'Running…';
 
     google.script.run
       .withSuccessHandler(function(data) {
         btn.disabled = false; btn.textContent = originalText;
-        dataBridgeSqlCache = data.sql;
-        dataBridgeFilenameCache = data.filename;
         document.getElementById('dataBridgeSummary').textContent =
-          data.entityName + ': ' + data.attendeeCount + ' attendee(s), ' + data.preferenceCount + ' preference row(s)' +
-          (data.skippedCount ? ', ' + data.skippedCount + ' skipped' : '') + '.';
-        var skippedWrap = document.getElementById('dataBridgeSkippedWrap');
-        if (data.skipped && data.skipped.length) {
-          document.getElementById('dataBridgeSkippedList').innerHTML =
-            data.skipped.map(function(s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('');
-          skippedWrap.style.display = 'block';
-        } else {
-          skippedWrap.style.display = 'none';
-        }
-        document.getElementById('dataBridgeSqlText').value = data.sql;
+          data.matchedCount + ' meeting(s) matched — ' + data.fullMatchCount + ' full match, ' +
+          data.requestedBySupplierCount + ' requested by supplier, ' + data.requestedByBuyerCount + ' requested by buyer.';
         result.style.display = 'block';
       })
       .withFailureHandler(function(err) {
         btn.disabled = false; btn.textContent = originalText;
         msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = err.message;
       })
-      .generateB2BMatchingSql(ADMIN_TOKEN, entityId);
-  }
-
-  function downloadDataBridgeSql() {
-    if (!dataBridgeSqlCache) return;
-    var blob = new Blob([dataBridgeSqlCache], { type: 'text/plain;charset=utf-8;' });
-    var link = document.createElement('a');
-    var url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', dataBridgeFilenameCache);
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      .generateB2BMeetings(ADMIN_TOKEN, entityId);
   }
 
   function renderTagRefList() {
@@ -3475,7 +3599,7 @@
     COMM_TAG_CATALOG.forEach(function(g) {
       html += '<div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:800; margin:10px 0 6px;">' + g.group + '</div>';
       g.tags.forEach(function(pair) {
-        html += '<div class="comm-tag-ref" onclick="insertTagAtCursor(' + JSON.stringify('{{' + pair[0] + '}}') + ')"><code>{{' + pair[0] + '}}</code><span>' + pair[1] + '</span></div>';
+        html += '<div class="comm-tag-ref" onclick="insertTagAtCursor(' + jsAttr_('{{' + pair[0] + '}}') + ')"><code>{{' + pair[0] + '}}</code><span>' + pair[1] + '</span></div>';
       });
     });
     document.getElementById('commTagRefList').innerHTML = html;
@@ -3553,11 +3677,12 @@
 
   var COMM_AUTOMATION_TRIGGER_LABELS = {
     RegistrationComplete: { label: 'Registration Complete', hint: 'Fires once, right after the attendee submits' },
-    AllMilestonesCompleted: { label: 'All Milestones Completed', hint: 'Fires once every milestone for this entity is done' }
+    AllMilestonesCompleted: { label: 'All Milestones Completed', hint: 'Fires once every milestone for this entity is done' },
+    B2BMeetingRequested: { label: 'B2B Meeting Requested', hint: 'Fires when an attendee requests a meeting, sent to the other party with Accept/Reject links' }
   };
 
-  function openCommAutomationModal(eventId, subEventId, entityName) {
-    commState.automationEntity = { eventId: eventId, subEventId: subEventId || '' };
+  function openCommAutomationModal(eventId, subEventId, entityName, isB2B) {
+    commState.automationEntity = { eventId: eventId, subEventId: subEventId || '', isB2B: !!isB2B };
     document.getElementById('commAutomationModalTitle').textContent = 'Automated Emails — ' + entityName;
     document.getElementById('commAutomationRowsWrap').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
     document.getElementById('commAutomationModalMsg').style.display = 'none';
@@ -3588,12 +3713,14 @@
     bindings.forEach(function(b) { byTrigger[b.triggerType] = b; });
 
     var html = '';
-    ['RegistrationComplete', 'AllMilestonesCompleted'].forEach(function(triggerType) {
+    var triggerTypes = ['RegistrationComplete', 'AllMilestonesCompleted'];
+    if (commState.automationEntity && commState.automationEntity.isB2B) triggerTypes.push('B2BMeetingRequested');
+    triggerTypes.forEach(function(triggerType) {
       var meta = COMM_AUTOMATION_TRIGGER_LABELS[triggerType];
       var current = byTrigger[triggerType];
       html += '<div class="comm-automation-row">' +
         '<div class="lbl">' + meta.label + '<small>' + meta.hint + '</small></div>' +
-        '<select onchange="saveAutomationRowFromSelect(this, ' + JSON.stringify(triggerType) + ')">' + commAutomationOptionsHtml(templates, current ? current.templateId : '') + '</select>' +
+        '<select onchange="saveAutomationRowFromSelect(this, ' + jsAttr_(triggerType) + ')">' + commAutomationOptionsHtml(templates, current ? current.templateId : '') + '</select>' +
       '</div>';
     });
 
@@ -3738,6 +3865,7 @@
       eventId: eventId,
       scope: (scope === 'subEvent' && subEventId) ? 'subEvent' : 'event',
       subEventId: subEventId,
+      templateId: templateId,
       filters: {
         registrationTypes: commState.selectedRegTypes,
         subEventStatuses: commState.selectedSubStatuses,
@@ -3913,10 +4041,10 @@
         '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
           '<div><b>' + escapeHtml(c.name) + '</b> <span class="tag ' + (COMM_CAMPAIGN_STATUS_TAG_CLASS[c.status] || 'draft') + '" style="margin-left:6px;">' + escapeHtml(c.status) + '</span></div>' +
           '<div>' +
-            (['Queued', 'Running', 'AwaitingQuota'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="pauseCampaignAction(' + JSON.stringify(c.campaignId) + ')">Pause</button> ' : '') +
-            (c.status === 'Paused' ? '<button class="btn small secondary" onclick="resumeCampaignAction(' + JSON.stringify(c.campaignId) + ')">Resume</button> ' : '') +
-            (['Queued', 'Running', 'AwaitingQuota', 'Paused'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="cancelCampaignAction(' + JSON.stringify(c.campaignId) + ')">Cancel</button> ' : '') +
-            '<button class="btn small secondary" onclick="viewCommCampaignLog(' + JSON.stringify(c.campaignId) + ')">View Log</button>' +
+            (['Queued', 'Running', 'AwaitingQuota'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="pauseCampaignAction(' + jsAttr_(c.campaignId) + ')">Pause</button> ' : '') +
+            (c.status === 'Paused' ? '<button class="btn small secondary" onclick="resumeCampaignAction(' + jsAttr_(c.campaignId) + ')">Resume</button> ' : '') +
+            (['Queued', 'Running', 'AwaitingQuota', 'Paused'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="cancelCampaignAction(' + jsAttr_(c.campaignId) + ')">Cancel</button> ' : '') +
+            '<button class="btn small secondary" onclick="viewCommCampaignLog(' + jsAttr_(c.campaignId) + ')">View Log</button>' +
           '</div>' +
         '</div>' +
         '<div class="comm-progress-bar"><div class="comm-progress-bar-fill" style="width:' + pct + '%;"></div></div>' +

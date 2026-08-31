@@ -9,17 +9,17 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --primary-color: <?!= branding.primaryColor ?>;
-      --navy-color: <?!= branding.navyColor ?>;
-      --font-family: <?!= branding.fontFamily ?>;
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --border-color: #dfe3ea;
       --text-dark: var(--navy-color);
-      --text-muted: <?!= branding.mutedTextColor ?>;
-      --success-color: <?!= branding.successColor ?>;
-      --error-color: <?!= branding.errorColor ?>;
+      --text-muted: #5B6472;
+      --success-color: #2E7D5B;
+      --error-color: #C0392B;
     }
     * { box-sizing: border-box; }
-    body { font-family: var(--font-family); background: <?!= branding.pageBgColor ?>; margin: 0; padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    body { font-family: var(--font-family); background: #F4F6F8; margin: 0; padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 100vh; -webkit-font-smoothing: antialiased; }
     .card { background: white; border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 8px 30px rgba(13,27,42,0.10); text-align: center; }
     h2 { margin-top: 0; color: var(--navy-color); font-weight: 800; }
     p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
@@ -35,40 +35,53 @@
     .msg.error { background: #F9EBEA; color: var(--error-color); }
     .msg.success { background: #EAF2EF; color: var(--success-color); }
   </style>
+  <!-- Phase 07 Stage C: Supabase client + shim -- this page never logs in
+       (public, token-verified), but still needs sb.rpc() for the shim's
+       confirmB2BMeetingResponseByToken mapping. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="supabase-shim.js"></script>
 </head>
 <body>
   <div class="card">
-    <? if (!eventId || !meetingId || !email || (action !== 'accept' && action !== 'reject') || !token) { ?>
+    <div id="invalidLinkBlock" style="display:none;">
       <h2>Invalid Link</h2>
       <p>This meeting response link is missing information and can't be processed. If you followed a link from an email, please try again from that email, or open the Event Portal to respond directly.</p>
-      <p style="margin-top:20px;"><a href="<?= portalUrl ?>" style="color:var(--primary-color); font-weight:700;">Open Event Portal</a></p>
-    <? } else if (action === 'accept') { ?>
+      <p style="margin-top:20px;"><a href="Portal.html" style="color:var(--primary-color); font-weight:700;">Open Event Portal</a></p>
+    </div>
+    <div id="acceptBlock" style="display:none;">
       <h2>Accept this meeting?</h2>
       <p>Confirming will book this meeting on both diaries and notify whoever requested it.</p>
-      <div id="respMsg" class="msg"></div>
-      <button id="btnRespond" class="accept">Confirm Accept</button>
-      <p style="margin-top:20px;"><a href="<?= portalUrl ?>" style="color:var(--primary-color); font-weight:700;">Or open the Event Portal instead</a></p>
-    <? } else { ?>
+      <div id="respMsgAccept" class="msg"></div>
+      <button id="btnRespondAccept" class="accept">Confirm Accept</button>
+      <p style="margin-top:20px;"><a href="Portal.html" style="color:var(--primary-color); font-weight:700;">Or open the Event Portal instead</a></p>
+    </div>
+    <div id="rejectBlock" style="display:none;">
       <h2>Reject this meeting request?</h2>
       <p>This frees up the slot on both diaries and lets the requester know without giving a reason.</p>
-      <div id="respMsg" class="msg"></div>
-      <button id="btnRespond" class="reject">Confirm Reject</button>
-      <p style="margin-top:20px;"><a href="<?= portalUrl ?>" style="color:var(--primary-color); font-weight:700;">Or open the Event Portal instead</a></p>
-    <? } ?>
+      <div id="respMsgReject" class="msg"></div>
+      <button id="btnRespondReject" class="reject">Confirm Reject</button>
+      <p style="margin-top:20px;"><a href="Portal.html" style="color:var(--primary-color); font-weight:700;">Or open the Event Portal instead</a></p>
+    </div>
   </div>
 
   <script>
-    // JSON.stringify (server-side), not the HTML-escaped print scriptlet —
-    // see the same note in AdminResetPassword.html/Unsubscribe.html.
-    var eventId = <?!= JSON.stringify(eventId) ?>;
-    var meetingId = <?!= JSON.stringify(meetingId) ?>;
-    var email = <?!= JSON.stringify(email) ?>;
-    var action = <?!= JSON.stringify(action) ?>;
-    var token = <?!= JSON.stringify(token) ?>;
-    var btn = document.getElementById('btnRespond');
-    if (btn) {
+    // Phase 07: params now read straight off the real URL (was
+    // server-templated before) -- this is a public, no-login page.
+    var params = new URLSearchParams(window.location.search);
+    var eventId = params.get('ev') || '';
+    var meetingId = params.get('m') || '';
+    var email = params.get('e') || '';
+    var action = params.get('a') || '';
+    var token = params.get('t') || '';
+
+    var isValid = eventId && meetingId && email && (action === 'accept' || action === 'reject') && token;
+    var blockId = !isValid ? 'invalidLinkBlock' : (action === 'accept' ? 'acceptBlock' : 'rejectBlock');
+    document.getElementById(blockId).style.display = 'block';
+
+    var btn = document.getElementById(action === 'accept' ? 'btnRespondAccept' : 'btnRespondReject');
+    if (isValid && btn) {
       btn.addEventListener('click', function() {
-        var msgEl = document.getElementById('respMsg');
+        var msgEl = document.getElementById(action === 'accept' ? 'respMsgAccept' : 'respMsgReject');
         btn.disabled = true;
         google.script.run
           .withSuccessHandler(function(res) {
