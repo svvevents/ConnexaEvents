@@ -237,6 +237,33 @@
     .type-config-row input { flex: 1; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; min-width: 0; }
     .type-config-row .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
     .add-row-btn { background: #eef1f5; color: var(--text-dark); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    /* ---------- Plain-language Event Type picker (replaces the raw dropdown) ---------- */
+    .type-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .type-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; background: #fff; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+    .type-card:hover { border-color: var(--primary-color); }
+    .type-card.sel { border-color: var(--primary-color); background: rgba(28,114,147,0.06); }
+    .type-card .tc-label { font-weight: 700; font-size: 13px; }
+    .type-card .tc-blurb { font-size: 11.5px; color: var(--text-muted); margin: 4px 0 0; }
+    .type-card.disabled { cursor: not-allowed; opacity: 0.55; }
+    .type-card.disabled:hover { border-color: var(--border-color); }
+    .type-card-empty-hint { font-size: 11px; color: var(--warning-color); margin: 6px 0 0; }
+    @media (max-width: 480px) { .type-card-grid { grid-template-columns: 1fr; } }
+
+    /* ---------- Live "at least one priced option" checklist (Curated Event / B2B Meetings) ---------- */
+    .options-status { font-size: 12px; font-weight: 700; margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; display: inline-block; }
+    .options-status.ok { background: rgba(46,125,91,0.1); color: var(--success-color); }
+    .options-status.pending { background: #FBF4E6; color: var(--warning-color); }
+
+    /* ---------- Advanced settings accordion (New Event modal) ---------- */
+    .advanced-settings { border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 14px; }
+    .advanced-settings > summary { cursor: pointer; list-style: none; padding: 12px 14px; font-weight: 700; font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .advanced-settings > summary::-webkit-details-marker { display: none; }
+    .advanced-settings > summary::before { content: '\25B8'; display: inline-block; transition: transform .15s ease; font-size: 11px; color: var(--text-muted); }
+    .advanced-settings[open] > summary::before { transform: rotate(90deg); }
+    .advanced-settings > summary .as-hint { font-weight: 400; font-size: 11.5px; color: var(--text-muted); }
+    .advanced-settings > #eventTopLevelOnlyFields { padding: 0 14px 14px; }
+    .advanced-settings > #milestonesConfigWrap { margin: 0 14px 14px; }
     /* Settings panel: same remove-button look, not scoped to .type-config-row (used in rows with a different layout — Registration Fields' multi-input row). */
     .remove-row-btn { flex: 0 0 auto; background: #F9EBEA; color: var(--error-color); border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-weight: 800; }
     .settings-field-row input[type="text"], .settings-field-row select { padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
@@ -791,7 +818,30 @@
       </div>
 
       <div id="eventTypeFields">
-        <div class="form-group">
+        <!-- Brand-new top-level event: no scoped types exist yet (see populateEventTypeDropdown's
+             forceUmbrellaOnly), so there's no real choice to offer — just explain what happens next
+             in plain language instead of showing a disabled "Umbrella Event" dropdown. -->
+        <p id="newUmbrellaExplainer" class="type-config-hint" style="display:none; margin-bottom:14px;">
+          This event starts as a container. Save it, then use <strong>"+ Add Sub-Event"</strong> to add what
+          attendees actually register for — a session, an exhibition, matchmaking meetings, or more than one —
+          each gets its own setup.
+        </p>
+
+        <!-- Plain-language front door for every OTHER case (adding/editing a sub-event, or converting an
+             existing top-level event) — replaces the old jargon dropdown with cards for the underlying
+             isExhibition/isCuratedEvent/isB2B flags, resolved by renderTypeCategoryPicker_(). -->
+        <div id="typeCategoryPicker" class="form-group" style="display:none;">
+          <label>What will attendees do here? *</label>
+          <div class="type-card-grid" id="typeCategoryCards"></div>
+        </div>
+        <div id="typeNamePicker" class="form-group" style="display:none;">
+          <label for="typeNameField">Which one? *</label>
+          <select id="typeNameField" onchange="onTypeNameFieldChange_()"></select>
+        </div>
+
+        <!-- The real field every save/read function already uses — kept as the single source of truth,
+             just no longer shown directly (see renderTypeCategoryPicker_/setEventType_). -->
+        <div class="form-group" style="display:none;">
           <label for="eventTypeField">Event Type *</label>
           <select id="eventTypeField" onchange="onEventTypeChange()">
             <option value="">-- Select Event Type --</option>
@@ -851,6 +901,7 @@
           </p>
           <div id="curatedEventOptionRows"></div>
           <button type="button" class="add-row-btn" onclick="addCuratedEventOptionRow()">+ Add Option</button>
+          <div id="curatedEventOptionsStatus" class="options-status"></div>
           <div class="form-group" style="margin-top:12px;">
             <label for="curatedEventMaxOptionsField">Max options per attendee</label>
             <input type="number" id="curatedEventMaxOptionsField" min="1" step="1" placeholder="Blank = unlimited" style="max-width:150px;">
@@ -868,6 +919,7 @@
           </p>
           <div id="b2bMeetingsOptionRows"></div>
           <button type="button" class="add-row-btn" onclick="addB2BMeetingsOptionRow()">+ Add Option</button>
+          <div id="b2bMeetingsOptionsStatus" class="options-status"></div>
           <div class="checkbox-row" style="margin-top:14px;">
             <input type="checkbox" id="showChosenByField">
             <label for="showChosenByField" style="font-weight:normal;">Let attendees see which companies chose them</label>
@@ -887,6 +939,15 @@
         This event is an <strong>Umbrella Event</strong>: attendees register once at the common base form, then opt into
         each sub-event below individually. Add sub-events with "+ Add Sub-Event" — each one needs its own Event Type.
       </p>
+      <p id="subEventHint" style="display:none; font-size:12px; color:#5f6368; margin:-6px 0 14px;">
+        Sub-events are only allowed under an "Umbrella Event". Choose this sub-event's own Event Type above — the
+        attendee opts into it individually during registration, and its type-specific rules (Curated Event price/
+        capacity, Exhibition floor plan, etc.) apply exactly as they would for a standalone event. Currency is
+        inherited from the parent event.
+      </p>
+
+      <details id="advancedSettingsWrap" class="advanced-settings">
+        <summary>Advanced settings <span class="as-hint">currency, domains, cover image, milestones — optional, editable anytime</span></summary>
 
       <div id="eventTopLevelOnlyFields">
         <div class="checkbox-row">
@@ -932,12 +993,6 @@
           <div id="eventBannerMsg" style="display:none; font-size:12px; margin-top:4px;"></div>
         </div>
       </div>
-      <p id="subEventHint" style="display:none; font-size:12px; color:#5f6368; margin:-6px 0 14px;">
-        Sub-events are only allowed under an "Umbrella Event". Choose this sub-event's own Event Type above — the
-        attendee opts into it individually during registration, and its type-specific rules (Curated Event price/
-        capacity, Exhibition floor plan, etc.) apply exactly as they would for a standalone event. Currency is
-        inherited from the parent event.
-      </p>
 
       <div id="milestonesConfigWrap" class="type-config-wrap">
         <label class="section-label">Milestones</label>
@@ -948,6 +1003,8 @@
         <div id="milestoneRows"></div>
         <button type="button" class="add-row-btn" onclick="addMilestoneRow()">+ Add Milestone</button>
       </div>
+
+      </details>
 
       <button id="btnSaveEvent" class="btn" style="width:100%;" onclick="saveEvent()">Save Event</button>
     </div>
@@ -1773,6 +1830,104 @@
     });
   }
 
+  /**
+   * Plain-language front door for the same choice populateEventTypeDropdown
+   * feeds the (now hidden) raw <select> — a fixed set of "what will
+   * attendees do here" categories, each resolved against the real
+   * admin-configured Event Types for this scope via isExhibition/
+   * isCuratedEvent/isB2B flags rather than exposing those admin-chosen
+   * names as unexplained jargon up front. 'umbrella' is a fixed value
+   * (there's only ever one), everything else filters the scoped type list.
+   */
+  function typeCategoryDefs_() {
+    return [
+      { key: 'umbrella', label: 'Multiple sessions (Umbrella)', blurb: 'Attendees register once, then opt into each part individually.', fixed: UMBRELLA_TYPE, topLevelOnly: true },
+      { key: 'standard', label: 'Standard registration', blurb: 'One form, one price. Most events start here.', match: function(f) { return !f.isCuratedEvent && !f.isExhibition && !f.isB2B; } },
+      { key: 'ranked', label: 'Ranked options', blurb: 'Attendees choose from priced options you set up — tour times, add-ons.', match: function(f) { return !!f.isCuratedEvent; } },
+      { key: 'exhibition', label: 'Exhibition booths', blurb: 'A visual floor plan; attendees rank their preferred booths.', match: function(f) { return !!f.isExhibition; } },
+      { key: 'b2b', label: 'Business meetings', blurb: 'Pre-scheduled 1:1s between companies, matched automatically.', match: function(f) { return !!f.isB2B; } }
+    ];
+  }
+
+  /** Admin-configured Event Type names (from this modal's scoped eventTypeOptions) matching one category. A 'fixed' category (Umbrella) always resolves to exactly its own literal value. */
+  function candidatesForCategory_(def, isSubEvent) {
+    if (def.fixed) return [def.fixed];
+    var list = (isSubEvent ? eventTypeOptions.subEventTypes : eventTypeOptions.topLevelTypes) || [];
+    return list.filter(function(t) { return t !== UMBRELLA_TYPE && def.match(onboardingData[t] || {}); });
+  }
+
+  /**
+   * Renders the category cards for the modal's current context and
+   * pre-selects whichever one matches eventTypeField's current value (set
+   * just before this runs, in openEventModal's finishOpen — existing
+   * event's real type, or '' for a genuinely new sub-event). Skipped
+   * entirely for a brand-new top-level event, which has no scoped types to
+   * offer yet (see newUmbrellaExplainer in the modal markup).
+   */
+  function renderTypeCategoryPicker_(isSubEvent, isBrandNewTopLevel) {
+    document.getElementById('newUmbrellaExplainer').style.display = isBrandNewTopLevel ? 'block' : 'none';
+    document.getElementById('typeCategoryPicker').style.display = isBrandNewTopLevel ? 'none' : 'block';
+    if (isBrandNewTopLevel) { document.getElementById('typeNamePicker').style.display = 'none'; return; }
+
+    var currentType = document.getElementById('eventTypeField').value;
+    var defs = typeCategoryDefs_().filter(function(d) { return !d.topLevelOnly || !isSubEvent; });
+    var cardsEl = document.getElementById('typeCategoryCards');
+    cardsEl.innerHTML = '';
+
+    var currentDef = null;
+    defs.forEach(function(d) {
+      var candidates = candidatesForCategory_(d, isSubEvent);
+      var isCurrent = !!currentType && candidates.indexOf(currentType) !== -1;
+      if (isCurrent) currentDef = d;
+      var card = document.createElement('div');
+      card.className = 'type-card' + (isCurrent ? ' sel' : '') + (candidates.length ? '' : ' disabled');
+      card.dataset.catKey = d.key;
+      card.innerHTML = '<div class="tc-label">' + escapeHtml(d.label) + '</div><p class="tc-blurb">' + escapeHtml(d.blurb) + '</p>' +
+        (candidates.length ? '' : '<p class="type-card-empty-hint">Not set up yet for this event — add one in Settings &rarr; Event Types.</p>');
+      if (candidates.length) card.addEventListener('click', function() { selectTypeCategory_(d, isSubEvent); });
+      cardsEl.appendChild(card);
+    });
+
+    renderTypeNamePicker_(currentDef, isSubEvent, currentType);
+  }
+
+  function selectTypeCategory_(def, isSubEvent) {
+    var candidates = candidatesForCategory_(def, isSubEvent);
+    if (!candidates.length) return;
+    document.querySelectorAll('#typeCategoryCards .type-card').forEach(function(c) { c.classList.toggle('sel', c.dataset.catKey === def.key); });
+    renderTypeNamePicker_(def, isSubEvent, candidates.length === 1 ? candidates[0] : null);
+  }
+
+  /** Only shown when a category resolves to more than one admin-configured type — most tenants will only ever see this for a category they've deliberately set up several variants of. */
+  function renderTypeNamePicker_(def, isSubEvent, preselect) {
+    var wrap = document.getElementById('typeNamePicker');
+    if (!def) { wrap.style.display = 'none'; return; }
+    if (def.fixed) { wrap.style.display = 'none'; setEventType_(def.fixed); return; }
+
+    var candidates = candidatesForCategory_(def, isSubEvent);
+    if (candidates.length <= 1) {
+      wrap.style.display = 'none';
+      if (candidates.length === 1) setEventType_(candidates[0]);
+      return;
+    }
+    wrap.style.display = 'block';
+    var select = document.getElementById('typeNameField');
+    select.innerHTML = '<option value="">-- Select --</option>' + candidates.map(function(t) {
+      return '<option value="' + escapeHtml(t) + '"' + (t === preselect ? ' selected' : '') + '>' + escapeHtml(t) + '</option>';
+    }).join('');
+    if (preselect) setEventType_(preselect);
+  }
+
+  function onTypeNameFieldChange_() {
+    setEventType_(document.getElementById('typeNameField').value);
+  }
+
+  /** Single write path into the real (hidden) eventTypeField — keeps every existing reader (onEventTypeChange, saveEvent, collectTypeConfig, etc.) working unchanged. */
+  function setEventType_(type) {
+    document.getElementById('eventTypeField').value = type;
+    onEventTypeChange();
+  }
+
   /* ================= MY EVENTS ================= */
   var allEventsTreeCache = []; // last getAdminEventsTree result — reused by the Communications panel's event/sub-event pickers and by the Automated Emails modal's milestone lookup, so it doesn't need its own separate fetch.
   function loadEventsList() {
@@ -2172,6 +2327,7 @@
     var finishOpen = function() {
       populateEventTypeDropdown(isSubEvent, isBrandNewTopLevel);
       document.getElementById('eventTypeField').value = existingEvent ? existingEvent.eventType : (isBrandNewTopLevel ? UMBRELLA_TYPE : '');
+      renderTypeCategoryPicker_(isSubEvent, isBrandNewTopLevel);
 
       // IsB2B / Dietary / Details URL / Currency only apply to the top-level,
       // registrable Event. Event Type (+ its TypeConfig) is required on
@@ -2181,6 +2337,10 @@
       document.getElementById('eventTypeFields').style.display = 'block';
       document.getElementById('eventTopLevelOnlyFields').style.display = isSubEvent ? 'none' : 'block';
       document.getElementById('subEventHint').style.display = isSubEvent ? 'block' : 'none';
+      // Nothing to review yet on a brand-new event — collapsed to keep the
+      // first pass short; open by default when editing so nothing already
+      // set (currency, allowed domains, milestones...) is hidden from view.
+      document.getElementById('advancedSettingsWrap').open = !!existingEvent;
       if (!isSubEvent) initEventBannerControls(existingEvent);
 
       var titlePrefix = existingEvent ? 'Edit ' : 'New ';
@@ -2321,6 +2481,32 @@
     document.getElementById('b2bMeetingsOptionRows').innerHTML = '';
     document.getElementById('exhibitionAssetTypeRows').innerHTML = '';
     document.getElementById('milestoneRows').innerHTML = '';
+    document.getElementById('curatedEventOptionsStatus').textContent = '';
+    document.getElementById('b2bMeetingsOptionsStatus').textContent = '';
+  }
+
+  /**
+   * Live mirror of validateOptionsRequired's "at least one option, with a
+   * price, is required" rule for Curated Event / B2B Meetings — updates as
+   * rows are added, removed, or edited, instead of only surfacing at Save.
+   * `labelSelector` is '.opt-label' for Curated Event's free-text name, or
+   * '.opt-regtype' for B2B's Registration Type dropdown (see addCuratedEventOptionRow/addB2BMeetingsOptionRow).
+   */
+  function refreshOptionsStatus_(containerId, statusId, labelSelector) {
+    var el = document.getElementById(statusId);
+    if (!el) return;
+    var ready = Array.prototype.slice.call(document.querySelectorAll('#' + containerId + ' .type-config-row')).filter(function(row) {
+      var label = row.querySelector(labelSelector);
+      var price = row.querySelector('.opt-price');
+      return label && label.value.trim() && price && price.value.trim() !== '';
+    }).length;
+    if (ready > 0) {
+      el.className = 'options-status ok';
+      el.textContent = '✓ ' + ready + ' option' + (ready === 1 ? '' : 's') + ' ready to save.';
+    } else {
+      el.className = 'options-status pending';
+      el.textContent = '⚠ Add at least one option with a price and capacity before saving.';
+    }
   }
 
   /** Suggests a Floor Plan Canvas Size from the "how many assets" helper field — the admin can still change the Canvas Size dropdown afterward. */
@@ -2445,9 +2631,11 @@
       '<input type="number" class="opt-price" min="0" step="0.01" placeholder="Price" style="max-width:90px;" value="' + (existing ? existing.price : '') + '">' +
       '<input type="text" class="opt-places" placeholder="Places (blank = Unlimited)" style="max-width:150px;" value="' + escapeHtml(String(placesVal)) + '">' +
       '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
-    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); refreshOptionsStatus_('curatedEventOptionRows', 'curatedEventOptionsStatus', '.opt-label'); });
+    row.addEventListener('input', function() { refreshOptionsStatus_('curatedEventOptionRows', 'curatedEventOptionsStatus', '.opt-label'); });
     if (existing && existing.id) row.dataset.optId = existing.id;
     wrap.appendChild(row);
+    refreshOptionsStatus_('curatedEventOptionRows', 'curatedEventOptionsStatus', '.opt-label');
   }
 
   /** Adds one Exhibition Asset Type row (Label / Price only — capacity comes from however many of that type are placed in the Floor Plan Designer, not a Places count). */
@@ -2490,9 +2678,12 @@
       '<input type="text" class="opt-places" placeholder="Places (blank = Unlimited)" style="max-width:150px;" value="' + escapeHtml(String(placesVal)) + '">' +
       '<input type="text" class="opt-desc" placeholder="Description (optional)" style="flex:2;" value="' + escapeHtml(existing ? (existing.description || '') : '') + '">' +
       '<button type="button" class="remove-row-btn" title="Remove">&times;</button>';
-    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); });
+    row.querySelector('.remove-row-btn').addEventListener('click', function() { row.remove(); refreshOptionsStatus_('b2bMeetingsOptionRows', 'b2bMeetingsOptionsStatus', '.opt-regtype'); });
+    row.addEventListener('input', function() { refreshOptionsStatus_('b2bMeetingsOptionRows', 'b2bMeetingsOptionsStatus', '.opt-regtype'); });
+    row.addEventListener('change', function() { refreshOptionsStatus_('b2bMeetingsOptionRows', 'b2bMeetingsOptionsStatus', '.opt-regtype'); });
     if (existing && existing.id) row.dataset.optId = existing.id;
     wrap.appendChild(row);
+    refreshOptionsStatus_('b2bMeetingsOptionRows', 'b2bMeetingsOptionsStatus', '.opt-regtype');
   }
 
   /**
