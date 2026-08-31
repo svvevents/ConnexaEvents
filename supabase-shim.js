@@ -351,7 +351,7 @@
     // ---- Genuine gaps, deliberately stubbed per explicit scope decision
     // (Phase 07 Stage A covers register / complete a milestone / request
     // a B2B meeting -- these aren't on that path) ----
-    getUpdateRegistrationData: notImplemented('Updating an existing registration'),
+    getUpdateRegistrationData: rpc('get_update_registration_data', function (args) { return { p_event_id: args[1] }; }),
     addSubEventSelectionsForAttendee: notImplemented('Adding sub-event selections after initial registration'),
     withdrawSubEventRegistration: notImplemented('Withdrawing a sub-event registration'),
     getMyAttendeeItinerary: notImplemented('Loading your meeting itinerary'),
