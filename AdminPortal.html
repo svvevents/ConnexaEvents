@@ -529,6 +529,15 @@
           </div>
 
           <div class="section">
+            <h3>Portfolio Comparison</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px;">
+              Every event side by side, right now — registrations, conversion against configured capacity, and
+              budget variance. Click a row to drill into that event below.
+            </p>
+            <div id="portfolioComparisonTable"><p class="empty-state">Loading…</p></div>
+          </div>
+
+          <div class="section">
             <h3>Event-Specific Detail</h3>
             <div class="event-picker">
               <select id="dashboardEventPicker" onchange="loadEventDashboard()">
@@ -710,11 +719,22 @@
               <select id="dataBridgeEntityPicker"><option value="">-- Select a B2B event --</option></select>
             </div>
             <button class="btn" id="btnGenerateDataBridgeSql" onclick="generateDataBridgeSql()">Run Matching</button>
+            <button class="btn secondary" id="btnB2BOutcomesReport" onclick="loadB2BMeetingOutcomesReport()">View Meeting Outcomes Report</button>
             <div id="dataBridgeMsg" style="display:none; padding:10px; border-radius:8px; margin-top:14px; font-size:13px;"></div>
 
             <div id="dataBridgeResult" style="display:none; margin-top:18px;">
               <div id="dataBridgeSummary" style="font-size:13px; margin-bottom:10px;"></div>
             </div>
+          </div>
+
+          <div class="section" id="b2bOutcomesReportSection" style="display:none;">
+            <h3>Meeting Outcomes Report</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
+              What actually happened to meeting requests for this entity — requested, accepted, rejected, and
+              matched-by-admin counts, plus a per-supplier breakdown, so exhibitor renewal conversations can
+              point at real numbers instead of a vague "it went well".
+            </p>
+            <div id="b2bOutcomesReportContent"></div>
           </div>
         </div>
 
@@ -3114,6 +3134,48 @@
         prefetchEventDashboards(summary.events || []);
       })
       .getExecutiveSummary(ADMIN_TOKEN);
+
+    // Independent fetch, doesn't block the rest of the panel -- same
+    // posture as loadDashboardBudgetSummary.
+    google.script.run
+      .withSuccessHandler(renderPortfolioComparison)
+      .withFailureHandler(function(err) {
+        document.getElementById('portfolioComparisonTable').innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>';
+      })
+      .getCrossEventPortfolio(ADMIN_TOKEN);
+  }
+
+  function renderPortfolioComparison(data) {
+    var wrap = document.getElementById('portfolioComparisonTable');
+    var events = data.events || [];
+    if (!events.length) {
+      wrap.innerHTML = '<p class="empty-state">No events yet.</p>';
+      return;
+    }
+    var html = '<div style="overflow-x:auto;"><table><thead><tr>' +
+      '<th>Event</th><th>Status</th><th>Registrations</th><th>Conversion</th><th>Budget Variance</th>' +
+      '</tr></thead><tbody>';
+    events.forEach(function(evt) {
+      var conv = evt.conversionRate === null ? '—' : Math.round(evt.conversionRate * 100) + '% (' + evt.capacityBearingConfirmed + '/' + evt.capacityBearingCapacity + ')';
+      var variance = evt.budgetVariance;
+      var varianceColor = variance > 0 ? 'var(--error-color)' : (variance < 0 ? 'var(--success-color)' : 'inherit');
+      html += '<tr style="cursor:pointer;" onclick="jumpToEventDashboard(' + jsAttr_(evt.eventId) + ')">' +
+        '<td>' + escapeHtml(evt.eventName) + '</td>' +
+        '<td>' + escapeHtml(evt.status) + '</td>' +
+        '<td>' + evt.registrations + '</td>' +
+        '<td>' + conv + '</td>' +
+        '<td style="color:' + varianceColor + ';">' + (variance > 0 ? '+' : '') + variance.toFixed(2) + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    wrap.innerHTML = html;
+  }
+
+  function jumpToEventDashboard(eventId) {
+    var picker = document.getElementById('dashboardEventPicker');
+    picker.value = eventId;
+    loadEventDashboard();
+    document.getElementById('eventDashboardContent').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   /**
@@ -3949,6 +4011,67 @@
         msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = err.message;
       })
       .generateB2BMeetings(ADMIN_TOKEN, entityId);
+  }
+
+  function loadB2BMeetingOutcomesReport() {
+    var entityId = document.getElementById('dataBridgeEntityPicker').value;
+    var msg = document.getElementById('dataBridgeMsg');
+    var section = document.getElementById('b2bOutcomesReportSection');
+    if (!entityId) {
+      msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = 'Please select a B2B event or sub-event first.';
+      section.style.display = 'none';
+      return;
+    }
+    msg.style.display = 'none';
+
+    var btn = document.getElementById('btnB2BOutcomesReport');
+    var originalText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Loading…';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        btn.disabled = false; btn.textContent = originalText;
+        section.style.display = 'block';
+        renderB2BMeetingOutcomesReport(data);
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false; btn.textContent = originalText;
+        msg.className = 'msg-error'; msg.style.display = 'block'; msg.textContent = err.message;
+      })
+      .getB2BMeetingOutcomesReport(ADMIN_TOKEN, entityId);
+  }
+
+  function renderB2BMeetingOutcomesReport(data) {
+    var f = data.funnel;
+    var html = '<div class="tiles-row">' +
+      tileHtmlIconed(f.pendingCount, 'Pending', '⏳', 'primary') +
+      tileHtmlIconed(f.selfServiceAcceptedCount, 'Accepted', '✅', 'success') +
+      tileHtmlIconed(f.rejectedCount, 'Rejected', '❌', 'gold') +
+      tileHtmlIconed(f.cancelledCount, 'Cancelled', '🚫', 'gold') +
+      tileHtmlIconed(f.autoCancelledCount, 'Auto-Cancelled', '⏱️', 'gold') +
+      tileHtmlIconed(f.matchedCount, 'Matched by Admin', '🤝', 'navy') +
+      tileHtmlIconed(f.bookedTotal, 'Booked Total', '📅', 'success') +
+    '</div>';
+
+    if (data.crossCheck.bookedTotal !== data.crossCheck.crossCheckBookedCount) {
+      html += '<p class="msg-error" style="margin-top:12px;">Note: booked total (' + data.crossCheck.bookedTotal +
+        ') doesn\'t match the live confirmed-meeting count (' + data.crossCheck.crossCheckBookedCount + ') — worth a second look.</p>';
+    }
+
+    if (!data.byCompany.length) {
+      html += '<p class="empty-state" style="margin-top:16px;">No supplier activity recorded yet for this entity.</p>';
+    } else {
+      html += '<table style="margin-top:16px;"><thead><tr>' +
+        '<th>Company</th><th>Requests Received</th><th>Accepted</th><th>Rejected</th><th>Cancelled</th><th>Matched</th>' +
+        '</tr></thead><tbody>';
+      data.byCompany.forEach(function(row) {
+        html += '<tr><td>' + escapeHtml(row.companyName) + '</td><td>' + row.requestsReceived + '</td><td>' +
+          row.accepted + '</td><td>' + row.rejected + '</td><td>' + row.cancelled + '</td><td>' + row.matched + '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+
+    document.getElementById('b2bOutcomesReportContent').innerHTML = html;
   }
 
   function renderTagRefList() {

@@ -434,6 +434,7 @@
     // -- Dashboard --
     getExecutiveSummary: rpc('get_executive_summary', function () { return {}; }),
     getEventDashboardData: rpc('get_event_dashboard_data', function (args) { return { p_event_id: args[1] }; }),
+    getCrossEventPortfolio: rpc('get_cross_event_portfolio', function () { return {}; }),
 
     // -- Budget --
     getBudgetCategories: rpc('get_budget_categories', function () { return {}; }),
@@ -463,6 +464,7 @@
     // already superseded. AdminPortal.html's "Data Bridge" button/UI
     // was updated to call this new name directly instead.
     generateB2BMeetings: rpc('generate_b2b_meetings', function (args) { return { p_entity_id: args[1] }; }),
+    getB2BMeetingOutcomesReport: rpc('get_b2b_meeting_outcomes_report', function (args) { return { p_entity_id: args[1] }; }),
 
     // -- Communications --
     listCommTemplates: function (args) {
