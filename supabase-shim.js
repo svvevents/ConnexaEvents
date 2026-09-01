@@ -129,6 +129,45 @@
     });
   }
 
+  /** uploadFloorPlanBackgroundImage (Phase 11) -- same 2-step Storage pattern as uploadEventBannerImage_, reusing the SAME 'event-banners' bucket (already admin-write RLS-gated) rather than a new one, since bucket creation isn't stable via SQL migration on this platform. */
+  function uploadFloorPlanBackgroundImage_(args) {
+    var payload = args[1] || {};
+    var eventId = payload.eventId;
+    var base64 = payload.base64;
+    var fileName = String(payload.fileName || '').trim();
+    var mimeType = String(payload.mimeType || 'application/octet-stream').trim();
+    if (!base64 || !fileName) return Promise.reject({ message: 'Please choose an image to upload.' });
+
+    var binary = atob(base64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    var blob = new Blob([bytes], { type: mimeType });
+    var path = eventId + '/floorplan_bg_' + Date.now() + '_' + fileName;
+
+    return sb.storage.from('event-banners').upload(path, blob, { upsert: true, contentType: mimeType }).then(function (uploadRes) {
+      if (uploadRes.error) throw uploadRes.error;
+      return sb.rpc('set_floor_plan_background', { p_event_id: eventId, p_storage_path: path });
+    }).then(function (res) {
+      if (res.error) throw res.error;
+      if (res.data && res.data.oldPath) {
+        sb.storage.from('event-banners').remove([res.data.oldPath]); // best-effort, not awaited
+      }
+      var publicUrl = sb.storage.from('event-banners').getPublicUrl(path).data.publicUrl;
+      return { status: 'ok', backgroundImageUrl: publicUrl };
+    });
+  }
+
+  /** clearFloorPlanBackgroundImage (Phase 11) -- mirrors removeEventBannerImage_. */
+  function clearFloorPlanBackgroundImage_(args) {
+    return sb.rpc('clear_floor_plan_background', { p_event_id: args[1] }).then(function (res) {
+      if (res.error) throw res.error;
+      if (res.data && res.data.oldPath) {
+        sb.storage.from('event-banners').remove([res.data.oldPath]);
+      }
+      return { status: 'ok' };
+    });
+  }
+
   /** sendTestCommunication -- original sends the SAME rendered preview to every recipient (no per-recipient personalization); test_send_communication already renders + delivers in one call, so this just loops it once per recipient, same shape as the original's own .map(). */
   function sendTestCommunication_(args) {
     var templateId = args[1];
@@ -499,6 +538,19 @@
     },
     getFloorPlanLayout: rpc('get_floor_plan_layout', function (args) { return { p_event_id: args[1] }; }),
     saveFloorPlanLayout: rpc('save_floor_plan_layout', function (args) { return { p_event_id: args[1], p_elements: args[2] }; }),
+
+    // ---- Phase 09/10/11: live status, holds, designer v2 ----
+    getExhibitionBoothStatusAdmin: rpc('get_exhibition_booth_status_admin', function (args) { return { p_event_id: args[1] }; }),
+    holdBooth: rpc('hold_booth', function (args) {
+      var payload = args[2] || {};
+      return { p_sub_event_id: args[1], p_option_id: payload.optionId, p_hold_seconds: payload.holdSeconds || 480 };
+    }),
+    releaseBooth: rpc('release_booth', function (args) { return { p_sub_event_id: args[1], p_option_id: args[2] }; }),
+    uploadFloorPlanBackgroundImage: uploadFloorPlanBackgroundImage_,
+    clearFloorPlanBackgroundImage: clearFloorPlanBackgroundImage_,
+    saveFloorPlanTemplate: rpc('save_floor_plan_template', function (args) { return { p_event_id: args[1], p_name: args[2] }; }),
+    listFloorPlanTemplates: rpc('list_floor_plan_templates', function () { return {}; }),
+    applyFloorPlanTemplate: rpc('apply_floor_plan_template', function (args) { return { p_event_id: args[1], p_template_id: args[2] }; }),
 
     // ---- Phase 07 Stage C: Unsubscribe.html / MeetingResponse.html --
     // both public, no-login pages, args[0] is a REAL param here (not the

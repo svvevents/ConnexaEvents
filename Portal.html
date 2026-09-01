@@ -599,6 +599,29 @@
     .floorplan-el.booth .tbl-price { font-size: 9px; color: var(--text-dark); font-weight: 600; }
     .floorplan-el.booth .tbl-company { font-size: 9px; color: var(--navy-color); font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .floorplan-el.booth .tbl-attendee { font-size: 8px; color: var(--text-muted); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Held-by-someone-else: distinct from "booked" (a hold can lapse in
+       minutes; a booking can't) — amber, not the grey hatch pattern. */
+    .floorplan-el.booth.held-by-other {
+      cursor: not-allowed; opacity: .92; border-color: #c8843a; background: #fdf1e3;
+    }
+    .floorplan-el.booth.holding { opacity: .6; pointer-events: none; }
+    .floorplan-el.booth .tbl-hold-countdown {
+      font-size: 9px; font-weight: 700; color: #fff; background: var(--primary-color);
+      border-radius: 3px; padding: 1px 4px; font-variant-numeric: tabular-nums;
+    }
+    .floorplan-hold-error {
+      font-size: 12px; color: #a8433a; background: #f6e6e4; border: 1px solid #e2b6b0;
+      border-radius: 6px; padding: 6px 10px; margin: 0 0 8px;
+    }
+    .floorplan-live-pill {
+      display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em; color: #2f7d53; background: #e5f3ea;
+      border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: middle;
+    }
+    .floorplan-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #2f7d53; animation: floorplanLivePulse 1.8s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .floorplan-live-dot { animation: none; } }
+    @keyframes floorplanLivePulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    .fp-shape-ellipse { border-radius: 50%; }
     .floorplan-el .rank-badge {
       position: absolute; top: -8px; right: -8px; width: 18px; height: 18px; border-radius: 50%; background: var(--primary-color);
       color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; z-index: 3;
@@ -1276,6 +1299,14 @@
     var attendeeRankState = {};
     var attendeeRegTypeSelections = {};
     var STANDALONE_KEY = '__self__';
+    // Phase 09/10 -- live exhibition status + soft holds. exhibitionChannels
+    // keys a Realtime subscription per groupKey ('__self__' or a sub-event
+    // id, same key attendeeRankState already uses) to its current render
+    // args, so a broadcast can patch the live tables/decor array in place
+    // and re-render without resubscribing on every click-triggered re-render.
+    var exhibitionChannels = {};
+    var exhibitionHoldErrors = {};
+    var boothCountdownTimers = {};
     var prefAppState = { user: null, companies: [], selectedSet: new Set(), currentSort: 'company_asc' };
     var cachedItineraryData = null;
 
@@ -1947,6 +1978,7 @@
      * and "available" lists.
      */
     function loadMyEventWorkspace(evt, body) {
+      unsubscribeAllExhibitionChannels_(); // reloading replaces every availableSubEvents[].tables/decor array these channels' closures point at
       var milestoneData = null, updRegData = null, updRegDataFailed = false, updRegDataError = null, pending = 2, failed = false;
 
       function checkDone() {
@@ -2202,6 +2234,12 @@
           } else {
             cardBody.classList.remove('open');
             cardBody.innerHTML = '';
+            if (child.isExhibition) {
+              (attendeeRankState[child.eventId] || []).forEach(function(elementId) {
+                google.script.run.releaseBooth(portalState.sessionToken, child.eventId, elementId);
+              });
+              unsubscribeExhibitionChannel_(child.eventId);
+            }
             delete attendeeRankState[child.eventId];
             delete attendeeRegTypeSelections[child.eventId];
           }
@@ -2991,6 +3029,7 @@
     }
 
     function applyRegistrationFormDef(formDef) {
+      unsubscribeAllExhibitionChannels_(); // a fresh formDef replaces every tables/decor array these channels' closures point at
       regCart.formDef = formDef;
       regCart.ownerAlreadyRegistered = !!formDef.alreadyRegistered;
       regCart.umbrellaChildren = formDef.isUmbrella ? (formDef.subEvents || []) : [];
@@ -3338,11 +3377,106 @@
      * to the original "small" 800x600 dimensions if omitted, so a caller
      * that hasn't been updated to pass them still renders correctly.
      */
+    /** Real event/sub-event id behind a groupKey — groupKey IS the real id already for an Umbrella sub-event or "Join more sessions" entry, but STANDALONE_KEY stands in for regCart.eventId on the self-registration panel. */
+    function exhibitionSubEventId_(groupKey) {
+      return groupKey === STANDALONE_KEY ? regCart.eventId : groupKey;
+    }
+
+    /** Subscribes once per groupKey to that sub-event's 'floorplan:<id>' broadcast channel, patching the live tables array in place on every booth_status message and re-rendering. Safe to call on every renderExhibitionPanel invocation — a no-op refresh of the closure state if already subscribed. */
+    function subscribeExhibitionLive_(subEventId, groupKey, container, tables, decor, subEventName, currency, canvasWidth, canvasHeight) {
+      var existing = exhibitionChannels[groupKey];
+      if (existing) {
+        existing.container = container; existing.tables = tables; existing.decor = decor;
+        existing.subEventName = subEventName; existing.currency = currency;
+        existing.canvasWidth = canvasWidth; existing.canvasHeight = canvasHeight;
+        return;
+      }
+      var state = { container: container, tables: tables, decor: decor, subEventName: subEventName, currency: currency, canvasWidth: canvasWidth, canvasHeight: canvasHeight, channel: null };
+      exhibitionChannels[groupKey] = state;
+      try {
+        state.channel = supabaseClient.channel('floorplan:' + subEventId, { config: { private: true } });
+        state.channel.on('broadcast', { event: 'booth_status' }, function(msg) {
+          var payload = (msg && msg.payload) || {};
+          var tbl = (state.tables || []).find(function(t) { return t.elementId === payload.elementId; });
+          if (!tbl) return;
+          tbl.status = payload.status;
+          tbl.companyName = payload.companyName || '';
+          tbl.attendeeName = payload.attendeeName || '';
+          tbl.holdExpiresAt = payload.holdExpiresAt || null;
+          if (payload.status !== 'Held') tbl.heldByMe = false;
+          if (payload.status !== 'Available') {
+            var idx = (attendeeRankState[groupKey] || []).indexOf(tbl.elementId);
+            if (idx !== -1 && !tbl.heldByMe) attendeeRankState[groupKey].splice(idx, 1); // someone else won it out from under a stale local rank
+          }
+          renderExhibitionPanel(state.container, state.tables, state.decor, groupKey, state.subEventName, state.currency, state.canvasWidth, state.canvasHeight);
+        }).subscribe();
+      } catch (e) { /* Realtime is a live-status enhancement, not load-bearing — a failed subscribe just means no live updates this session */ }
+    }
+
+    function unsubscribeExhibitionChannel_(groupKey) {
+      var existing = exhibitionChannels[groupKey];
+      if (!existing) return;
+      if (existing.channel) supabaseClient.removeChannel(existing.channel);
+      delete exhibitionChannels[groupKey];
+      stopBoothCountdown_(groupKey);
+    }
+
+    function unsubscribeAllExhibitionChannels_() {
+      Object.keys(exhibitionChannels).forEach(unsubscribeExhibitionChannel_);
+    }
+
+    /** Ticks a held-by-me booth's visible countdown once a second by patching the DOM directly (not a full re-render, which would fight click focus/scroll). On reaching zero, releases the hold server-side and lets the resulting broadcast flip it back to Available everywhere it's shown. */
+    function startBoothCountdown_(groupKey, elementId, expiresAtIso, container, tables, decor, subEventName, currency, canvasWidth, canvasHeight) {
+      stopBoothCountdown_(groupKey, elementId);
+      if (!boothCountdownTimers[groupKey]) boothCountdownTimers[groupKey] = {};
+      var expiresAt = new Date(expiresAtIso).getTime();
+      var timerId = setInterval(function() {
+        var remaining = Math.round((expiresAt - Date.now()) / 1000);
+        var badge = container.querySelector('.floorplan-el.booth[data-el="' + cssEscape_(elementId) + '"] .tbl-hold-countdown');
+        if (remaining <= 0) {
+          clearInterval(timerId);
+          delete boothCountdownTimers[groupKey][elementId];
+          var idx = (attendeeRankState[groupKey] || []).indexOf(elementId);
+          if (idx !== -1) attendeeRankState[groupKey].splice(idx, 1);
+          var subEventId = exhibitionSubEventId_(groupKey);
+          google.script.run.releaseBooth(portalState.sessionToken, subEventId, elementId);
+          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
+          renderOrderSummary();
+          return;
+        }
+        if (badge) badge.textContent = formatCountdown_(remaining);
+      }, 1000);
+      boothCountdownTimers[groupKey][elementId] = timerId;
+    }
+
+    function stopBoothCountdown_(groupKey, elementId) {
+      var timers = boothCountdownTimers[groupKey];
+      if (!timers) return;
+      if (elementId) {
+        if (timers[elementId]) { clearInterval(timers[elementId]); delete timers[elementId]; }
+      } else {
+        Object.keys(timers).forEach(function(id) { clearInterval(timers[id]); });
+        delete boothCountdownTimers[groupKey];
+      }
+    }
+
+    function formatCountdown_(totalSeconds) {
+      var m = Math.floor(totalSeconds / 60), s = totalSeconds % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    /** CSS.escape isn't available in every target browser this app supports — a minimal escape for the characters an elementId (a uuid) could actually contain is enough. */
+    function cssEscape_(str) {
+      return String(str).replace(/["\\]/g, '\\$&');
+    }
+
     function renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight) {
       canvasWidth = canvasWidth || 800;
       canvasHeight = canvasHeight || 600;
       if (!attendeeRankState[groupKey]) attendeeRankState[groupKey] = [];
       var ranked = attendeeRankState[groupKey];
+      var subEventId = exhibitionSubEventId_(groupKey);
+      subscribeExhibitionLive_(subEventId, groupKey, container, tables, decor, subEventName, currency, canvasWidth, canvasHeight);
 
       // aspect-ratio + grid dot spacing both depend on the event's own
       // canvas size — the CSS rule's 800x600/2.5%/3.3333% are just
@@ -3350,30 +3484,43 @@
       var mapStyle = 'aspect-ratio:' + canvasWidth + '/' + canvasHeight +
         '; background-size:' + (GRID_SIZE_PX / canvasWidth * 100) + '% ' + (GRID_SIZE_PX / canvasHeight * 100) + '%;';
 
+      var holdError = exhibitionHoldErrors[groupKey];
+
       var html = '<p class="floorplan-hint">Tap up to 3 preferred booths in order of preference. The highest-ranked' +
-        ' available booth will be allocated automatically when you submit.</p>' +
+        ' available booth will be allocated automatically when you submit. <span class="floorplan-live-pill" title="Booth status updates live as other attendees pick booths"><span class="floorplan-live-dot"></span>Live</span></p>' +
+        (holdError ? '<p class="floorplan-hold-error">' + escapeHtml(holdError) + '</p>' : '') +
         '<div class="floorplan-legend">' +
           '<span><i style="background:#fbfcfe;border:2px solid var(--border-color);"></i>Available</span>' +
           '<span><i style="background:var(--primary-color);"></i>Your pick (numbered by preference)</span>' +
+          '<span><i style="background:#fdf1e3;border:1px solid #c8843a;"></i>Held by someone else</span>' +
           '<span><i style="background-image:repeating-linear-gradient(45deg, #eceff1, #eceff1 3px, #dde1e6 3px, #dde1e6 6px);border:1px solid #9aa5b1;"></i>Booked</span>' +
         '</div>' +
         '<div class="floorplan-map-wrap"><div class="floorplan-map" style="' + mapStyle + '">';
 
       (decor || []).forEach(function(el) {
-        html += '<div class="floorplan-el decor' + (el.cssClass ? ' ' + el.cssClass : '') + '" style="' + toPct(el, canvasWidth, canvasHeight) + '">' +
+        html += '<div class="floorplan-el decor' + (el.cssClass ? ' ' + el.cssClass : '') + (el.shape === 'ellipse' ? ' fp-shape-ellipse' : '') + '" style="' + toPct(el, canvasWidth, canvasHeight) + '">' +
           escapeHtml(el.label) + '</div>';
       });
 
       (tables || []).forEach(function(tbl) {
         var rankIdx = ranked.indexOf(tbl.elementId);
-        var booked = tbl.status !== 'Available';
+        var bookedByOther = tbl.status === 'Booked';
+        var heldByOther = tbl.status === 'Held' && !tbl.heldByMe;
+        var heldByMe = tbl.status === 'Held' && !!tbl.heldByMe;
+        var unavailable = bookedByOther || heldByOther;
         html +=
-          '<div class="floorplan-el booth' + (rankIdx !== -1 ? ' ranked' : '') + (booked ? ' booked' : '') + '" data-el="' + escapeHtml(tbl.elementId) + '" style="' + toPct(tbl, canvasWidth, canvasHeight) + '">' +
+          '<div class="floorplan-el booth' +
+            (rankIdx !== -1 ? ' ranked' : '') +
+            (bookedByOther ? ' booked' : '') +
+            (heldByOther ? ' held-by-other' : '') +
+            '" data-el="' + escapeHtml(tbl.elementId) + '" style="' + toPct(tbl, canvasWidth, canvasHeight) + '">' +
             (rankIdx !== -1 ? '<span class="rank-badge" title="Tap the booth again to remove it, or use Your Preferences below to reorder">' + rankGlyph(rankIdx + 1) + '</span>' : '') +
             escapeHtml(tbl.label) +
             (tbl.price ? '<span class="tbl-price">' + formatMoney(tbl.price, tbl.currency || currency) + '</span>' : '') +
-            (booked ? '<span class="tbl-company">' + escapeHtml(tbl.companyName || 'Booked') + '</span>' : '') +
-            (booked && tbl.attendeeName ? '<span class="tbl-attendee">' + escapeHtml(tbl.attendeeName) + '</span>' : '') +
+            (bookedByOther ? '<span class="tbl-company">' + escapeHtml(tbl.companyName || 'Booked') + '</span>' : '') +
+            (bookedByOther && tbl.attendeeName ? '<span class="tbl-attendee">' + escapeHtml(tbl.attendeeName) + '</span>' : '') +
+            (heldByOther ? '<span class="tbl-company">Held by another attendee</span>' : '') +
+            (heldByMe ? '<span class="tbl-hold-countdown">' + (tbl.holdExpiresAt ? formatCountdown_(Math.max(0, Math.round((new Date(tbl.holdExpiresAt).getTime() - Date.now()) / 1000))) : '') + '</span>' : '') +
           '</div>';
       });
       html += '</div></div>';
@@ -3400,11 +3547,47 @@
 
       container.innerHTML = html;
 
-      container.querySelectorAll('.floorplan-el.booth:not(.booked)').forEach(function(tile) {
+      (tables || []).forEach(function(tbl) {
+        if (tbl.status === 'Held' && tbl.heldByMe && tbl.holdExpiresAt) {
+          startBoothCountdown_(groupKey, tbl.elementId, tbl.holdExpiresAt, container, tables, decor, subEventName, currency, canvasWidth, canvasHeight);
+        }
+      });
+
+      container.querySelectorAll('.floorplan-el.booth:not(.booked):not(.held-by-other)').forEach(function(tile) {
         tile.addEventListener('click', function() {
-          toggleRankChoice(groupKey, tile.dataset.el);
-          renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
-          renderOrderSummary();
+          var elementId = tile.dataset.el;
+          exhibitionHoldErrors[groupKey] = null;
+
+          if (ranked.indexOf(elementId) !== -1) {
+            // releasing an already-held pick
+            toggleRankChoice(groupKey, elementId);
+            stopBoothCountdown_(groupKey, elementId);
+            renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
+            renderOrderSummary();
+            google.script.run.releaseBooth(portalState.sessionToken, subEventId, elementId);
+            return;
+          }
+
+          if (ranked.length >= 3) {
+            exhibitionHoldErrors[groupKey] = 'You can only pick up to 3 booths — remove one first.';
+            renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
+            return;
+          }
+
+          tile.classList.add('holding');
+          google.script.run
+            .withSuccessHandler(function(res) {
+              var tbl = (tables || []).find(function(t) { return t.elementId === elementId; });
+              if (tbl) { tbl.status = 'Held'; tbl.heldByMe = true; tbl.holdExpiresAt = res.expiresAt; }
+              toggleRankChoice(groupKey, elementId);
+              renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
+              renderOrderSummary();
+            })
+            .withFailureHandler(function(err) {
+              exhibitionHoldErrors[groupKey] = (err && err.message) ? err.message : 'This booth could not be held — try another.';
+              renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
+            })
+            .holdBooth(portalState.sessionToken, subEventId, { optionId: elementId, holdSeconds: 480 });
         });
       });
 
@@ -3420,9 +3603,12 @@
       });
       container.querySelectorAll('.fp-rank-remove').forEach(function(btn) {
         btn.addEventListener('click', function() {
-          toggleRankChoice(groupKey, btn.dataset.el);
+          var elementId = btn.dataset.el;
+          toggleRankChoice(groupKey, elementId);
+          stopBoothCountdown_(groupKey, elementId);
           renderExhibitionPanel(container, tables, decor, groupKey, subEventName, currency, canvasWidth, canvasHeight);
           renderOrderSummary();
+          google.script.run.releaseBooth(portalState.sessionToken, subEventId, elementId);
         });
       });
     }

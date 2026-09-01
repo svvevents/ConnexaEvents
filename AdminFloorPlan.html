@@ -142,6 +142,33 @@
       background: var(--error-color); color: #fff; border: 2px solid #fff; cursor: pointer; font-size: 12px;
       line-height: 16px; padding: 0; font-weight: 800;
     }
+    .fp-element .fp-shape-toggle-btn {
+      position: absolute; top: -9px; left: -9px; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--primary-color); color: #fff; border: 2px solid #fff; cursor: pointer; font-size: 11px;
+      line-height: 15px; padding: 0;
+    }
+    .fp-element.fp-shape-ellipse { border-radius: 50%; }
+
+    /* Phase 11 -- background image layer, inserted as fpCanvas's first child so every .fp-element (appended after it) naturally paints on top without needing an explicit z-index. */
+    .fp-bg-image {
+      position: absolute; inset: 0; background-size: cover; background-position: center;
+      border-radius: 4px; pointer-events: none;
+    }
+
+    /* Phase 09 -- read-only live-status overlay (does not affect drag/resize/edit). Booked/Held are distinguished the same way Portal.html's attendee-facing map does: booked = hatch pattern, held = amber, not a shade that could be confused with a normal element color. */
+    .fp-element.fp-live-booked { outline: 3px solid #9aa5b1; outline-offset: 2px; }
+    .fp-element.fp-live-held { outline: 3px solid #c8843a; outline-offset: 2px; }
+    .fp-live-badge {
+      position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+      background: #14161d; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 6px;
+      border-radius: 3px; white-space: nowrap; pointer-events: none;
+    }
+    #btnLiveStatus.active { background: var(--error-color); color: #fff; border-color: var(--error-color); }
+
+    .fp-template-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 8px;
+    }
 
     /* Drag-to-select box, drawn while the admin drags across empty canvas space (see initCanvasMarquee_) */
     .fp-marquee { position: absolute; border: 1px dashed var(--primary-color); background: rgba(28,114,147,0.10); pointer-events: none; z-index: 20; }
@@ -260,6 +287,9 @@
           <button type="button" class="btn secondary" id="btnCopyElement" onclick="copySelectedElements()" disabled title="Select one or more elements first">Copy</button>
           <button type="button" class="btn secondary" id="btnPasteElement" onclick="pasteClipboardElements()" disabled title="Copy something first">Paste</button>
           <button type="button" class="btn secondary" onclick="openSeatGenModal()">⊞ Generate Seats</button>
+          <button type="button" class="btn secondary" id="btnBackground" onclick="openBackgroundModal()">🖼 Background</button>
+          <button type="button" class="btn secondary" onclick="openTemplateModal()">📋 Templates</button>
+          <button type="button" class="btn secondary" id="btnLiveStatus" onclick="toggleLiveStatus()">🟢 Live Status</button>
           <button class="btn" id="btnSaveLayout" onclick="saveLayout()">Save Layout</button>
         </div>
 
@@ -268,6 +298,45 @@
         <div class="fp-canvas-wrap">
           <div class="fp-canvas" id="fpCanvas"></div>
           <p class="fp-canvas-caption" id="fpCanvasCaption"></p>
+        </div>
+      </div>
+
+      <!-- Background image modal (Phase 11) -->
+      <div class="fp-modal-overlay" id="bgOverlay" style="display:none;" onclick="if (event.target === this) closeBackgroundModal();">
+        <div class="fp-modal">
+          <h3>Floor Plan Background</h3>
+          <p class="type-config-hint">Upload a real venue floor plan or hall photo to trace booths against, instead of a blank grid. Shown behind every element, scaled to fill the canvas.</p>
+          <div class="form-group">
+            <label for="bgFileInput">Image file</label>
+            <input type="file" id="bgFileInput" accept="image/*">
+          </div>
+          <div id="bgCurrentNote" class="type-config-hint" style="display:none;">A background image is currently set.</div>
+          <div class="fp-modal-actions">
+            <button type="button" class="btn secondary" id="btnClearBackground" onclick="clearBackground()">Remove Background</button>
+            <button type="button" class="btn secondary" onclick="closeBackgroundModal()">Cancel</button>
+            <button type="button" class="btn" id="btnUploadBackground" onclick="uploadBackground()">Upload</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Templates modal (Phase 11) -->
+      <div class="fp-modal-overlay" id="templateOverlay" style="display:none;" onclick="if (event.target === this) closeTemplateModal();">
+        <div class="fp-modal">
+          <h3>Floor Plan Templates</h3>
+          <p class="type-config-hint">Save this layout for reuse on future events, or load a previously-saved one onto the current event (replaces every non-booked element).</p>
+          <div class="form-row">
+            <div class="form-group" style="flex:1;">
+              <label for="templateNameInput">Save current layout as…</label>
+              <input type="text" id="templateNameInput" placeholder="e.g. Main Hall — 60 booths">
+            </div>
+            <button type="button" class="btn" id="btnSaveTemplate" onclick="saveAsTemplate()" style="align-self:flex-end;">Save</button>
+          </div>
+          <div id="templateListWrap" style="margin-top:14px;">
+            <p class="type-config-hint">Loading templates…</p>
+          </div>
+          <div class="fp-modal-actions">
+            <button type="button" class="btn secondary" onclick="closeTemplateModal()">Close</button>
+          </div>
         </div>
       </div>
 
@@ -380,8 +449,15 @@
   var DECOR_PRESET_KEYS = ['entrance', 'coffee', 'welcome', 'stage', 'meetingTable'];
 
   var currentEventId = '';
-  var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass, assetTypeId }]
+  var elements = [];       // [{ elementId, x, y, width, height, type, label, cssClass, assetTypeId, shape }]
   var elementsById = {};   // elementId -> element object (same references as in `elements`)
+  // Phase 11 -- floor plan background image, one per event.
+  var currentBackgroundUrl = null;
+  // Phase 09 -- admin "Live Status" overlay: read-only, off by default so it
+  // never interferes with editing; subscribes to the same 'floorplan:<id>'
+  // broadcast channel attendees' Portal.html tabs use.
+  var liveStatusOn = false;
+  var liveStatusChannel = null;
 
   // This Exhibition's own Asset Types (label/price tiers, from TypeConfig
   // — see normalizeExhibitionAssetTypes_ in Code.gs) plus its flat
@@ -474,6 +550,9 @@
   /* ---------------- Load / render ---------------- */
 
   function loadFloorPlan(eventId, onDone) {
+    // Switching (or reloading) events invalidates any live-status
+    // subscription and background image state from whatever was loaded before.
+    stopLiveStatus_();
     google.script.run
       .withSuccessHandler(function(data) {
         if (onDone) onDone();
@@ -489,6 +568,7 @@
         EXHIBITION_ASSET_TYPES = data.assetTypes || [];
         EXHIBITION_FLAT_PRICE = data.flatPrice || 0;
         EXHIBITION_CURRENCY = data.currency || 'USD';
+        currentBackgroundUrl = data.backgroundUrl || null;
 
         document.getElementById('fpEventName').textContent = data.eventName;
         // The Exhibition-flagged type's own admin-chosen name, not always literally "Exhibition" anymore.
@@ -508,6 +588,7 @@
         pasteOffsetCount = 0;
         lastAddedElementId = null;
         updateCopyPasteButtons();
+        applyBackgroundImage_();
 
         (data.elements || []).forEach(function(el) { addElementToCanvas(el, false); });
         renderFpMenus();
@@ -810,13 +891,13 @@
       elementId: elData.elementId || ('local-' + new Date().getTime() + '-' + Math.floor(Math.random() * 100000)),
       x: elData.x, y: elData.y, width: elData.width, height: elData.height,
       type: elData.type, label: elData.label, cssClass: elData.cssClass || '',
-      assetTypeId: elData.assetTypeId || ''
+      assetTypeId: elData.assetTypeId || '', shape: elData.shape === 'ellipse' ? 'ellipse' : 'rect'
     };
     elements.push(el);
     elementsById[el.elementId] = el;
 
     var div = document.createElement('div');
-    div.className = 'fp-element fp-type-' + el.type + (el.cssClass ? ' ' + el.cssClass : '');
+    div.className = 'fp-element fp-type-' + el.type + (el.cssClass ? ' ' + el.cssClass : '') + (el.shape === 'ellipse' ? ' fp-shape-ellipse' : '');
     div.dataset.id = el.elementId;
     div.tabIndex = 0;
     div.style.left = el.x + 'px';
@@ -825,11 +906,22 @@
     div.style.height = el.height + 'px';
     div.innerHTML =
       '<span class="fp-label-text" contenteditable="true">' + escapeHtml(el.label) + '</span>' +
+      // Booths are always rect — capacity-1 bookable slots, no reason to
+      // curve them. Shape only makes sense for static decor/landmarks.
+      (el.type !== 'booth' ? '<button type="button" class="fp-shape-toggle-btn" title="Toggle rectangle/oval shape">&#11052;</button>' : '') +
       '<button type="button" class="fp-remove-btn" title="Remove">&times;</button>';
 
     div.querySelector('.fp-label-text').addEventListener('blur', function() {
       el.label = this.textContent.trim() || el.label;
     });
+    var shapeBtn = div.querySelector('.fp-shape-toggle-btn');
+    if (shapeBtn) {
+      shapeBtn.addEventListener('click', function(evt) {
+        evt.stopPropagation();
+        el.shape = el.shape === 'ellipse' ? 'rect' : 'ellipse';
+        div.classList.toggle('fp-shape-ellipse', el.shape === 'ellipse');
+      });
+    }
     div.querySelector('.fp-remove-btn').addEventListener('click', function(evt) {
       evt.stopPropagation();
       removeElement(el.elementId);
@@ -920,7 +1012,7 @@
     clipboardElements = selectedEls.map(function(e) {
       return {
         type: e.type, width: e.width, height: e.height, cssClass: e.cssClass, assetTypeId: e.assetTypeId, label: e.label,
-        offsetX: e.x - minX, offsetY: e.y - minY
+        shape: e.shape || 'rect', offsetX: e.x - minX, offsetY: e.y - minY
       };
     });
     pasteOffsetCount = 0;
@@ -1032,7 +1124,7 @@
         y: snap(Math.max(0, Math.min(delta + c.offsetY, CANVAS_HEIGHT - c.height))),
         width: c.width, height: c.height, type: c.type,
         label: nextInstanceLabel(c.type, c.assetTypeId, fallbackLabel),
-        cssClass: c.cssClass, assetTypeId: c.assetTypeId
+        cssClass: c.cssClass, assetTypeId: c.assetTypeId, shape: c.shape || 'rect'
       }, true);
       newIds.push(createdEl.elementId);
     });
@@ -1209,7 +1301,7 @@
       return {
         elementId: el.elementId.indexOf('local-') === 0 ? '' : el.elementId, // let the server assign a durable ID for brand-new elements
         x: el.x, y: el.y, width: el.width, height: el.height,
-        type: el.type, label: el.label, cssClass: el.cssClass, assetTypeId: el.assetTypeId || ''
+        type: el.type, label: el.label, cssClass: el.cssClass, assetTypeId: el.assetTypeId || '', shape: el.shape || 'rect'
       };
     });
 
@@ -1237,6 +1329,193 @@
         showFpMsg('Error saving layout: ' + err.message, true);
       })
       .saveFloorPlanLayout(ADMIN_TOKEN, currentEventId, payload);
+  }
+
+  /* ---------------- Phase 09: Live Status (read-only overlay) ---------------- */
+
+  function toggleLiveStatus() {
+    liveStatusOn = !liveStatusOn;
+    var btn = document.getElementById('btnLiveStatus');
+    if (liveStatusOn) {
+      btn.textContent = '🔴 Live Status (on)';
+      btn.classList.add('active');
+      refreshLiveStatus_();
+      subscribeLiveStatus_();
+    } else {
+      btn.textContent = '🟢 Live Status';
+      btn.classList.remove('active');
+      clearLiveStatusOverlay_();
+      if (liveStatusChannel) { supabaseClient.removeChannel(liveStatusChannel); liveStatusChannel = null; }
+    }
+  }
+
+  /** Called on event switch/reload so a stale channel from the PREVIOUS event never lingers. */
+  function stopLiveStatus_() {
+    liveStatusOn = false;
+    var btn = document.getElementById('btnLiveStatus');
+    if (btn) { btn.textContent = '🟢 Live Status'; btn.classList.remove('active'); }
+    clearLiveStatusOverlay_();
+    if (liveStatusChannel) { supabaseClient.removeChannel(liveStatusChannel); liveStatusChannel = null; }
+  }
+
+  function clearLiveStatusOverlay_() {
+    document.querySelectorAll('.fp-element').forEach(function(div) {
+      div.classList.remove('fp-live-booked', 'fp-live-held');
+      var badge = div.querySelector('.fp-live-badge');
+      if (badge) badge.remove();
+    });
+  }
+
+  function applyLiveStatus_(tables) {
+    clearLiveStatusOverlay_();
+    (tables || []).forEach(function(tbl) {
+      var div = document.querySelector('.fp-element[data-id="' + tbl.elementId + '"]');
+      if (!div || tbl.status === 'Available') return;
+      div.classList.add(tbl.status === 'Booked' ? 'fp-live-booked' : 'fp-live-held');
+      var badge = document.createElement('span');
+      badge.className = 'fp-live-badge';
+      badge.textContent = tbl.status === 'Booked' ? (tbl.companyName || 'Booked') : 'Held';
+      div.appendChild(badge);
+    });
+  }
+
+  function refreshLiveStatus_() {
+    if (!liveStatusOn || !currentEventId) return;
+    google.script.run
+      .withSuccessHandler(function(tables) { applyLiveStatus_(tables); })
+      .withFailureHandler(function(err) { showFpMsg('Live status error: ' + err.message, true); })
+      .getExhibitionBoothStatusAdmin(ADMIN_TOKEN, currentEventId);
+  }
+
+  /** One broadcast can affect any booth on this floor plan, and the admin overlay only needs eventual accuracy (not per-tile patching the way Portal.html's attendee-facing render does) -- simplest correct approach is a full re-fetch per message. */
+  function subscribeLiveStatus_() {
+    if (liveStatusChannel || !currentEventId) return;
+    liveStatusChannel = supabaseClient.channel('floorplan:' + currentEventId, { config: { private: true } });
+    liveStatusChannel.on('broadcast', { event: 'booth_status' }, function() { refreshLiveStatus_(); }).subscribe();
+  }
+
+  /* ---------------- Phase 11: Background image ---------------- */
+
+  function openBackgroundModal() {
+    document.getElementById('bgCurrentNote').style.display = currentBackgroundUrl ? 'block' : 'none';
+    document.getElementById('bgFileInput').value = '';
+    document.getElementById('bgOverlay').style.display = 'flex';
+  }
+
+  function closeBackgroundModal() {
+    document.getElementById('bgOverlay').style.display = 'none';
+  }
+
+  function applyBackgroundImage_() {
+    var canvas = document.getElementById('fpCanvas');
+    var existing = canvas.querySelector('.fp-bg-image');
+    if (existing) existing.remove();
+    if (!currentBackgroundUrl) return;
+    var bg = document.createElement('div');
+    bg.className = 'fp-bg-image';
+    bg.style.backgroundImage = 'url(' + currentBackgroundUrl + ')';
+    canvas.insertBefore(bg, canvas.firstChild); // behind every .fp-element, which are all appended later in DOM order
+  }
+
+  function uploadBackground() {
+    var fileInput = document.getElementById('bgFileInput');
+    var file = fileInput.files[0];
+    if (!file) { showFpMsg('Please choose an image file.', true); return; }
+    var btn = document.getElementById('btnUploadBackground');
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    var reader = new FileReader();
+    reader.onload = function() {
+      var base64 = String(reader.result).split(',')[1];
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false; btn.textContent = 'Upload';
+          currentBackgroundUrl = res.backgroundImageUrl;
+          applyBackgroundImage_();
+          closeBackgroundModal();
+          showFpMsg('Background image updated.', false);
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false; btn.textContent = 'Upload';
+          showFpMsg('Error uploading background: ' + err.message, true);
+        })
+        .uploadFloorPlanBackgroundImage(ADMIN_TOKEN, { eventId: currentEventId, base64: base64, fileName: file.name, mimeType: file.type });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearBackground() {
+    google.script.run
+      .withSuccessHandler(function() {
+        currentBackgroundUrl = null;
+        applyBackgroundImage_();
+        closeBackgroundModal();
+        showFpMsg('Background image removed.', false);
+      })
+      .withFailureHandler(function(err) { showFpMsg('Error removing background: ' + err.message, true); })
+      .clearFloorPlanBackgroundImage(ADMIN_TOKEN, currentEventId);
+  }
+
+  /* ---------------- Phase 11: Templates ---------------- */
+
+  function openTemplateModal() {
+    document.getElementById('templateNameInput').value = '';
+    document.getElementById('templateOverlay').style.display = 'flex';
+    loadTemplateList_();
+  }
+
+  function closeTemplateModal() {
+    document.getElementById('templateOverlay').style.display = 'none';
+  }
+
+  function loadTemplateList_() {
+    var wrap = document.getElementById('templateListWrap');
+    wrap.innerHTML = '<p class="type-config-hint">Loading templates…</p>';
+    google.script.run
+      .withSuccessHandler(function(templates) {
+        if (!templates.length) { wrap.innerHTML = '<p class="type-config-hint">No saved templates yet.</p>'; return; }
+        wrap.innerHTML = templates.map(function(t) {
+          return '<div class="fp-template-row">' +
+            '<div><strong>' + escapeHtml(t.name) + '</strong><br><span class="type-config-hint">' +
+              t.elementCount + ' element' + (t.elementCount === 1 ? '' : 's') + ' · ' + escapeHtml(t.floorPlanSize) +
+              (t.hasBackground ? ' · has background image' : '') + '</span></div>' +
+            '<button type="button" class="btn secondary" onclick="applyTemplate(\'' + t.templateId + '\')">Load</button>' +
+          '</div>';
+        }).join('');
+      })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="type-config-hint">Error: ' + escapeHtml(err.message) + '</p>'; })
+      .listFloorPlanTemplates(ADMIN_TOKEN);
+  }
+
+  function saveAsTemplate() {
+    var name = document.getElementById('templateNameInput').value.trim();
+    if (!name) { showFpMsg('Please name this template.', true); return; }
+    var btn = document.getElementById('btnSaveTemplate');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() {
+        btn.disabled = false;
+        document.getElementById('templateNameInput').value = '';
+        loadTemplateList_();
+        showFpMsg('Template saved.', false);
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        showFpMsg('Error saving template: ' + err.message, true);
+      })
+      .saveFloorPlanTemplate(ADMIN_TOKEN, currentEventId, name);
+  }
+
+  /** Applying replaces every non-booked element on the CURRENT event with the template's own — save_floor_plan_layout underneath already protects any booth with a confirmed booking, same guarantee a manual re-save has. */
+  function applyTemplate(templateId) {
+    if (!confirm('Load this template onto the current floor plan? Any booth with a confirmed booking will be kept; everything else will be replaced.')) return;
+    google.script.run
+      .withSuccessHandler(function() {
+        closeTemplateModal();
+        loadFloorPlan(currentEventId);
+        showFpMsg('Template applied.', false);
+      })
+      .withFailureHandler(function(err) { showFpMsg('Error applying template: ' + err.message, true); })
+      .applyFloorPlanTemplate(ADMIN_TOKEN, currentEventId, templateId);
   }
 
   /* ---------------- Utils ---------------- */
