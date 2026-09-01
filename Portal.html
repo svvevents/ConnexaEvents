@@ -2165,6 +2165,11 @@
           if (child.price) metaBits.push(formatMoney(child.price, child.currency) + (child.isExhibition ? '/booth' : ''));
           if (!child.isExhibition && child.capacity) metaBits.push(capacityLabel(child.capacity));
         }
+        // Joining an Exhibition session after initial registration isn't
+        // supported yet (see add_sub_event_selections_for_attendee) --
+        // disabled here instead of letting the attendee pick it and hit
+        // a server error on submit.
+        var joinDisabled = !!child.isExhibition;
 
         card.innerHTML =
           '<div class="subevent-card-head">' +
@@ -2174,9 +2179,11 @@
                 '<div class="subevent-card-name">' + escapeHtml(child.eventName) + '</div>' +
                 (metaBits.length ? '<div class="subevent-card-meta">' + escapeHtml(metaBits.join(' · ')) + '</div>' : '') +
                 '<span class="subevent-card-type">' + escapeHtml(child.eventType || 'Session') + '</span>' +
+                (joinDisabled ? '<div class="subevent-card-meta" style="color:var(--warning-color);">Contact the organizer to join this session</div>' : '') +
               '</div>' +
             '</div>' +
-            '<input type="checkbox" class="subevent-optin-cb" data-subevent="' + escapeHtml(child.eventId) + '">' +
+            '<input type="checkbox" class="subevent-optin-cb" data-subevent="' + escapeHtml(child.eventId) + '"' +
+              (joinDisabled ? ' disabled title="Joining an Exhibition session isn\'t supported here yet"' : '') + '>' +
           '</div>' +
           '<div class="subevent-card-body" id="updRegSubBody-' + escapeHtml(child.eventId) + '"></div>';
 
