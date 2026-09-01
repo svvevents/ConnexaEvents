@@ -352,8 +352,12 @@
     // (Phase 07 Stage A covers register / complete a milestone / request
     // a B2B meeting -- these aren't on that path) ----
     getUpdateRegistrationData: rpc('get_update_registration_data', function (args) { return { p_event_id: args[1] }; }),
-    addSubEventSelectionsForAttendee: notImplemented('Adding sub-event selections after initial registration'),
-    withdrawSubEventRegistration: notImplemented('Withdrawing a sub-event registration'),
+    addSubEventSelectionsForAttendee: rpc('add_sub_event_selections_for_attendee', function (args) {
+      return { p_event_id: args[1], p_selections: args[2] };
+    }),
+    withdrawSubEventRegistration: rpc('withdraw_sub_event_registration', function (args) {
+      return { p_event_id: args[1], p_sub_event_id: args[2] };
+    }),
     getMyAttendeeItinerary: notImplemented('Loading your meeting itinerary'),
     getAttendeeModalDetails: notImplemented('Loading attendee profile details'),
     emailItinerary: notImplemented('Emailing your itinerary'),
