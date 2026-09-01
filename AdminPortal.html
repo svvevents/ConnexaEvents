@@ -2722,10 +2722,22 @@
     syncMilestoneTypeOptions();
   }
 
-  /** Opens the drag-and-drop Floor Plan Designer for a given (already-saved) Exhibition event/sub-event in a new tab. */
+  /**
+   * Opens the drag-and-drop Floor Plan Designer for a given (already-saved)
+   * Exhibition event/sub-event in a new tab. Was PORTAL_URL + '?admin=1&
+   * token=...&page=floorplan&eventId=...' -- a leftover from the old Apps
+   * Script doGet(e) router, which used to dispatch ?page=floorplan
+   * requests to this same designer's markup from inside Portal.html
+   * itself. There's no server-side router anymore (each HTML file is its
+   * own static file on Vercel), so that URL just loaded Portal.html's own
+   * default "My Events" panel, silently ignoring the unrecognized params
+   * -- AdminFloorPlan.html is a real, separate static file, and only ever
+   * reads `eventId` from its own URL (its own admin session comes from
+   * the shared Supabase Auth session, same as every other admin page).
+   */
   function launchFloorPlanDesigner(eventId) {
     if (!eventId) return;
-    var url = PORTAL_URL + '?admin=1&token=' + encodeURIComponent(ADMIN_TOKEN) + '&page=floorplan&eventId=' + encodeURIComponent(eventId);
+    var url = 'AdminFloorPlan.html?eventId=' + encodeURIComponent(eventId);
     window.open(url, '_blank');
   }
 

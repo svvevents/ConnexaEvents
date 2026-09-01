@@ -314,7 +314,12 @@
   // value.
   var ADMIN_TOKEN = null;
   var INITIAL_EVENT_ID = new URLSearchParams(window.location.search).get('eventId') || '';
-  var PORTAL_URL = 'Portal.html';
+  // Was 'Portal.html' (the ATTENDEE portal) -- a leftover from the old
+  // Apps Script doGet(e) router, which no longer exists now that each
+  // HTML file is served as its own static file. requestCanvasSizeChange
+  // below has always sent the admin back to their own event's edit form,
+  // which lives in AdminPortal.html, not Portal.html.
+  var ADMIN_PORTAL_URL = 'AdminPortal.html';
 
   function checkAdminSession_() {
     supabaseClient.auth.getSession().then(function (sessionRes) {
@@ -587,7 +592,7 @@
    */
   function requestCanvasSizeChange() {
     if (!currentEventId) return;
-    var url = PORTAL_URL + '?admin=1&token=' + encodeURIComponent(ADMIN_TOKEN) + '&openEvent=' + encodeURIComponent(currentEventId);
+    var url = ADMIN_PORTAL_URL + '?openEvent=' + encodeURIComponent(currentEventId);
     if (window.opener && !window.opener.closed) {
       window.opener.location.href = url;
       window.opener.focus();
