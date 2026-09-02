@@ -1305,6 +1305,10 @@
     // args, so a broadcast can patch the live tables/decor array in place
     // and re-render without resubscribing on every click-triggered re-render.
     var exhibitionChannels = {};
+    // Phase 13 -- live session capacity. Same per-groupKey subscription
+    // idiom as exhibitionChannels, own map since the topic/event/payload
+    // shape is unrelated (registration-type capacity, not booth status).
+    var sessionCapacityChannels = {};
     var exhibitionHoldErrors = {};
     var boothCountdownTimers = {};
     var prefAppState = { user: null, companies: [], selectedSet: new Set(), currentSort: 'company_asc' };
@@ -1979,6 +1983,7 @@
      */
     function loadMyEventWorkspace(evt, body) {
       unsubscribeAllExhibitionChannels_(); // reloading replaces every availableSubEvents[].tables/decor array these channels' closures point at
+      unsubscribeAllSessionCapacityChannels_();
       var milestoneData = null, updRegData = null, updRegDataFailed = false, updRegDataError = null, pending = 2, failed = false;
 
       function checkDone() {
@@ -2240,6 +2245,7 @@
               });
               unsubscribeExhibitionChannel_(child.eventId);
             }
+            unsubscribeSessionCapacityChannel_(child.eventId);
             delete attendeeRankState[child.eventId];
             delete attendeeRegTypeSelections[child.eventId];
           }
@@ -3030,6 +3036,7 @@
 
     function applyRegistrationFormDef(formDef) {
       unsubscribeAllExhibitionChannels_(); // a fresh formDef replaces every tables/decor array these channels' closures point at
+      unsubscribeAllSessionCapacityChannels_();
       regCart.formDef = formDef;
       regCart.ownerAlreadyRegistered = !!formDef.alreadyRegistered;
       regCart.umbrellaChildren = formDef.isUmbrella ? (formDef.subEvents || []) : [];
@@ -3234,6 +3241,7 @@
           } else {
             body.classList.remove('open');
             body.innerHTML = '';
+            unsubscribeSessionCapacityChannel_(child.eventId);
             delete attendeeRankState[child.eventId];
             delete attendeeRegTypeSelections[child.eventId];
           }
@@ -3262,12 +3270,75 @@
         child.registrationTypes.map(function(t) {
           return '<option value="' + escapeHtml(t.label) + '"' + (t.disabled ? ' disabled' : '') + '>' + escapeHtml(t.label) +
             (t.price ? ' (' + formatMoney(t.price, child.currency) + ')' : '') + (t.isFull ? ' — Full' : '') + '</option>';
-        }).join('') + '</select>';
+        }).join('') + '</select><span class="capacity-badge" data-capacity-badge-for="' + escapeHtml(groupKey) + '" style="display:none;margin-left:8px;"></span>';
       container.appendChild(wrap);
+      updateRegTypeCapacityBadge_(wrap, child, groupKey);
+      subscribeSessionCapacityLive_(groupKey, child);
       wrap.querySelector('select').addEventListener('change', function() {
         attendeeRegTypeSelections[groupKey] = this.value;
+        updateRegTypeCapacityBadge_(wrap, child, groupKey);
         if (onChange) onChange();
       });
+    }
+
+    /** Shows/hides/updates the live capacity badge for whichever registration type is currently selected in this picker — reuses capacityLabelSpotsLeft()/capacityBadgeClass() verbatim, same helpers renderCuratedOptionsPanel already uses for B2B/Curated option tiles. Hidden when nothing is selected yet, or the selected type is unlimited (nothing worth showing). */
+    function updateRegTypeCapacityBadge_(wrap, child, groupKey) {
+      var badge = wrap.querySelector('[data-capacity-badge-for]');
+      if (!badge) return;
+      var selectedLabel = attendeeRegTypeSelections[groupKey];
+      var rt = selectedLabel && (child.registrationTypes || []).find(function(t) { return t.label === selectedLabel; });
+      var state = rt && rt.capacityState;
+      if (!state || state.unlimited) {
+        badge.style.display = 'none';
+        return;
+      }
+      badge.className = 'capacity-badge ' + capacityBadgeClass(state);
+      badge.textContent = capacityLabelSpotsLeft(state);
+      badge.style.display = 'inline-block';
+    }
+
+    /**
+     * Phase 13 -- subscribes once per groupKey to that sub-event's
+     * 'capacity:<id>' broadcast channel, patching the matching
+     * registration type's capacityState in place and refreshing the
+     * badge (only, not the whole dropdown) when it's the one currently
+     * selected. Safe to call on every renderSubEventRegTypePicker
+     * invocation — a no-op refresh of the closure state if already
+     * subscribed, mirroring subscribeExhibitionLive_'s own idiom.
+     */
+    function subscribeSessionCapacityLive_(subEventId, child) {
+      var existing = sessionCapacityChannels[subEventId];
+      if (existing) {
+        existing.child = child;
+        return;
+      }
+      var state = { child: child, channel: null };
+      sessionCapacityChannels[subEventId] = state;
+      try {
+        state.channel = supabaseClient.channel('capacity:' + subEventId, { config: { private: true } });
+        state.channel.on('broadcast', { event: 'capacity_status' }, function(msg) {
+          var payload = (msg && msg.payload) || {};
+          var rt = (state.child.registrationTypes || []).find(function(t) { return t.label === payload.registrationType; });
+          if (!rt) return;
+          rt.capacityState = { unlimited: payload.unlimited, capacity: payload.capacity, confirmed: payload.confirmed, available: payload.available, isFull: payload.isFull };
+          if (attendeeRegTypeSelections[subEventId] === payload.registrationType) {
+            var wrap = document.querySelector('[data-regtype-for="' + subEventId + '"]');
+            wrap = wrap && wrap.closest('.form-group');
+            if (wrap) updateRegTypeCapacityBadge_(wrap, state.child, subEventId);
+          }
+        }).subscribe();
+      } catch (e) { /* live capacity is an enhancement, not load-bearing */ }
+    }
+
+    function unsubscribeSessionCapacityChannel_(groupKey) {
+      var state = sessionCapacityChannels[groupKey];
+      if (!state) return;
+      if (state.channel) { try { supabaseClient.removeChannel(state.channel); } catch (e) {} }
+      delete sessionCapacityChannels[groupKey];
+    }
+
+    function unsubscribeAllSessionCapacityChannels_() {
+      Object.keys(sessionCapacityChannels).forEach(unsubscribeSessionCapacityChannel_);
     }
 
     /** Renders a sub-event's own type-specific extra questions (from RegistrationFormFields) inside its card. */
