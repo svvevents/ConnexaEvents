@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Member Directory</title>
+  <style>
+    :root {
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --border-color: #dfe3ea;
+      --text-dark: var(--navy-color);
+      --text-muted: #5B6472;
+      --success-color: #2E7D5B;
+      --error-color: #C0392B;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); background: #F4F6F8; margin: 0; padding: 32px 20px; -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 780px; margin: 0 auto; }
+    h1 { color: var(--navy-color); font-weight: 800; margin: 0 0 6px; }
+    .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 28px; }
+    .card { background: white; border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; box-shadow: 0 8px 30px rgba(13,27,42,0.10); text-align: center; }
+    .msg { padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+    .msg.error { background: #F9EBEA; color: var(--error-color); }
+    .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .member-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; text-align: left; }
+    .member-card img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; margin-bottom: 10px; }
+    .member-card h3 { margin: 0 0 4px; font-size: 15px; color: var(--navy-color); }
+    .member-card .since { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+    .member-card p { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 8px; }
+    .member-card a { font-size: 12.5px; color: var(--primary-color); font-weight: 600; text-decoration: none; }
+    .empty { text-align: center; color: var(--text-muted); padding: 40px 0; }
+  </style>
+
+  <!-- Public/authenticated-attendee page, new (Phase 3d) -- same Supabase client + shim precedent as every other static page here. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="supabase-shim.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Member Directory</h1>
+    <p class="sub">Visible only to people at other member companies.</p>
+    <div id="content"><div class="card"><p>Loading...</p></div></div>
+  </div>
+
+  <script>
+    var tenantId = new URLSearchParams(window.location.search).get('tid') || '';
+
+    function renderError(message) {
+      document.getElementById('content').innerHTML =
+        '<div class="card"><div class="msg error">' + escapeHtml_(message) + '</div>' +
+        '<p style="margin-top:20px; font-size:13px;"><a href="Portal.html" style="color:var(--primary-color); font-weight:600;">Return to Event Portal</a></p></div>';
+    }
+
+    function escapeHtml_(str) {
+      var div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    function renderDirectory(list) {
+      if (!tenantId) { return; }
+      if (!list.length) {
+        document.getElementById('content').innerHTML = '<div class="card"><p class="empty">No members are listed yet.</p></div>';
+        return;
+      }
+      var html = '<div class="member-grid">';
+      list.forEach(function(m) {
+        html += '<div class="member-card">' +
+          (m.logoUrl ? '<img src="' + escapeHtml_(m.logoUrl) + '" alt="">' : '') +
+          '<h3>' + escapeHtml_(m.companyName) + '</h3>' +
+          (m.memberSince ? '<div class="since">Member since ' + escapeHtml_(m.memberSince) + '</div>' : '') +
+          (m.blurb ? '<p>' + escapeHtml_(m.blurb) + '</p>' : '') +
+          (m.website ? '<a href="' + escapeHtml_(m.website) + '" target="_blank" rel="noopener">Visit website &rarr;</a>' : '') +
+        '</div>';
+      });
+      document.getElementById('content').innerHTML = html + '</div>';
+    }
+
+    if (!tenantId) {
+      renderError('This link is missing information and can\'t be processed.');
+    } else {
+      supabaseClient.auth.getSession().then(function(res) {
+        var session = res && res.data && res.data.session;
+        if (!session) {
+          renderError('Please sign in to the Event Portal first, then return to this page.');
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(renderDirectory)
+          .withFailureHandler(function(err) { renderError(err.message); })
+          .getInternalMemberDirectory(tenantId);
+      });
+    }
+  </script>
+</body>
+</html>

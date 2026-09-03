@@ -612,6 +612,84 @@
     },
     getMembershipRollup: rpc('get_membership_rollup', function () { return {}; }),
 
+    // ---- Membership Management Phase 3a: dues tracking ----
+    listMemberDues: function () {
+      return sb.rpc('list_member_dues', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'dueId');
+      });
+    },
+    saveDue: function (args) {
+      return sb.rpc('create_or_update_due', { p_payload: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'dueId');
+      });
+    },
+    updateDuePaymentStatus: function (args) {
+      return sb.rpc('update_due_payment_status', { p_due_id: args[0], p_new_status: args[1] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'dueId');
+      });
+    },
+    deleteDue: function (args) {
+      return sb.rpc('delete_due', { p_due_id: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return { status: 'ok' };
+      });
+    },
+
+    // ---- Membership Management Phase 3b: upsell/opportunity pipeline ----
+    listMembershipOpportunities: function () {
+      return sb.rpc('list_membership_opportunities', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'opportunityId');
+      });
+    },
+    saveOpportunity: function (args) {
+      return sb.rpc('create_or_update_opportunity', { p_payload: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'opportunityId');
+      });
+    },
+    setOpportunityStage: function (args) {
+      return sb.rpc('set_opportunity_stage', { p_opportunity_id: args[0], p_stage: args[1] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'opportunityId');
+      });
+    },
+
+    // ---- Membership Management Phase 3c: comms reuse ----
+    resolveMembershipAudience: function (args) {
+      return sb.rpc('resolve_membership_audience', { p_audience_spec: args[0] || {} }).then(function (res) {
+        if (res.error) throw res.error;
+        return res.data;
+      });
+    },
+    sendMembershipCampaign: function (args) {
+      return sb.rpc('send_membership_campaign', {
+        p_name: args[0], p_template_id: args[1], p_audience_spec: args[2] || {}, p_scheduled_for: args[3] || null
+      }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'campaignId');
+      });
+    },
+    listMembershipCampaigns: function () {
+      return sb.rpc('list_membership_campaigns', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'campaignId');
+      });
+    },
+    triggerMembershipSendDrain: rpc('trigger_membership_send_drain', function () { return {}; }),
+
+    // ---- Membership Management Phase 3d: member register
+    // (MemberDirectory.html / PublicMemberDirectory.html). New pages, not
+    // ported -- args read straight off args[0], no vestigial leading arg. ----
+    getInternalMemberDirectory: rpc('get_internal_member_directory', function (args) { return { p_tenant_id: args[0] }; }),
+    getPublicMemberDirectory: rpc('get_public_member_directory', function (args) { return { p_tenant_id: args[0] }; }),
+    contactMember: rpc('contact_member', function (args) {
+      return { p_tenant_id: args[0], p_member_id: args[1], p_inquirer_name: args[2], p_inquirer_email: args[3], p_message: args[4] };
+    }),
+
     // ---- Phase 07 Stage C: AdminFloorPlan.html ----
     // getExhibitionEventOptions was never an RPC even in the original
     // Postgres migration (20260810223009_floor_plan.sql's own header:

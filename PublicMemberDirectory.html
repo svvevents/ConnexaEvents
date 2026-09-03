@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Member Directory</title>
+  <style>
+    :root {
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --border-color: #dfe3ea;
+      --text-dark: var(--navy-color);
+      --text-muted: #5B6472;
+      --success-color: #2E7D5B;
+      --error-color: #C0392B;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); background: #F4F6F8; margin: 0; padding: 32px 20px; -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 780px; margin: 0 auto; }
+    h1 { color: var(--navy-color); font-weight: 800; margin: 0 0 6px; }
+    .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 28px; }
+    .card { background: white; border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; box-shadow: 0 8px 30px rgba(13,27,42,0.10); text-align: center; }
+    .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .member-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; text-align: left; }
+    .member-card img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; margin-bottom: 10px; }
+    .member-card h3 { margin: 0 0 4px; font-size: 15px; color: var(--navy-color); }
+    .member-card p { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin: 0 0 8px; }
+    .member-card a, .member-card button.link { font-size: 12.5px; color: var(--primary-color); font-weight: 600; text-decoration: none; background: none; border: none; padding: 0; cursor: pointer; font-family: var(--font-family); margin-right: 12px; }
+    .empty { text-align: center; color: var(--text-muted); padding: 40px 0; }
+    .msg { padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; margin-top: 12px; }
+    .msg.error { background: #F9EBEA; color: var(--error-color); display: block; }
+    .msg.success { background: #EAF2EF; color: var(--success-color); display: block; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,27,42,0.45); align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: white; border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; position: relative; }
+    .modal-close { position: absolute; top: 14px; right: 18px; cursor: pointer; font-size: 20px; color: var(--text-muted); }
+    .modal-box h2 { margin-top: 0; color: var(--navy-color); }
+    label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-dark); margin-bottom: 5px; margin-top: 14px; }
+    input, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-family: var(--font-family); font-size: 14px; }
+    button.primary { margin-top: 18px; width: 100%; background: var(--primary-color); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: var(--font-family); }
+    button.primary:disabled { background: #bdc1c6; cursor: not-allowed; }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="supabase-shim.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Member Directory</h1>
+    <p class="sub">Our member companies.</p>
+    <div id="content"><div class="card"><p>Loading...</p></div></div>
+  </div>
+
+  <div class="modal-overlay" id="contactModal">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeContactModal()">&times;</span>
+      <h2 id="contactModalTitle">Contact</h2>
+      <div id="contactMsg" class="msg"></div>
+      <label for="inquirerName">Your Name</label>
+      <input type="text" id="inquirerName">
+      <label for="inquirerEmail">Your Email</label>
+      <input type="email" id="inquirerEmail">
+      <label for="inquirerMessage">Message</label>
+      <textarea id="inquirerMessage" rows="4"></textarea>
+      <button class="primary" id="btnSendContact" onclick="submitContact()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    var tenantId = new URLSearchParams(window.location.search).get('tid') || '';
+    var directoryState = { members: [], contactMemberId: null };
+
+    function escapeHtml_(str) {
+      var div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    function renderError(message) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="msg error" style="display:block;">' + escapeHtml_(message) + '</div></div>';
+    }
+
+    function renderDirectory(list) {
+      directoryState.members = list || [];
+      if (!list.length) {
+        document.getElementById('content').innerHTML = '<div class="card"><p class="empty">No members are listed yet.</p></div>';
+        return;
+      }
+      var html = '<div class="member-grid">';
+      list.forEach(function(m) {
+        html += '<div class="member-card">' +
+          (m.logoUrl ? '<img src="' + escapeHtml_(m.logoUrl) + '" alt="">' : '') +
+          '<h3>' + escapeHtml_(m.companyName) + '</h3>' +
+          (m.blurb ? '<p>' + escapeHtml_(m.blurb) + '</p>' : '') +
+          (m.website ? '<a href="' + escapeHtml_(m.website) + '" target="_blank" rel="noopener">Website &rarr;</a>' : '') +
+          (m.hasContact ? '<button class="link" onclick="openContactModal(' + JSON.stringify(m.memberId).replace(/"/g, '&quot;') + ',' + JSON.stringify(m.companyName).replace(/"/g, '&quot;') + ')">Contact &rarr;</button>' : '') +
+        '</div>';
+      });
+      document.getElementById('content').innerHTML = html + '</div>';
+    }
+
+    function openContactModal(memberId, companyName) {
+      directoryState.contactMemberId = memberId;
+      document.getElementById('contactModalTitle').textContent = 'Contact ' + companyName;
+      document.getElementById('contactMsg').style.display = 'none';
+      document.getElementById('inquirerName').value = '';
+      document.getElementById('inquirerEmail').value = '';
+      document.getElementById('inquirerMessage').value = '';
+      document.getElementById('btnSendContact').disabled = false;
+      document.getElementById('btnSendContact').style.display = 'block';
+      document.getElementById('contactModal').classList.add('open');
+    }
+
+    function closeContactModal() { document.getElementById('contactModal').classList.remove('open'); }
+
+    function submitContact() {
+      var msgEl = document.getElementById('contactMsg');
+      var name = document.getElementById('inquirerName').value.trim();
+      var email = document.getElementById('inquirerEmail').value.trim();
+      var message = document.getElementById('inquirerMessage').value.trim();
+      if (!name || !email || !message) {
+        msgEl.className = 'msg error'; msgEl.textContent = 'Please fill in your name, email, and a message.'; return;
+      }
+      var btn = document.getElementById('btnSendContact');
+      btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function() {
+          msgEl.className = 'msg success';
+          msgEl.textContent = 'Sent — they\'ll be in touch directly.';
+          btn.style.display = 'none';
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          msgEl.className = 'msg error';
+          msgEl.textContent = err.message;
+        })
+        .contactMember(tenantId, directoryState.contactMemberId, name, email, message);
+    }
+
+    if (!tenantId) {
+      renderError('This link is missing information and can\'t be processed.');
+    } else {
+      google.script.run
+        .withSuccessHandler(renderDirectory)
+        .withFailureHandler(function(err) { renderError(err.message); })
+        .getPublicMemberDirectory(tenantId);
+    }
+  </script>
+</body>
+</html>

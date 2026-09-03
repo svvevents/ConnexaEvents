@@ -846,6 +846,9 @@
             <div class="comm-tab active" id="members-tab-members" role="tab" tabindex="0" onclick="switchMembersTab('members')">Members</div>
             <div class="comm-tab" id="members-tab-prospects" role="tab" tabindex="0" onclick="switchMembersTab('prospects')">Prospects</div>
             <div class="comm-tab" id="members-tab-engagement" role="tab" tabindex="0" onclick="switchMembersTab('engagement')">Engagement</div>
+            <div class="comm-tab" id="members-tab-dues" role="tab" tabindex="0" onclick="switchMembersTab('dues')">Dues</div>
+            <div class="comm-tab" id="members-tab-opportunities" role="tab" tabindex="0" onclick="switchMembersTab('opportunities')">Opportunities</div>
+            <div class="comm-tab" id="members-tab-send" role="tab" tabindex="0" onclick="switchMembersTab('send')">Send</div>
           </div>
 
           <!-- ---- MEMBERS LIST ---- -->
@@ -893,6 +896,60 @@
               Zero events, or zero registrations from a member's domain, just shows zero here — nothing required.
             </p>
             <div id="membershipEngagementWrap"><p>Loading engagement data...</p></div>
+          </div>
+
+          <!-- ---- DUES (Phase 3a) ---- -->
+          <div id="members-view-dues" class="comm-view">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">Dues</h3>
+              <button class="btn" onclick="openDueModal()">+ New Due</button>
+            </div>
+            <div id="duesListWrap"><p>Loading dues...</p></div>
+          </div>
+
+          <!-- ---- OPPORTUNITIES (Phase 3b) ---- -->
+          <div id="members-view-opportunities" class="comm-view">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">Opportunities</h3>
+              <button class="btn" onclick="openOpportunityModal()">+ New Opportunity</button>
+            </div>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
+              Marking one Won creates real income — an Order if it's linked to an event (e.g. a sponsorship), a Due otherwise —
+              and, if a resulting tier is set, updates the member's tier once its effective date arrives.
+            </p>
+            <div id="opportunitiesListWrap"><p>Loading opportunities...</p></div>
+          </div>
+
+          <!-- ---- SEND (Phase 3c) ---- -->
+          <div id="members-view-send" class="comm-view">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">New Membership Campaign</h3>
+            </div>
+            <div id="memberSendMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+            <div class="form-group">
+              <label for="memberSendNameField">Campaign Name *</label>
+              <input type="text" id="memberSendNameField" placeholder="e.g. Q1 Newsletter">
+            </div>
+            <div class="form-group">
+              <label for="memberSendTemplateField">Template *</label>
+              <select id="memberSendTemplateField"><option value="">-- Select a template --</option></select>
+            </div>
+            <div class="form-group">
+              <label for="memberSendTiersField">Tiers <span style="font-weight:400; color:var(--text-muted);">(optional — comma-separated, e.g. Gold, Silver; leave blank for every Active member)</span></label>
+              <input type="text" id="memberSendTiersField">
+            </div>
+            <button class="btn secondary" onclick="previewMembershipAudience()">Preview Audience</button>
+            <div id="memberAudiencePreview" style="display:none; margin-top:14px;"></div>
+            <div class="form-group" style="margin-top:14px;">
+              <label for="memberSendScheduleField">Schedule <span style="font-weight:400; color:var(--text-muted);">(optional — leave blank to send now)</span></label>
+              <input type="datetime-local" id="memberSendScheduleField">
+            </div>
+            <button class="btn" id="btnSendMembershipCampaign" onclick="sendMembershipCampaignClient()">Send Campaign</button>
+
+            <div class="panel-header-row" style="margin-top:28px;">
+              <h3 style="margin:0;">Past Campaigns</h3>
+            </div>
+            <div id="memberCampaignsListWrap"><p>Loading campaigns...</p></div>
           </div>
         </div>
 
@@ -1486,6 +1543,16 @@
           <input type="text" id="memberCompaniesHouseField">
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="memberContactNameField">Contact Name</label>
+          <input type="text" id="memberContactNameField" placeholder="Who to email at this member">
+        </div>
+        <div class="form-group">
+          <label for="memberContactEmailField">Contact Email</label>
+          <input type="email" id="memberContactEmailField" placeholder="required to send this member comms">
+        </div>
+      </div>
       <div class="form-group">
         <label for="memberWebsiteField">Website</label>
         <input type="text" id="memberWebsiteField">
@@ -1545,6 +1612,88 @@
         <textarea id="prospectNotesField" rows="2"></textarea>
       </div>
       <button class="btn" style="width:100%;" id="btnSaveProspect" onclick="saveProspectClient()">Save Prospect</button>
+    </div>
+  </div>
+
+  <div id="dueModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeDueModal()">&times;</span>
+      <h3 id="dueModalTitle" style="margin-top:0;">Add Due</h3>
+      <div id="dueModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+      <input type="hidden" id="dueIdField">
+      <div class="form-group">
+        <label for="dueMemberField">Member *</label>
+        <select id="dueMemberField"></select>
+      </div>
+      <div class="form-group">
+        <label for="dueDescriptionField">Description</label>
+        <input type="text" id="dueDescriptionField" placeholder="e.g. 2027 Annual Dues">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="dueAmountField">Amount *</label>
+          <input type="number" step="0.01" min="0" id="dueAmountField">
+        </div>
+        <div class="form-group">
+          <label for="dueCurrencyField">Currency *</label>
+          <input type="text" id="dueCurrencyField" placeholder="GBP">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="dueDateField">Due Date</label>
+        <input type="date" id="dueDateField">
+      </div>
+      <div class="form-group">
+        <label for="dueNotesField">Notes</label>
+        <textarea id="dueNotesField" rows="2"></textarea>
+      </div>
+      <button class="btn" style="width:100%;" id="btnSaveDue" onclick="saveDueClient()">Save Due</button>
+    </div>
+  </div>
+
+  <div id="opportunityModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeOpportunityModal()">&times;</span>
+      <h3 id="opportunityModalTitle" style="margin-top:0;">Add Opportunity</h3>
+      <div id="opportunityModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+      <input type="hidden" id="opportunityIdField">
+      <div class="form-group">
+        <label for="opportunityMemberField">Member *</label>
+        <select id="opportunityMemberField"></select>
+      </div>
+      <div class="form-group">
+        <label for="opportunityTypeField">Type *</label>
+        <input type="text" id="opportunityTypeField" placeholder="e.g. Sponsorship, Tier Upgrade">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="opportunityAmountField">Amount</label>
+          <input type="number" step="0.01" min="0" id="opportunityAmountField">
+        </div>
+        <div class="form-group">
+          <label for="opportunityCurrencyField">Currency</label>
+          <input type="text" id="opportunityCurrencyField" placeholder="GBP">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="opportunityEventField">Linked Event <span style="font-weight:400; color:var(--text-muted);">(optional — set for a sponsorship; Won creates an Order, not a Due)</span></label>
+        <select id="opportunityEventField"><option value="">-- Not linked to an event --</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="opportunityResultingTierField">Resulting Tier <span style="font-weight:400; color:var(--text-muted);">(optional)</span></label>
+          <input type="text" id="opportunityResultingTierField" placeholder="leave blank for no tier change">
+        </div>
+        <div class="form-group">
+          <label for="opportunityEffectiveDateField">Effective Date</label>
+          <input type="date" id="opportunityEffectiveDateField">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="opportunityNotesField">Notes</label>
+        <textarea id="opportunityNotesField" rows="2"></textarea>
+      </div>
+      <button class="btn" style="width:100%;" id="btnSaveOpportunity" onclick="saveOpportunityClient()">Save Opportunity</button>
     </div>
   </div>
 
@@ -4756,6 +4905,9 @@
     document.getElementById('members-tab-' + tab).classList.add('active');
     document.getElementById('members-view-' + tab).classList.add('active');
     if (tab === 'engagement') loadMembershipEngagement();
+    if (tab === 'dues') listDues();
+    if (tab === 'opportunities') listOpportunities();
+    if (tab === 'send') loadMembersSendTab();
   }
 
   /* ---------------- Members ---------------- */
@@ -4803,6 +4955,8 @@
     document.getElementById('memberTierField').value = m ? (m.tier || '') : '';
     document.getElementById('memberStatusField').value = m ? m.status : 'Active';
     document.getElementById('memberCompaniesHouseField').value = m ? (m.companiesHouseNumber || '') : '';
+    document.getElementById('memberContactNameField').value = m ? (m.contactName || '') : '';
+    document.getElementById('memberContactEmailField').value = m ? (m.contactEmail || '') : '';
     document.getElementById('memberWebsiteField').value = m ? (m.website || '') : '';
     document.getElementById('memberBlurbField').value = m ? (m.blurb || '') : '';
     document.getElementById('memberShowInternallyField').checked = m ? !!m.showInternally : true;
@@ -4825,6 +4979,8 @@
       tier: document.getElementById('memberTierField').value.trim(),
       status: document.getElementById('memberStatusField').value,
       companiesHouseNumber: document.getElementById('memberCompaniesHouseField').value.trim(),
+      contactName: document.getElementById('memberContactNameField').value.trim(),
+      contactEmail: document.getElementById('memberContactEmailField').value.trim(),
       website: document.getElementById('memberWebsiteField').value.trim(),
       blurb: document.getElementById('memberBlurbField').value.trim(),
       showInternally: document.getElementById('memberShowInternallyField').checked,
@@ -5034,6 +5190,403 @@
       '</tr>';
     });
     wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  /* ---------------- Dues (Phase 3a) ---------------- */
+
+  var duesState = { dues: [] };
+
+  function listDues() {
+    var wrap = document.getElementById('duesListWrap');
+    wrap.innerHTML = '<p>Loading dues...</p>';
+    google.script.run
+      .withSuccessHandler(function(list) { duesState.dues = list || []; renderDuesList(); })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listMemberDues();
+  }
+
+  function memberNameById_(memberId) {
+    var m = membersState.members.filter(function(x) { return x.memberId === memberId; })[0];
+    return m ? m.companyName : '(unknown member)';
+  }
+
+  function renderDuesList() {
+    var wrap = document.getElementById('duesListWrap');
+    var list = duesState.dues;
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No dues recorded yet. Click "+ New Due" to add one.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Member</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Description</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Amount</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Status</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Due Date</th>' +
+      '<th></th></tr></thead><tbody>';
+    list.forEach(function(d) {
+      var isPaid = d.paymentStatus === 'Paid';
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(memberNameById_(d.memberId)) + '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(d.description || '—') + '</td>' +
+        '<td style="padding:8px 10px;">' + fmtMoney(d.amount, d.currency) + '</td>' +
+        '<td style="padding:8px 10px;"><span class="tag ' + (isPaid ? 'live' : 'draft') + '">' + escapeHtml(d.paymentStatus) + '</span></td>' +
+        '<td style="padding:8px 10px;">' + (d.dueDate || '—') + '</td>' +
+        '<td style="padding:8px 10px; text-align:right; white-space:nowrap;">' +
+          '<button class="btn small secondary" onclick="toggleDuePaymentStatusClient(' + jsAttr_(d.dueId) + ',' + jsAttr_(isPaid ? 'Pending' : 'Paid') + ')">Mark ' + (isPaid ? 'Pending' : 'Paid') + '</button> ' +
+          '<button class="btn small secondary" onclick="openDueModal(' + jsAttr_(d.dueId) + ')">Edit</button> ' +
+          '<button class="btn small secondary" onclick="deleteDueClient(' + jsAttr_(d.dueId) + ')">Delete</button>' +
+        '</td></tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function openDueModal(dueId) {
+    var d = dueId ? duesState.dues.filter(function(x) { return x.dueId === dueId; })[0] : null;
+    document.getElementById('dueModalTitle').textContent = d ? 'Edit Due' : 'Add Due';
+    document.getElementById('dueModalMsg').style.display = 'none';
+    document.getElementById('dueIdField').value = d ? d.dueId : '';
+    var sel = document.getElementById('dueMemberField');
+    sel.innerHTML = membersState.members.map(function(m) { return '<option value="' + m.memberId + '">' + escapeHtml(m.companyName) + '</option>'; }).join('');
+    sel.value = d ? d.memberId : (membersState.members[0] ? membersState.members[0].memberId : '');
+    document.getElementById('dueDescriptionField').value = d ? (d.description || '') : '';
+    document.getElementById('dueAmountField').value = d ? d.amount : '';
+    document.getElementById('dueCurrencyField').value = d ? d.currency : '';
+    document.getElementById('dueDateField').value = d ? (d.dueDate || '') : '';
+    document.getElementById('dueNotesField').value = d ? (d.notes || '') : '';
+    document.getElementById('dueModal').style.display = 'flex';
+  }
+
+  function closeDueModal() { document.getElementById('dueModal').style.display = 'none'; }
+
+  function saveDueClient() {
+    var msgEl = document.getElementById('dueModalMsg');
+    var memberId = document.getElementById('dueMemberField').value;
+    var amount = document.getElementById('dueAmountField').value;
+    var currency = document.getElementById('dueCurrencyField').value.trim();
+    if (!memberId || !amount || !currency) {
+      msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Member, Amount and Currency are required.'; msgEl.style.display = 'block'; return;
+    }
+    var payload = {
+      id: document.getElementById('dueIdField').value || null,
+      memberId: memberId,
+      description: document.getElementById('dueDescriptionField').value.trim(),
+      amount: amount,
+      currency: currency,
+      dueDate: document.getElementById('dueDateField').value,
+      notes: document.getElementById('dueNotesField').value.trim()
+    };
+    var btn = document.getElementById('btnSaveDue');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() { btn.disabled = false; closeDueModal(); listDues(); })
+      .withFailureHandler(function(err) { btn.disabled = false; msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .saveDue(payload);
+  }
+
+  function toggleDuePaymentStatusClient(dueId, newStatus) {
+    google.script.run
+      .withSuccessHandler(function() { listDues(); })
+      .withFailureHandler(function(err) { alert(err.message); })
+      .updateDuePaymentStatus(dueId, newStatus);
+  }
+
+  function deleteDueClient(dueId) {
+    openGenericConfirmModal({
+      title: 'Delete Due',
+      bodyHtml: 'Delete this due record? This cannot be undone.',
+      confirmLabel: 'Delete',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function() { listDues(); })
+          .withFailureHandler(function(err) { alert(err.message); })
+          .deleteDue(dueId);
+      }
+    });
+  }
+
+  /* ---------------- Opportunities (Phase 3b) ---------------- */
+
+  var opportunitiesState = { opportunities: [] };
+  var OPPORTUNITY_ACTIVE_STAGES = ['Identified', 'Proposed'];
+
+  function listOpportunities() {
+    var wrap = document.getElementById('opportunitiesListWrap');
+    wrap.innerHTML = '<p>Loading opportunities...</p>';
+    google.script.run
+      .withSuccessHandler(function(list) { opportunitiesState.opportunities = list || []; renderOpportunitiesList(); })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listMembershipOpportunities();
+  }
+
+  function eventNameById_(eventId) {
+    if (!eventId) return '—';
+    var found = null;
+    allEventsTreeCache.forEach(function(evt) {
+      if (evt.eventId === eventId) found = evt.eventName;
+      (evt.subEvents || []).forEach(function(sub) { if (sub.eventId === eventId) found = evt.eventName + ' → ' + sub.eventName; });
+    });
+    return found || '(unknown event)';
+  }
+
+  function renderOpportunitiesList() {
+    var wrap = document.getElementById('opportunitiesListWrap');
+    var list = opportunitiesState.opportunities;
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No opportunities yet. Click "+ New Opportunity" to add one.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Member</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Type</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Amount</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Linked Event</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Stage</th>' +
+      '<th></th></tr></thead><tbody>';
+    list.forEach(function(o) {
+      var isTerminal = (o.stage === 'Won' || o.stage === 'Lost');
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(memberNameById_(o.memberId)) + '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(o.opportunityType) + '</td>' +
+        '<td style="padding:8px 10px;">' + (o.amount != null ? fmtMoney(o.amount, o.currency) : '—') + '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(eventNameById_(o.eventId)) + '</td>' +
+        '<td style="padding:8px 10px;">' +
+          (isTerminal
+            ? '<span class="tag ' + (o.stage === 'Won' ? 'live' : 'deleted') + '">' + escapeHtml(o.stage) + '</span>'
+            : '<select onchange="setOpportunityStageClient(' + jsAttr_(o.opportunityId) + ', this.value)" style="font-size:12px; padding:3px 6px;">' +
+                OPPORTUNITY_ACTIVE_STAGES.concat(['Won', 'Lost']).map(function(s) {
+                  return '<option value="' + s + '"' + (s === o.stage ? ' selected' : '') + '>' + s + '</option>';
+                }).join('') +
+              '</select>') +
+        '</td>' +
+        '<td style="padding:8px 10px; text-align:right;">' +
+          (isTerminal ? '' : '<button class="btn small secondary" onclick="openOpportunityModal(' + jsAttr_(o.opportunityId) + ')">Edit</button>') +
+        '</td></tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function populateOpportunityEventPicker_() {
+    var sel = document.getElementById('opportunityEventField');
+    sel.innerHTML = '<option value="">-- Not linked to an event --</option>';
+    allEventsTreeCache.forEach(function(evt) {
+      sel.innerHTML += '<option value="' + evt.eventId + '">' + escapeHtml(evt.eventName) + '</option>';
+      (evt.subEvents || []).forEach(function(sub) {
+        sel.innerHTML += '<option value="' + sub.eventId + '">' + escapeHtml(evt.eventName) + ' → ' + escapeHtml(sub.eventName) + '</option>';
+      });
+    });
+  }
+
+  function openOpportunityModal(opportunityId) {
+    var o = opportunityId ? opportunitiesState.opportunities.filter(function(x) { return x.opportunityId === opportunityId; })[0] : null;
+    document.getElementById('opportunityModalTitle').textContent = o ? 'Edit Opportunity' : 'Add Opportunity';
+    document.getElementById('opportunityModalMsg').style.display = 'none';
+    document.getElementById('opportunityIdField').value = o ? o.opportunityId : '';
+    var memberSel = document.getElementById('opportunityMemberField');
+    memberSel.innerHTML = membersState.members.map(function(m) { return '<option value="' + m.memberId + '">' + escapeHtml(m.companyName) + '</option>'; }).join('');
+    memberSel.value = o ? o.memberId : (membersState.members[0] ? membersState.members[0].memberId : '');
+    document.getElementById('opportunityTypeField').value = o ? o.opportunityType : '';
+    document.getElementById('opportunityAmountField').value = o && o.amount != null ? o.amount : '';
+    document.getElementById('opportunityCurrencyField').value = o ? (o.currency || '') : '';
+    populateOpportunityEventPicker_();
+    document.getElementById('opportunityEventField').value = o ? (o.eventId || '') : '';
+    document.getElementById('opportunityResultingTierField').value = o ? (o.resultingTier || '') : '';
+    document.getElementById('opportunityEffectiveDateField').value = o ? o.effectiveDate : '';
+    document.getElementById('opportunityNotesField').value = o ? (o.notes || '') : '';
+    document.getElementById('opportunityModal').style.display = 'flex';
+  }
+
+  function closeOpportunityModal() { document.getElementById('opportunityModal').style.display = 'none'; }
+
+  function saveOpportunityClient() {
+    var msgEl = document.getElementById('opportunityModalMsg');
+    var memberId = document.getElementById('opportunityMemberField').value;
+    var type = document.getElementById('opportunityTypeField').value.trim();
+    if (!memberId || !type) {
+      msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Member and Type are required.'; msgEl.style.display = 'block'; return;
+    }
+    var payload = {
+      id: document.getElementById('opportunityIdField').value || null,
+      memberId: memberId,
+      opportunityType: type,
+      amount: document.getElementById('opportunityAmountField').value,
+      currency: document.getElementById('opportunityCurrencyField').value.trim(),
+      eventId: document.getElementById('opportunityEventField').value,
+      resultingTier: document.getElementById('opportunityResultingTierField').value.trim(),
+      effectiveDate: document.getElementById('opportunityEffectiveDateField').value,
+      notes: document.getElementById('opportunityNotesField').value.trim()
+    };
+    var btn = document.getElementById('btnSaveOpportunity');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() { btn.disabled = false; closeOpportunityModal(); listOpportunities(); })
+      .withFailureHandler(function(err) { btn.disabled = false; msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .saveOpportunity(payload);
+  }
+
+  function setOpportunityStageClient(opportunityId, stage) {
+    var apply = function() {
+      google.script.run
+        .withSuccessHandler(function() { listOpportunities(); })
+        .withFailureHandler(function(err) { alert(err.message); listOpportunities(); })
+        .setOpportunityStage(opportunityId, stage);
+    };
+    if (stage === 'Won') {
+      openGenericConfirmModal({
+        title: 'Mark Won',
+        bodyHtml: 'This creates real income for this member — an Order if it\'s linked to an event, a Due otherwise — and cannot be edited afterwards. Continue?',
+        confirmLabel: 'Mark Won',
+        onConfirm: apply
+      });
+    } else {
+      apply();
+    }
+  }
+
+  /* ---------------- Send (Phase 3c: comms reuse) ---------------- */
+
+  var memberSendState = { templates: [] };
+
+  function loadMembersSendTab() {
+    document.getElementById('memberAudiencePreview').style.display = 'none';
+    document.getElementById('memberSendMsg').style.display = 'none';
+    google.script.run
+      .withSuccessHandler(function(list) {
+        memberSendState.templates = list || [];
+        var sel = document.getElementById('memberSendTemplateField');
+        sel.innerHTML = '<option value="">-- Select a template --</option>' +
+          memberSendState.templates.filter(function(t) { return t.status !== 'Archived'; })
+            .map(function(t) { return '<option value="' + t.templateId + '">' + escapeHtml(t.name) + '</option>'; }).join('');
+      })
+      .withFailureHandler(function(err) { document.getElementById('memberSendMsg').style.display = 'block'; document.getElementById('memberSendMsg').textContent = err.message; })
+      .listCommTemplates(null, '', false);
+    listMembershipCampaigns();
+  }
+
+  function membershipSendSpec_() {
+    var tiers = document.getElementById('memberSendTiersField').value.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+    return tiers.length ? { tiers: tiers } : {};
+  }
+
+  function previewMembershipAudience() {
+    var wrap = document.getElementById('memberAudiencePreview');
+    wrap.style.display = 'block';
+    wrap.innerHTML = '<p>Loading...</p>';
+    google.script.run
+      .withSuccessHandler(function(audience) {
+        var html = '<div class="tiles-row">' +
+          tileHtml(audience.count, 'Will Receive') +
+          tileHtml(audience.noContactEmail, 'No Contact Email') +
+          '</div>';
+        if (audience.sample && audience.sample.length) {
+          html += '<table style="width:100%; border-collapse:collapse; font-size:12.5px; margin-top:10px;"><thead><tr>' +
+            '<th style="text-align:left; padding:6px 8px; color:var(--text-muted); font-size:10.5px; text-transform:uppercase;">Company</th>' +
+            '<th style="text-align:left; padding:6px 8px; color:var(--text-muted); font-size:10.5px; text-transform:uppercase;">Contact</th>' +
+            '<th style="text-align:left; padding:6px 8px; color:var(--text-muted); font-size:10.5px; text-transform:uppercase;">Tier</th>' +
+            '</tr></thead><tbody>' + audience.sample.map(function(m) {
+              return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px 8px;">' + escapeHtml(m.companyName) + '</td>' +
+                '<td style="padding:6px 8px;">' + escapeHtml(m.contactName || '') + ' &lt;' + escapeHtml(m.contactEmail) + '&gt;</td>' +
+                '<td style="padding:6px 8px;">' + escapeHtml(m.tier || '—') + '</td></tr>';
+            }).join('') + '</tbody></table>';
+        } else {
+          html += '<p class="hint">No recipients match yet — check members have a Contact Email set.</p>';
+        }
+        wrap.innerHTML = html;
+      })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .resolveMembershipAudience(membershipSendSpec_());
+  }
+
+  function sendMembershipCampaignClient() {
+    var msgEl = document.getElementById('memberSendMsg');
+    var name = document.getElementById('memberSendNameField').value.trim();
+    var templateId = document.getElementById('memberSendTemplateField').value;
+    if (!name || !templateId) {
+      msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Campaign Name and Template are required.'; msgEl.style.display = 'block'; return;
+    }
+    var scheduleVal = document.getElementById('memberSendScheduleField').value;
+    var scheduledForIso = scheduleVal ? new Date(scheduleVal).toISOString() : null;
+    var btn = document.getElementById('btnSendMembershipCampaign');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(campaign) {
+        document.getElementById('memberSendNameField').value = '';
+        document.getElementById('memberAudiencePreview').style.display = 'none';
+        listMembershipCampaigns();
+
+        if (campaign.status === 'Scheduled') {
+          btn.disabled = false;
+          msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+          msgEl.textContent = 'Scheduled — ' + campaign.totalRecipients + ' recipient(s).';
+          msgEl.style.display = 'block';
+          return;
+        }
+
+        // Not scheduled -> due now. No recurring cron polls this queue
+        // (see the migration's own note on why), so trigger one drain
+        // pass directly instead of waiting on a poller that isn't there.
+        msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+        msgEl.textContent = 'Queued ' + campaign.totalRecipients + ' recipient(s) — sending now...';
+        msgEl.style.display = 'block';
+        google.script.run
+          .withSuccessHandler(function(result) {
+            btn.disabled = false;
+            msgEl.textContent = 'Sent ' + result.sent + ' of ' + campaign.totalRecipients +
+              (result.failed ? (', ' + result.failed + ' failed') : '') +
+              (result.sent + result.failed < campaign.totalRecipients ? ' — use "Process Queue" below later to send the rest (daily quota may have been reached).' : '.');
+            listMembershipCampaigns();
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
+            msgEl.textContent = 'Queued, but the send pass failed: ' + err.message + ' — the campaign will stay Queued, safe to retry.';
+            listMembershipCampaigns();
+          })
+          .triggerMembershipSendDrain();
+      })
+      .withFailureHandler(function(err) { btn.disabled = false; msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .sendMembershipCampaign(name, templateId, membershipSendSpec_(), scheduledForIso);
+  }
+
+  function listMembershipCampaigns() {
+    var wrap = document.getElementById('memberCampaignsListWrap');
+    google.script.run
+      .withSuccessHandler(renderMembershipCampaignsList)
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listMembershipCampaigns();
+  }
+
+  function renderMembershipCampaignsList(list) {
+    var wrap = document.getElementById('memberCampaignsListWrap');
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No membership campaigns sent yet.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Name</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Status</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Recipients</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Sent</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Failed</th>' +
+      '<th></th></tr></thead><tbody>';
+    list.forEach(function(c) {
+      var unfinished = c.status !== 'Completed' && c.sentCount + c.failedCount < c.totalRecipients;
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(c.name) + '</td>' +
+        '<td style="padding:8px 10px;"><span class="tag ' + (c.status === 'Completed' ? 'live' : 'draft') + '">' + escapeHtml(c.status) + '</span></td>' +
+        '<td style="padding:8px 10px;">' + c.totalRecipients + '</td>' +
+        '<td style="padding:8px 10px;">' + c.sentCount + '</td>' +
+        '<td style="padding:8px 10px;">' + c.failedCount + '</td>' +
+        '<td style="padding:8px 10px; text-align:right;">' +
+          (unfinished ? '<button class="btn small secondary" onclick="processMembershipQueueClient()">Process Queue</button>' : '') +
+        '</td></tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function processMembershipQueueClient() {
+    var msgEl = document.getElementById('memberSendMsg');
+    msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+    msgEl.textContent = 'Processing queued membership sends...';
+    msgEl.style.display = 'block';
+    google.script.run
+      .withSuccessHandler(function(result) {
+        msgEl.textContent = 'Sent ' + result.sent + (result.failed ? (', ' + result.failed + ' failed') : '') + ' this pass.';
+        listMembershipCampaigns();
+      })
+      .withFailureHandler(function(err) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; })
+      .triggerMembershipSendDrain();
   }
 
   function generateDataBridgeSql() {
