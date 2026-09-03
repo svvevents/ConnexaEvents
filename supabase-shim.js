@@ -409,6 +409,11 @@
       return sb.auth.signOut().then(function () { return { status: 'ok' }; });
     },
 
+    // Control Centre v1 companion -- checked by checkAdminSession_ right
+    // after a session is confirmed, so a suspended tenant's admin gets a
+    // distinct "suspended" screen instead of the admin dashboard.
+    getAdminSessionStatus: rpc('get_admin_session_status', function () { return {}; }),
+
     // -- Events / Settings reads+writes --
     getAdminEventsTree: rpc('get_admin_events_tree', function () { return {}; }),
     createOrUpdateEvent: rpc('create_or_update_event', function (args) { return { p_payload: args[1] }; }),
@@ -468,13 +473,14 @@
 
     // -- Communications --
     listCommTemplates: function (args) {
-      return sb.rpc('list_comm_templates', { p_event_id: args[1] || null }).then(function (res) {
+      return sb.rpc('list_comm_templates', { p_event_id: args[1] || null, p_include_archived: !!args[2] }).then(function (res) {
         if (res.error) throw res.error;
         return toCamelRows_(res.data, 'templateId');
       });
     },
     saveCommTemplate: rpc('save_comm_template', function (args) { return { p_payload: args[1] }; }),
     deleteCommTemplate: rpc('delete_comm_template', function (args) { return { p_template_id: args[1] }; }),
+    restoreCommTemplate: rpc('restore_comm_template', function (args) { return { p_template_id: args[1] }; }),
     listCommAutomationsForEntity: function (args) {
       return sb.rpc('list_comm_automations_for_entity', { p_event_id: args[1] || null, p_sub_event_id: args[2] || null }).then(function (res) {
         if (res.error) throw res.error;
@@ -500,7 +506,7 @@
     sendTestCommunication: sendTestCommunication_,
     sendCampaign: rpc('send_campaign', function (args) {
       var spec = args[2] || {};
-      return { p_name: args[3], p_template_id: args[1], p_event_id: audienceEventId_(spec), p_audience_spec: flattenAudienceSpec_(spec) };
+      return { p_name: args[3], p_template_id: args[1], p_event_id: audienceEventId_(spec), p_audience_spec: flattenAudienceSpec_(spec), p_scheduled_for: args[4] || null };
     }),
     listCommCampaigns: function (args) {
       return sb.rpc('list_comm_campaigns', { p_event_id: args[1] || null }).then(function (res) {
@@ -511,6 +517,15 @@
     pauseCampaign: rpc('pause_campaign', function (args) { return { p_campaign_id: args[1] }; }),
     resumeCampaign: rpc('resume_campaign', function (args) { return { p_campaign_id: args[1] }; }),
     cancelCampaign: rpc('cancel_campaign', function (args) { return { p_campaign_id: args[1] }; }),
+    sendScheduledCampaignNow: rpc('send_scheduled_campaign_now', function (args) { return { p_campaign_id: args[1] }; }),
+    listCommSavedSegments: function () {
+      return sb.rpc('list_comm_saved_segments', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'segmentId');
+      });
+    },
+    saveCommSavedSegment: rpc('save_comm_saved_segment', function (args) { return { p_name: args[1], p_spec: args[2] }; }),
+    deleteCommSavedSegment: rpc('delete_comm_saved_segment', function (args) { return { p_id: args[1] }; }),
     getCommLogForCampaign: function (args) {
       return sb.rpc('get_comm_log_for_campaign', { p_campaign_id: args[1] }).then(function (res) {
         if (res.error) throw res.error;

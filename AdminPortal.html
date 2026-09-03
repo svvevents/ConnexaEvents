@@ -69,6 +69,12 @@
     .tag.draft { background: #FBF4E6; color: var(--warning-color); }
     .tag.closed { background: #F9EBEA; color: var(--error-color); }
     .tag.deleted { background: #ECECEC; color: var(--text-muted); }
+    /* Campaign status: Running/Paused get their own color so neither is
+       confusable with Completed (live/green) or Draft (draft/amber). */
+    .tag.running { background: #F0EDF6; color: var(--category-tag-color); }
+    .tag.paused { background: #ECECEC; color: var(--text-muted); }
+    .row-saved-tick { color: var(--success-color); font-size: 12px; font-weight: 700; margin-left: 8px; opacity: 1; transition: opacity .6s ease; }
+    .row-saved-tick.fade { opacity: 0; }
     .tag.type { background: #F0EDF6; color: var(--category-tag-color); }
     .empty-state { color: var(--text-muted); background: white; border: 1px dashed var(--border-color); border-radius: 12px; padding: 40px; text-align: center; }
 
@@ -364,6 +370,49 @@
     .comm-log-table th, .comm-log-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
     .comm-log-table th { color: var(--text-muted); font-weight: 700; font-size: 10.5px; text-transform: uppercase; background: var(--bg-color); }
     .comm-body-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; min-height: 200px; line-height: 1.6; }
+
+    /* ---- Phase 2: visual template editor ---- */
+    .comm-editor-mode-toggle { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+    .comm-editor-mode-toggle button { border: none; background: #fbfcfe; color: var(--text-muted); font-size: 12px; font-weight: 700; padding: 6px 12px; cursor: pointer; }
+    .comm-editor-mode-toggle button.active { background: var(--primary-color); color: #fff; }
+    .comm-editor-toolbar { display: flex; gap: 3px; flex-wrap: wrap; padding: 6px; border: 1px solid var(--border-color); border-bottom: none; border-radius: 8px 8px 0 0; background: #fbfcfe; }
+    .comm-editor-toolbar button { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 5px 9px; font-size: 12.5px; font-weight: 700; color: var(--text-dark); cursor: pointer; min-width: 28px; }
+    .comm-editor-toolbar button:hover { background: #eef1f5; border-color: var(--border-color); }
+    .comm-editor-toolbar .sep { width: 1px; background: var(--border-color); margin: 3px 4px; }
+    .comm-body-editor-rich {
+      width: 100%; box-sizing: border-box; min-height: 200px; max-height: 360px; overflow-y: auto;
+      padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 0 0 8px 8px;
+      font-size: 13.5px; line-height: 1.6; background: #fff;
+    }
+    .comm-body-editor-rich:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(28,114,147,0.12); }
+    .comm-body-editor-rich a { color: var(--primary-color); }
+    .comm-tag-autocomplete {
+      display: none; position: absolute; z-index: 1100; background: white; border: 1px solid var(--border-color);
+      border-radius: 8px; box-shadow: 0 8px 24px rgba(13,27,42,.16); max-height: 220px; overflow-y: auto; min-width: 240px;
+    }
+    .comm-tag-autocomplete .opt { padding: 7px 10px; font-size: 12.5px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+    .comm-tag-autocomplete .opt code { color: var(--primary-color); font-weight: 700; }
+    .comm-tag-autocomplete .opt.hi, .comm-tag-autocomplete .opt:hover { background: #eef6f9; }
+
+    /* ---- Phase 2: starter gallery ---- */
+    .comm-starter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 8px; }
+    .comm-starter-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; cursor: pointer; background: #fbfcfe; }
+    .comm-starter-card:hover { border-color: var(--primary-color); background: #eef6f9; }
+    .comm-starter-card .k { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); font-weight: 800; margin-bottom: 4px; }
+    .comm-starter-card .t { font-size: 13px; font-weight: 700; }
+    .comm-starter-card.blank { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-weight: 700; font-size: 13px; border-style: dashed; }
+
+    /* ---- Phase 2: in-editor + New Campaign preview device toggle ---- */
+    .comm-preview-devtoggle { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+    .comm-preview-devtoggle button { border: none; background: #fbfcfe; color: var(--text-muted); font-size: 11.5px; font-weight: 700; padding: 5px 10px; cursor: pointer; }
+    .comm-preview-devtoggle button.active { background: var(--primary-color); color: #fff; }
+    .comm-preview-wrap.mobile iframe { width: 375px; margin: 0 auto; }
+    .comm-preview-wrap.mobile { text-align: center; }
+    .comm-tpl-preview-sample { font-size: 11.5px; color: var(--text-muted); padding: 6px 12px; border-top: 1px solid var(--border-color); background: #fbfcfe; }
+
+    /* ---- Phase 2: autosave draft banner ---- */
+    .comm-draft-banner { display: none; align-items: center; justify-content: space-between; gap: 10px; background: #FBF4E6; color: #7a5405; border: 1px solid #F0DCAE; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; }
+    .comm-draft-banner button { border: none; background: none; color: var(--primary-color); font-weight: 700; font-size: 12.5px; cursor: pointer; padding: 0; margin-left: 10px; }
   </style>
 
   <!-- Phase 07: SharedStyles.html inlined -- was <?!= include('SharedStyles') ?>,
@@ -480,6 +529,17 @@
   </div>
 </div>
 
+<!-- Control Centre v1: a suspended tenant's admin lands here instead of
+     the dashboard. checkAdminSession_ signs the session out first, so
+     "Return to login" leads to a clean state, not a stale session. -->
+<div class="session-expired" id="tenantSuspendedScreen" style="display:none;">
+  <div class="session-expired-box">
+    <h2>Account Suspended</h2>
+    <p>This account is currently suspended. Contact Connexa Events support if you believe this is a mistake.</p>
+    <a href="Portal.html">&larr; Return to login</a>
+  </div>
+</div>
+
   <div class="admin-screen" id="adminScreen" style="display:none;">
     <div class="admin-header">
       <h1>Admin Portal</h1>
@@ -565,7 +625,13 @@
           <div id="comm-view-templates" class="comm-view active">
             <div class="panel-header-row">
               <h3 style="margin:0;">Templates</h3>
-              <button class="btn" onclick="openCommTemplateEditor(null)">+ New Template</button>
+              <div style="display:flex; align-items:center; gap:16px;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:500; color:var(--text-muted); cursor:pointer; user-select:none;">
+                  <input type="checkbox" id="showArchivedTemplatesToggle" onchange="loadCommTemplatesList()">
+                  Show archived
+                </label>
+                <button class="btn" onclick="openCommTemplateEditor(null)">+ New Template</button>
+              </div>
             </div>
             <div id="commTemplatesListWrap"><p>Loading templates...</p></div>
           </div>
@@ -588,6 +654,21 @@
                   </select>
                 </div>
               </div>
+            </div>
+
+            <div class="comm-card">
+              <h4>2. Audience</h4>
+              <div class="form-row" style="align-items:flex-end;">
+                <div class="form-group" style="flex:2;">
+                  <label for="commSavedSegmentPicker">Load a saved audience</label>
+                  <select id="commSavedSegmentPicker" onchange="onCommSavedSegmentPick_()">
+                    <option value="">-- None --</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                  <button class="btn small secondary" type="button" onclick="deleteCommSavedSegmentAction_()">Delete</button>
+                </div>
+              </div>
               <div class="form-group" id="commSendSubEventWrap" style="display:none;">
                 <label for="commSendScopeField">Send to</label>
                 <select id="commSendScopeField" onchange="onCommSendScopeChange()">
@@ -599,16 +680,13 @@
                 <label for="commSendSubEventPicker">Sub-event</label>
                 <select id="commSendSubEventPicker" onchange="refreshCommAudience()"></select>
               </div>
-            </div>
-
-            <div class="comm-card">
-              <h4>2. Audience</h4>
               <div class="form-group">
                 <label id="commRegTypeChipsLabel">Registration type (leave empty for all)</label>
                 <div id="commRegTypeChips" class="hint" aria-labelledby="commRegTypeChipsLabel">Select an event to see registration types.</div>
               </div>
               <div class="form-group" id="commSubEventStatusWrap" style="display:none;">
                 <label id="commSubEventStatusLabel">Sub-event status</label>
+                <p class="hint" style="margin:2px 0 8px;">Defaults to Confirmed only — turn on Waitlisted to include waitlisted attendees too.</p>
                 <div class="comm-filter-chip selected" data-status="Confirmed" aria-labelledby="commSubEventStatusLabel" role="button" tabindex="0" onclick="toggleCommStatusChip(this)">Confirmed</div>
                 <div class="comm-filter-chip" data-status="Waitlisted" aria-labelledby="commSubEventStatusLabel" role="button" tabindex="0" onclick="toggleCommStatusChip(this)">Waitlisted</div>
               </div>
@@ -624,18 +702,25 @@
                 <div class="tile"><div class="val" id="commTileWillSend" style="color:var(--success-color)">0</div><div class="lbl">Will receive</div></div>
               </div>
               <div id="commAudienceSampleWrap"></div>
+              <button class="btn small secondary" type="button" style="margin-top:10px;" onclick="saveCommAudienceSegmentAction_()">Save this audience…</button>
             </div>
 
             <div class="comm-card">
-              <h4>3. Preview &amp; send</h4>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4 style="margin:0;">3. Preview &amp; send</h4>
+                <div class="comm-preview-devtoggle" id="commSendPreviewDevToggle">
+                  <button type="button" class="active" onclick="setCommPreviewDevice_('commSendPreviewWrap', this)">Desktop</button>
+                  <button type="button" onclick="setCommPreviewDevice_('commSendPreviewWrap', this)">Mobile</button>
+                </div>
+              </div>
               <div class="form-group">
                 <label for="commPreviewSampleEmail">Preview as</label>
                 <select id="commPreviewSampleEmail" onchange="refreshCommPreview()"></select>
               </div>
               <div id="commPreviewWarnings"></div>
-              <div class="comm-preview-wrap">
+              <div class="comm-preview-wrap" id="commSendPreviewWrap">
                 <div class="comm-preview-toolbar" id="commPreviewSubject">(no preview yet)</div>
-                <iframe id="commPreviewFrame"></iframe>
+                <iframe id="commPreviewFrame" title="Email preview"></iframe>
               </div>
 
               <div class="comm-quota-panel" id="commQuotaPanel"></div>
@@ -643,10 +728,22 @@
               <div class="form-row" style="align-items:flex-end; margin-top:10px;">
                 <div class="form-group" style="flex:2;">
                   <label for="commTestRecipientField">Send a test to</label>
-                  <input type="text" id="commTestRecipientField">
+                  <input type="text" id="commTestRecipientField" placeholder="you@example.com, another@example.com">
                 </div>
                 <div class="form-group" style="flex:0 0 auto;">
                   <button class="btn secondary" onclick="sendCommTest()">Send Test</button>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-top:10px;">
+                <label>When</label>
+                <div class="comm-editor-mode-toggle" id="commSendWhenToggle">
+                  <button type="button" class="active" onclick="setCommSendWhen_('now', this)">Send now</button>
+                  <button type="button" onclick="setCommSendWhen_('later', this)">Send later</button>
+                </div>
+                <div id="commScheduleForWrap" style="display:none; margin-top:8px;">
+                  <input type="datetime-local" id="commScheduleForField">
+                  <p class="hint" style="margin:6px 0 0;">Recipients are locked in now, based on who currently matches — not re-checked at the scheduled time.</p>
                 </div>
               </div>
 
@@ -1112,7 +1209,22 @@
       <h3 id="commTemplateModalTitle" style="margin-top:0;">New Template</h3>
       <input type="hidden" id="commTemplateIdField">
       <div id="commTemplateModalMsg" style="display:none; padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;"></div>
+      <div id="commDraftBanner" class="comm-draft-banner">
+        <span id="commDraftBannerText"></span>
+        <span>
+          <button type="button" onclick="restoreCommDraft_()">Restore</button>
+          <button type="button" onclick="discardCommDraft_()">Discard</button>
+        </span>
+      </div>
 
+      <!-- Starter gallery — shown only when creating a new template; picking one
+           (or "Start from blank") reveals the form below, pre-filled or empty. -->
+      <div id="commTemplateStarterGallery">
+        <p class="hint" style="margin-top:0;">Start from a template, or build one from scratch.</p>
+        <div class="comm-starter-grid" id="commStarterGrid"></div>
+      </div>
+
+      <div id="commTemplateFormWrap" style="display:none;">
       <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:20px; align-items:start;">
         <div>
           <div class="form-row">
@@ -1151,7 +1263,26 @@
           <div class="form-group">
             <label for="commTplBody">Body</label>
             <p class="hint" id="commTplBodyHint">HTML fragment — the layout above supplies the header/footer/unsubscribe link automatically.</p>
-            <textarea id="commTplBody" class="comm-body-editor"></textarea>
+            <div id="commTplModeToggleWrap" class="comm-editor-mode-toggle">
+              <button type="button" id="commTplModeVisualBtn" class="active" onclick="switchToVisualEditor()">Visual</button>
+              <button type="button" id="commTplModeCodeBtn" onclick="switchToCodeEditor()">Edit HTML</button>
+            </div>
+            <div id="commTplToolbar" class="comm-editor-toolbar">
+              <button type="button" title="Bold" onclick="commEditorCmd_('bold')"><b>B</b></button>
+              <button type="button" title="Italic" onclick="commEditorCmd_('italic')"><i>I</i></button>
+              <button type="button" title="Underline" onclick="commEditorCmd_('underline')"><u>U</u></button>
+              <span class="sep"></span>
+              <button type="button" title="Heading" onclick="commEditorToggleHeading_()">H2</button>
+              <button type="button" title="Bullet list" onclick="commEditorCmd_('insertUnorderedList')">• List</button>
+              <button type="button" title="Numbered list" onclick="commEditorCmd_('insertOrderedList')">1. List</button>
+              <span class="sep"></span>
+              <button type="button" title="Link" onclick="commEditorInsertLink_()">🔗 Link</button>
+              <button type="button" title="Button" onclick="commEditorInsertButton_()">▭ Button</button>
+              <span class="sep"></span>
+              <button type="button" title="Clear formatting" onclick="commEditorCmd_('removeFormat')">Clear</button>
+            </div>
+            <div id="commTplBodyRich" class="comm-body-editor-rich" contenteditable="true"></div>
+            <textarea id="commTplBody" class="comm-body-editor" style="display:none;"></textarea>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -1165,13 +1296,36 @@
         <div>
           <div class="comm-card">
             <h4>Insert merge tag</h4>
-            <p class="hint">Click to insert at cursor.</p>
+            <p class="hint">Click to insert at cursor, or type <code>{{</code> in the editor.</p>
             <div id="commTagRefList"></div>
+          </div>
+          <div class="comm-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <h4 style="margin:0;">Preview</h4>
+              <div class="comm-preview-devtoggle" id="commTplPreviewDevToggle">
+                <button type="button" class="active" onclick="setCommPreviewDevice_('commTplPreviewWrap', this)">Desktop</button>
+                <button type="button" onclick="setCommPreviewDevice_('commTplPreviewWrap', this)">Mobile</button>
+              </div>
+            </div>
+            <p class="hint">Renders against a real registrant of the event picked in Scope above.</p>
+            <button class="btn secondary small" type="button" onclick="previewCommTemplate_()">Preview</button>
+            <div id="commTplPreviewMsg" style="display:none; font-size:12px; margin-top:8px;"></div>
+            <div class="comm-preview-wrap" id="commTplPreviewWrap" style="display:none; margin-top:10px;">
+              <div class="comm-preview-toolbar" id="commTplPreviewSubject">(no preview yet)</div>
+              <iframe id="commTplPreviewFrame" title="Template preview"></iframe>
+              <div class="comm-tpl-preview-sample" id="commTplPreviewSample"></div>
+            </div>
           </div>
         </div>
       </div>
+      </div>
     </div>
   </div>
+
+  <!-- Merge tag autocomplete dropdown — deliberately OUTSIDE .modal-box/.modal-overlay (both
+       create their own positioning/stacking context) so its position:absolute + getBoundingClientRect()
+       math stays viewport-relative, and its z-index can sit above the modal overlay. -->
+  <div id="commTagAutocomplete" class="comm-tag-autocomplete"></div>
 
   <!-- Communications: Automated Emails Modal — opened from an event/sub-event card in My Events -->
   <div id="commAutomationModal" class="modal-overlay">
@@ -1251,6 +1405,21 @@
     </div>
   </div>
 
+  <!-- Generic styled confirm modal — replaces bare confirm() for destructive/consequential
+       actions app-wide. Currently wired to Archive Template; Budget Line delete and
+       Cancel Campaign's native confirm()s are candidates to migrate to this next. -->
+  <div id="genericConfirmModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeGenericConfirmModal()">&times;</span>
+      <h3 id="genericConfirmTitle" style="margin-top:0;"></h3>
+      <p id="genericConfirmBody" style="font-size:14px; line-height:1.6;"></p>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">
+        <button type="button" class="btn secondary" onclick="closeGenericConfirmModal()">Cancel</button>
+        <button type="button" class="btn" id="btnGenericConfirmAction">Confirm</button>
+      </div>
+    </div>
+  </div>
+
 <!-- Phase 07: Supabase client + the google.script.run compatibility shim,
      same precedent as Portal.html. Must load before this page's own
      script block, which calls google.script.run.* immediately in several
@@ -1284,9 +1453,21 @@
         document.getElementById('sessionExpiredScreen').style.display = 'flex';
         return;
       }
-      document.getElementById('shellAdminEmail').textContent = session.user.email;
-      document.getElementById('adminScreen').style.display = 'flex';
-      initAdminPortal_();
+      google.script.run
+        .withSuccessHandler(function (statusRes) {
+          if (statusRes && statusRes.tenantStatus === 'suspended') {
+            supabaseClient.auth.signOut();
+            document.getElementById('tenantSuspendedScreen').style.display = 'flex';
+            return;
+          }
+          document.getElementById('shellAdminEmail').textContent = session.user.email;
+          document.getElementById('adminScreen').style.display = 'flex';
+          initAdminPortal_();
+        })
+        .withFailureHandler(function () {
+          document.getElementById('sessionExpiredScreen').style.display = 'flex';
+        })
+        .getAdminSessionStatus();
     });
   }
 
@@ -3874,7 +4055,7 @@
      loadOnboardingData) rather than fetching either again.
      ========================================================================= */
 
-  var commState = { templates: [], audience: null, selectedRegTypes: [], selectedSubStatuses: ['Confirmed'], automationEntity: null };
+  var commState = { templates: [], campaigns: [], savedSegments: [], audience: null, selectedRegTypes: [], selectedSubStatuses: ['Confirmed'], automationEntity: null, sendWhen: 'now' };
 
   var COMM_TAG_CATALOG = [
     { group: 'Attendee', tags: [
@@ -3898,6 +4079,367 @@
     ]}
   ];
 
+  function commFlatTagList_() {
+    var out = [];
+    COMM_TAG_CATALOG.forEach(function(g) {
+      g.tags.forEach(function(pair) { out.push({ path: pair[0], desc: pair[1] }); });
+    });
+    return out;
+  }
+  var COMM_FLAT_TAGS = commFlatTagList_();
+
+  var COMM_BTN_STYLE = 'display:inline-block;background:#1C7293;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:700;';
+
+  /* Client-side only — no schema change. Each mirrors what the visual
+     editor's own toolbar would produce, so a starter isn't a special
+     format an admin couldn't get to by hand. */
+  var COMM_TEMPLATE_STARTERS = [
+    { key: 'announcement', label: 'Simple Announcement', category: 'Announcement',
+      subject: 'An update from {{event.name}}', preheaderText: 'A quick update for you.',
+      bodyHtml: '<p>Hi {{attendee.firstName}},</p><p>We wanted to share a quick update about {{event.name}}. [Write your announcement here.]</p>' +
+        '<p><a href="{{portal.url}}" style="' + COMM_BTN_STYLE + '">View Details</a></p><p>See you soon,<br>The {{event.name}} team</p>' },
+    { key: 'registration', label: 'Registration Confirmed', category: 'Transactional',
+      subject: "You're confirmed for {{event.name}}", preheaderText: 'Your registration is confirmed — here’s what’s next.',
+      bodyHtml: '<p>Hi {{attendee.firstName}},</p><p>Thanks for registering for <strong>{{event.name}}</strong> as a {{attendee.registrationType}}. ' +
+        'We’re looking forward to seeing you at {{event.location}} on {{event.date}}.</p>{{block.itineraryTable}}' +
+        '<p>You can review your full itinerary anytime from the <a href="{{portal.url}}">event portal</a>.</p>' },
+    { key: 'meetingrequest', label: 'Meeting Request Notification', category: 'Transactional',
+      subject: '{{meeting.requesterName}} wants to meet at {{meeting.eventName}}', preheaderText: 'Respond to this meeting request.',
+      bodyHtml: '<p>Hi,</p><p><strong>{{meeting.requesterName}}</strong> from <strong>{{meeting.requesterCompany}}</strong> would like to meet with you at ' +
+        '{{meeting.slotLabel}} during {{meeting.eventName}}.</p>' +
+        '<p><a href="{{meeting.acceptUrl}}" style="' + COMM_BTN_STYLE + 'margin-right:8px;">Accept</a>' +
+        '<a href="{{meeting.rejectUrl}}" style="' + COMM_BTN_STYLE.replace('#1C7293', '#C0392B') + '">Decline</a></p>' },
+    { key: 'newsletter', label: 'Newsletter Update', category: 'Marketing',
+      subject: "What's new for {{event.name}}", preheaderText: 'The latest news, in one place.',
+      bodyHtml: '<p>Hi {{attendee.firstName}},</p><h2>Section One</h2><p>[Write your first update here.]</p>' +
+        '<h2>Section Two</h2><p>[Write your second update here.]</p>' +
+        '<p><a href="{{event.website}}" style="' + COMM_BTN_STYLE + '">Learn More</a></p>' },
+    { key: 'reminder', label: 'Reminder / Nudge', category: 'Announcement',
+      subject: 'Reminder: {{event.name}} is coming up', preheaderText: 'A quick nudge before the deadline.',
+      bodyHtml: '<p>Hi {{attendee.firstName}},</p><p>Just a friendly reminder about {{event.name}} on {{event.date}}. [Write your reminder here.]</p>' +
+        '<p><a href="{{portal.url}}" style="' + COMM_BTN_STYLE + '">Take Action</a></p>' }
+  ];
+
+  var commEditorState = { lastFocused: 'code', draftKey: null, pendingDraft: null };
+  var commAutocompleteState = { active: false, query: '', targetEl: null, matches: [], hi: 0 };
+  var commDraftDebounceTimer = null;
+
+  function relativeTimeFromNow_(ts) {
+    var diffMin = Math.round((Date.now() - ts) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin === 1) return '1 minute ago';
+    if (diffMin < 60) return diffMin + ' minutes ago';
+    var diffHr = Math.round(diffMin / 60);
+    if (diffHr === 1) return '1 hour ago';
+    if (diffHr < 24) return diffHr + ' hours ago';
+    return new Date(ts).toLocaleString();
+  }
+
+  /* ---------------- Starter gallery ---------------- */
+
+  function renderCommStarterGrid_() {
+    var html = '';
+    COMM_TEMPLATE_STARTERS.forEach(function(s) {
+      html += '<div class="comm-starter-card" onclick="pickCommStarter_(' + jsAttr_(s.key) + ')"><div class="k">' + escapeHtml(s.category) + '</div><div class="t">' + escapeHtml(s.label) + '</div></div>';
+    });
+    html += '<div class="comm-starter-card blank" onclick="pickCommStarter_(null)">+ Start from blank</div>';
+    document.getElementById('commStarterGrid').innerHTML = html;
+  }
+
+  function pickCommStarter_(key) {
+    var starter = key ? COMM_TEMPLATE_STARTERS.find(function(s) { return s.key === key; }) : null;
+    document.getElementById('commTemplateStarterGallery').style.display = 'none';
+    document.getElementById('commTemplateFormWrap').style.display = 'block';
+    populateCommTemplateForm_(starter);
+  }
+
+  function populateCommTemplateForm_(data) {
+    data = data || {};
+    document.getElementById('commTemplateIdField').value = data.templateId || '';
+    document.getElementById('commTplName').value = data.name || '';
+    document.getElementById('commTplCategory').value = data.category || 'Transactional';
+    document.getElementById('commTplLayout').value = data.layoutId || 'Default';
+    document.getElementById('commTplBodyMode').value = data.bodyMode || 'Fragment';
+    document.getElementById('commTplEventId').value = data.eventId || '';
+    document.getElementById('commTplSubject').value = data.subject || '';
+    document.getElementById('commTplPreheader').value = data.preheaderText || '';
+    document.getElementById('commTplBody').value = data.bodyHtml || '';
+    onCommTplBodyModeChange();
+    if (document.getElementById('commTplBodyMode').value !== 'FullHtml') switchToVisualEditor();
+  }
+
+  /* ---------------- Visual/Code toggle + toolbar ---------------- */
+
+  function switchToVisualEditor() {
+    var ta = document.getElementById('commTplBody');
+    var rich = document.getElementById('commTplBodyRich');
+    rich.innerHTML = ta.value;
+    ta.style.display = 'none';
+    rich.style.display = 'block';
+    document.getElementById('commTplModeVisualBtn').classList.add('active');
+    document.getElementById('commTplModeCodeBtn').classList.remove('active');
+    commEditorState.lastFocused = 'rich';
+  }
+
+  function switchToCodeEditor() {
+    syncCommEditorToTextarea_();
+    document.getElementById('commTplBodyRich').style.display = 'none';
+    document.getElementById('commTplBody').style.display = 'block';
+    document.getElementById('commTplModeCodeBtn').classList.add('active');
+    document.getElementById('commTplModeVisualBtn').classList.remove('active');
+    commEditorState.lastFocused = 'code';
+  }
+
+  function syncCommEditorToTextarea_() {
+    var rich = document.getElementById('commTplBodyRich');
+    if (rich.style.display !== 'none') { document.getElementById('commTplBody').value = rich.innerHTML; }
+  }
+
+  function commEditorCmd_(cmd) {
+    document.getElementById('commTplBodyRich').focus();
+    document.execCommand(cmd, false, null);
+    scheduleCommDraftSave_();
+  }
+
+  function commEditorToggleHeading_() {
+    document.getElementById('commTplBodyRich').focus();
+    var block = document.queryCommandValue('formatBlock');
+    document.execCommand('formatBlock', false, (block && block.toLowerCase() === 'h2') ? 'p' : 'h2');
+    scheduleCommDraftSave_();
+  }
+
+  function commEditorInsertLink_() {
+    var url = prompt('Link URL:', 'https://');
+    if (!url) return;
+    document.getElementById('commTplBodyRich').focus();
+    document.execCommand('createLink', false, url);
+    scheduleCommDraftSave_();
+  }
+
+  function commEditorInsertButton_() {
+    var url = prompt('Button link URL:', 'https://');
+    if (!url) return;
+    var rich = document.getElementById('commTplBodyRich');
+    rich.focus();
+    var sel = window.getSelection();
+    var label = (sel && sel.toString()) ? sel.toString() : 'Click here';
+    document.execCommand('insertHTML', false, '<a href="' + escapeHtml(url) + '" style="' + COMM_BTN_STYLE + '">' + escapeHtml(label) + '</a>');
+    scheduleCommDraftSave_();
+  }
+
+  /* ---------------- Merge tag autocomplete (both surfaces) ---------------- */
+
+  function currentEditorTextBeforeCaret_(el) {
+    if (el.id === 'commTplBody') return el.value.substring(0, el.selectionStart || 0);
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return '';
+    var active = sel.getRangeAt(0);
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    range.setEnd(active.endContainer, active.endOffset);
+    return range.toString();
+  }
+
+  function onCommEditorInputForAutocomplete_(el) {
+    var textBefore = currentEditorTextBeforeCaret_(el);
+    var lastOpen = textBefore.lastIndexOf('{{');
+    if (lastOpen === -1) { closeCommTagAutocomplete_(); return; }
+    var since = textBefore.substring(lastOpen + 2);
+    if (since.indexOf('}}') !== -1 || since.indexOf('\n') !== -1 || since.length > 40) { closeCommTagAutocomplete_(); return; }
+    var query = since.toLowerCase();
+    var matches = COMM_FLAT_TAGS.filter(function(t) { return t.path.toLowerCase().indexOf(query) !== -1; }).slice(0, 8);
+    if (!matches.length) { closeCommTagAutocomplete_(); return; }
+    commAutocompleteState = { active: true, query: since, targetEl: el, matches: matches, hi: 0 };
+    renderCommTagAutocomplete_();
+  }
+
+  function renderCommTagAutocomplete_() {
+    var dd = document.getElementById('commTagAutocomplete');
+    dd.innerHTML = commAutocompleteState.matches.map(function(t, i) {
+      return '<div class="opt' + (i === commAutocompleteState.hi ? ' hi' : '') + '" onmousedown="event.preventDefault(); chooseCommAutocompleteTag_(' + i + ')"><code>{{' + t.path + '}}</code><span>' + escapeHtml(t.desc) + '</span></div>';
+    }).join('');
+    var el = commAutocompleteState.targetEl;
+    var rect = el.getBoundingClientRect();
+    dd.style.left = (rect.left + window.scrollX) + 'px';
+    dd.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+    dd.style.width = Math.min(Math.max(rect.width, 240), 320) + 'px';
+    dd.style.display = 'block';
+  }
+
+  function closeCommTagAutocomplete_() {
+    commAutocompleteState.active = false;
+    document.getElementById('commTagAutocomplete').style.display = 'none';
+  }
+
+  function onCommAutocompleteKeydown_(e) {
+    if (!commAutocompleteState.active) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); commAutocompleteState.hi = Math.min(commAutocompleteState.hi + 1, commAutocompleteState.matches.length - 1); renderCommTagAutocomplete_(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); commAutocompleteState.hi = Math.max(commAutocompleteState.hi - 1, 0); renderCommTagAutocomplete_(); }
+    else if (e.key === 'Enter') { e.preventDefault(); chooseCommAutocompleteTag_(commAutocompleteState.hi); }
+    else if (e.key === 'Escape') { closeCommTagAutocomplete_(); }
+  }
+
+  function chooseCommAutocompleteTag_(idx) {
+    var m = commAutocompleteState.matches[idx];
+    if (!m) return;
+    var el = commAutocompleteState.targetEl;
+    var full = '{{' + m.path + '}}';
+    if (el.id === 'commTplBody') {
+      var start = el.selectionStart || 0;
+      var lastOpen = el.value.substring(0, start).lastIndexOf('{{');
+      el.value = el.value.substring(0, lastOpen) + full + el.value.substring(start);
+      el.focus();
+      el.selectionStart = el.selectionEnd = lastOpen + full.length;
+    } else {
+      var sel = window.getSelection();
+      for (var i = 0; i < commAutocompleteState.query.length + 2; i++) { sel.modify('extend', 'backward', 'character'); }
+      document.execCommand('insertText', false, full);
+    }
+    closeCommTagAutocomplete_();
+    scheduleCommDraftSave_();
+  }
+
+  function initMergeTagAutocomplete_() {
+    ['commTplBody', 'commTplBodyRich'].forEach(function(id) {
+      var el = document.getElementById(id);
+      el.addEventListener('focus', function() { commEditorState.lastFocused = (id === 'commTplBody') ? 'code' : 'rich'; });
+      el.addEventListener('input', function() { onCommEditorInputForAutocomplete_(el); scheduleCommDraftSave_(); });
+      el.addEventListener('keydown', onCommAutocompleteKeydown_);
+      el.addEventListener('blur', function() { setTimeout(closeCommTagAutocomplete_, 150); });
+    });
+  }
+
+  /* ---------------- In-editor preview + shared device toggle ---------------- */
+
+  function setCommPreviewDevice_(wrapId, btnEl) {
+    var wrap = document.getElementById(wrapId);
+    var isMobile = btnEl.textContent.trim() === 'Mobile';
+    wrap.classList.toggle('mobile', isMobile);
+    Array.prototype.forEach.call(btnEl.parentElement.querySelectorAll('button'), function(b) { b.classList.remove('active'); });
+    btnEl.classList.add('active');
+  }
+
+  /**
+   * Previewing a template requires a real row (preview_communication reads
+   * comm_templates by id — it has no ad-hoc-payload path), so Preview saves
+   * as Draft first. Disclosed in the card's own hint text, not a silent
+   * side effect.
+   */
+  function previewCommTemplate_() {
+    syncCommEditorToTextarea_();
+    var msgEl = document.getElementById('commTplPreviewMsg');
+    var wrap = document.getElementById('commTplPreviewWrap');
+    msgEl.style.display = 'none';
+    wrap.style.display = 'none';
+
+    var payload = {
+      templateId: document.getElementById('commTemplateIdField').value,
+      name: document.getElementById('commTplName').value || '(untitled)',
+      category: document.getElementById('commTplCategory').value,
+      layoutId: document.getElementById('commTplLayout').value,
+      bodyMode: document.getElementById('commTplBodyMode').value,
+      eventId: document.getElementById('commTplEventId').value,
+      subject: document.getElementById('commTplSubject').value || '(no subject)',
+      preheaderText: document.getElementById('commTplPreheader').value,
+      bodyHtml: document.getElementById('commTplBody').value,
+      status: 'Draft'
+    };
+
+    google.script.run
+      .withSuccessHandler(function(saveRes) {
+        document.getElementById('commTemplateIdField').value = saveRes.templateId;
+        google.script.run
+          .withSuccessHandler(function(preview) {
+            document.getElementById('commTplPreviewSubject').textContent = preview.subject;
+            document.getElementById('commTplPreviewFrame').srcdoc = preview.htmlBody;
+            document.getElementById('commTplPreviewSample').textContent = preview.sampleAttendee
+              ? 'Previewing as ' + preview.sampleAttendee.name + ' (' + preview.sampleAttendee.email + ')' : '';
+            wrap.style.display = 'block';
+          })
+          .withFailureHandler(function(err) {
+            msgEl.className = 'msg-error'; msgEl.textContent = err.message; msgEl.style.display = 'block';
+          })
+          .previewCommunication(ADMIN_TOKEN, saveRes.templateId, { eventId: payload.eventId }, '');
+      })
+      .withFailureHandler(function(err) {
+        msgEl.className = 'msg-error'; msgEl.textContent = 'Could not save draft for preview: ' + err.message; msgEl.style.display = 'block';
+      })
+      .saveCommTemplate(ADMIN_TOKEN, payload);
+  }
+
+  /* ---------------- Autosave draft ---------------- */
+
+  function scheduleCommDraftSave_() {
+    clearTimeout(commDraftDebounceTimer);
+    commDraftDebounceTimer = setTimeout(saveCommDraftNow_, 800);
+  }
+
+  function saveCommDraftNow_() {
+    if (!commEditorState.draftKey) return;
+    syncCommEditorToTextarea_();
+    var data = {
+      templateId: document.getElementById('commTemplateIdField').value,
+      name: document.getElementById('commTplName').value,
+      category: document.getElementById('commTplCategory').value,
+      layoutId: document.getElementById('commTplLayout').value,
+      bodyMode: document.getElementById('commTplBodyMode').value,
+      eventId: document.getElementById('commTplEventId').value,
+      subject: document.getElementById('commTplSubject').value,
+      preheaderText: document.getElementById('commTplPreheader').value,
+      bodyHtml: document.getElementById('commTplBody').value,
+      savedAt: Date.now()
+    };
+    if (!data.name && !data.subject && !data.bodyHtml) return;
+    try { localStorage.setItem('connexaCommDraft:' + commEditorState.draftKey, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function clearCommDraftKey_(key) {
+    try { localStorage.removeItem('connexaCommDraft:' + key); } catch (e) {}
+  }
+
+  function checkCommDraftForKey_(key) {
+    commEditorState.draftKey = key;
+    commEditorState.pendingDraft = null;
+    var banner = document.getElementById('commDraftBanner');
+    var raw = null;
+    try { raw = localStorage.getItem('connexaCommDraft:' + key); } catch (e) {}
+    if (!raw) { banner.style.display = 'none'; return; }
+    try {
+      var draft = JSON.parse(raw);
+      commEditorState.pendingDraft = draft;
+      document.getElementById('commDraftBannerText').textContent = 'You have an unsaved draft from ' + relativeTimeFromNow_(draft.savedAt) + '.';
+      banner.style.display = 'flex';
+    } catch (e) { banner.style.display = 'none'; }
+  }
+
+  function restoreCommDraft_() {
+    var draft = commEditorState.pendingDraft;
+    if (!draft) return;
+    document.getElementById('commTemplateStarterGallery').style.display = 'none';
+    document.getElementById('commTemplateFormWrap').style.display = 'block';
+    populateCommTemplateForm_(draft);
+    document.getElementById('commDraftBanner').style.display = 'none';
+  }
+
+  function discardCommDraft_() {
+    if (commEditorState.draftKey) clearCommDraftKey_(commEditorState.draftKey);
+    commEditorState.pendingDraft = null;
+    document.getElementById('commDraftBanner').style.display = 'none';
+  }
+
+  // One-time wiring for the Template Editor's autosave + autocomplete + rich-editor
+  // paragraph behavior. The elements already exist in the static HTML at this point
+  // in script execution (same assumption the file's own top-level keydown listeners
+  // already make elsewhere), so no DOMContentLoaded wrapper is needed here either.
+  initMergeTagAutocomplete_();
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
+  ['commTplName', 'commTplSubject', 'commTplPreheader'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', scheduleCommDraftSave_);
+  });
+  ['commTplCategory', 'commTplLayout', 'commTplEventId', 'commTplBodyMode'].forEach(function(id) {
+    document.getElementById(id).addEventListener('change', scheduleCommDraftSave_);
+  });
+
   function loadCommPanel() {
     loadCommTemplatesList();
     populateCommSendPickers();
@@ -3911,7 +4453,7 @@
     if (tab === 'templates') loadCommTemplatesList();
     if (tab === 'campaigns') loadCommCampaignsList();
     if (tab === 'settings') loadCommSettingsForm();
-    if (tab === 'send') populateCommSendPickers();
+    if (tab === 'send') { populateCommSendPickers(); loadCommSavedSegments_(); }
   }
 
   function findEventInTree(eventId) {
@@ -3928,15 +4470,25 @@
     return (entity && entity.milestones) || [];
   }
 
+  /** Returns the top-level event that owns subEventId, or null if subEventId is itself top-level (or unknown). */
+  function findParentEventForSubEvent_(subEventId) {
+    for (var i = 0; i < allEventsTreeCache.length; i++) {
+      var subs = allEventsTreeCache[i].subEvents || [];
+      for (var j = 0; j < subs.length; j++) { if (subs[j].eventId === subEventId) return allEventsTreeCache[i]; }
+    }
+    return null;
+  }
+
   /* ---------------- Templates ---------------- */
 
   function loadCommTemplatesList() {
     var wrap = document.getElementById('commTemplatesListWrap');
     wrap.innerHTML = '<p>Loading templates...</p>';
+    var includeArchived = document.getElementById('showArchivedTemplatesToggle').checked;
     google.script.run
       .withSuccessHandler(function(list) { commState.templates = list; renderCommTemplatesList(list); })
       .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
-      .listCommTemplates(ADMIN_TOKEN, '');
+      .listCommTemplates(ADMIN_TOKEN, '', includeArchived);
   }
 
   function renderCommTemplatesList(list) {
@@ -3948,13 +4500,16 @@
       '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Status</th>' +
       '<th></th></tr></thead><tbody>';
     list.forEach(function(t) {
+      var isArchived = t.status === 'Archived';
       html += '<tr style="border-bottom:1px solid #eee;">' +
         '<td style="padding:8px 10px;">' + escapeHtml(t.name) + '</td>' +
         '<td style="padding:8px 10px;"><span class="tag type">' + escapeHtml(t.category) + '</span></td>' +
-        '<td style="padding:8px 10px;"><span class="tag ' + (t.status === 'Active' ? 'live' : 'draft') + '">' + escapeHtml(t.status) + '</span></td>' +
+        '<td style="padding:8px 10px;"><span class="tag ' + (isArchived ? 'deleted' : (t.status === 'Active' ? 'live' : 'draft')) + '">' + escapeHtml(t.status) + '</span></td>' +
         '<td style="padding:8px 10px; text-align:right;">' +
-          '<button class="btn small secondary" onclick="openCommTemplateEditor(' + jsAttr_(t.templateId) + ')">Edit</button> ' +
-          '<button class="btn small secondary" onclick="deleteCommTemplateAction(' + jsAttr_(t.templateId) + ')">Archive</button>' +
+          (isArchived
+            ? '<button class="btn small secondary" onclick="restoreCommTemplateAction(' + jsAttr_(t.templateId) + ')">Restore</button>'
+            : '<button class="btn small secondary" onclick="openCommTemplateEditor(' + jsAttr_(t.templateId) + ')">Edit</button> ' +
+              '<button class="btn small secondary" onclick="deleteCommTemplateAction(' + jsAttr_(t.templateId) + ')">Archive</button>') +
         '</td></tr>';
     });
     wrap.innerHTML = html + '</tbody></table></div>';
@@ -4086,11 +4641,17 @@
   }
 
   function insertTagAtCursor(tag) {
-    var ta = document.getElementById('commTplBody');
-    var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
-    ta.value = ta.value.substring(0, start) + tag + ta.value.substring(end);
-    ta.focus();
-    ta.selectionStart = ta.selectionEnd = start + tag.length;
+    if (commEditorState.lastFocused === 'rich' && document.getElementById('commTplBodyRich').style.display !== 'none') {
+      document.getElementById('commTplBodyRich').focus();
+      document.execCommand('insertText', false, tag);
+    } else {
+      var ta = document.getElementById('commTplBody');
+      var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
+      ta.value = ta.value.substring(0, start) + tag + ta.value.substring(end);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + tag.length;
+    }
+    scheduleCommDraftSave_();
   }
 
   function onCommTplBodyModeChange() {
@@ -4098,31 +4659,44 @@
     document.getElementById('commTplBodyHint').textContent = mode === 'FullHtml'
       ? 'Complete HTML document (e.g. pasted from an external drag-and-drop design tool) — the layout above is skipped; an unsubscribe footer is appended automatically if the category requires it.'
       : 'HTML fragment — the layout above supplies the header/footer/unsubscribe link automatically.';
+    var isFullHtml = mode === 'FullHtml';
+    document.getElementById('commTplModeToggleWrap').style.display = isFullHtml ? 'none' : 'inline-flex';
+    document.getElementById('commTplToolbar').style.display = isFullHtml ? 'none' : 'flex';
+    if (isFullHtml) switchToCodeEditor();
   }
 
   function openCommTemplateEditor(templateId) {
     document.getElementById('commTemplateModalMsg').style.display = 'none';
+    document.getElementById('commTplPreviewWrap').style.display = 'none';
+    document.getElementById('commTplPreviewMsg').style.display = 'none';
     populateCommTplEventPicker();
     renderTagRefList();
 
     var existing = templateId ? commState.templates.find(function(t) { return t.templateId === templateId; }) : null;
     document.getElementById('commTemplateModalTitle').textContent = existing ? 'Edit Template' : 'New Template';
-    document.getElementById('commTemplateIdField').value = existing ? existing.templateId : '';
-    document.getElementById('commTplName').value = existing ? existing.name : '';
-    document.getElementById('commTplCategory').value = existing ? existing.category : 'Transactional';
-    document.getElementById('commTplLayout').value = existing ? existing.layoutId : 'Default';
-    document.getElementById('commTplBodyMode').value = existing ? existing.bodyMode : 'Fragment';
-    document.getElementById('commTplEventId').value = existing ? existing.eventId : '';
-    document.getElementById('commTplSubject').value = existing ? existing.subject : '';
-    document.getElementById('commTplPreheader').value = existing ? existing.preheaderText : '';
-    document.getElementById('commTplBody').value = existing ? existing.bodyHtml : '';
-    onCommTplBodyModeChange();
+
+    if (existing) {
+      document.getElementById('commTemplateStarterGallery').style.display = 'none';
+      document.getElementById('commTemplateFormWrap').style.display = 'block';
+      populateCommTemplateForm_(existing);
+      checkCommDraftForKey_('tpl_' + existing.templateId);
+    } else {
+      document.getElementById('commTemplateFormWrap').style.display = 'none';
+      document.getElementById('commTemplateStarterGallery').style.display = 'block';
+      renderCommStarterGrid_();
+      checkCommDraftForKey_('new');
+    }
+
     document.getElementById('commTemplateModal').style.display = 'flex';
   }
 
-  function closeCommTemplateModal() { document.getElementById('commTemplateModal').style.display = 'none'; }
+  function closeCommTemplateModal() {
+    document.getElementById('commTemplateModal').style.display = 'none';
+    closeCommTagAutocomplete_();
+  }
 
   function saveCommTemplateFromForm(status) {
+    syncCommEditorToTextarea_();
     var payload = {
       templateId: document.getElementById('commTemplateIdField').value,
       name: document.getElementById('commTplName').value,
@@ -4137,7 +4711,10 @@
     };
     var msgEl = document.getElementById('commTemplateModalMsg');
     google.script.run
-      .withSuccessHandler(function() { closeCommTemplateModal(); loadCommTemplatesList(); })
+      .withSuccessHandler(function() {
+        if (commEditorState.draftKey) clearCommDraftKey_(commEditorState.draftKey);
+        closeCommTemplateModal(); loadCommTemplatesList();
+      })
       .withFailureHandler(function(err) {
         msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
         msgEl.textContent = err.message; msgEl.style.display = 'block';
@@ -4146,11 +4723,27 @@
   }
 
   function deleteCommTemplateAction(templateId) {
-    if (!confirm('Archive this template? It will no longer be selectable for new sends.')) return;
+    var tpl = commState.templates.find(function(t) { return t.templateId === templateId; });
+    openGenericConfirmModal({
+      title: 'Archive this template?',
+      bodyHtml: 'It won’t be selectable for new sends or automations' +
+        (tpl ? ' — <strong>' + escapeHtml(tpl.name) + '</strong>' : '') +
+        '. You can bring it back later from "Show archived".',
+      confirmLabel: 'Archive',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function() { loadCommTemplatesList(); })
+          .withFailureHandler(function(err) { alert(err.message); })
+          .deleteCommTemplate(ADMIN_TOKEN, templateId);
+      }
+    });
+  }
+
+  function restoreCommTemplateAction(templateId) {
     google.script.run
       .withSuccessHandler(function() { loadCommTemplatesList(); })
       .withFailureHandler(function(err) { alert(err.message); })
-      .deleteCommTemplate(ADMIN_TOKEN, templateId);
+      .restoreCommTemplate(ADMIN_TOKEN, templateId);
   }
 
   /* ---------------- Automated Emails modal (per event/sub-event) ---------------- */
@@ -4199,8 +4792,9 @@
       var meta = COMM_AUTOMATION_TRIGGER_LABELS[triggerType];
       var current = byTrigger[triggerType];
       html += '<div class="comm-automation-row">' +
-        '<div class="lbl">' + meta.label + '<small>' + meta.hint + '</small></div>' +
-        '<select onchange="saveAutomationRowFromSelect(this, ' + jsAttr_(triggerType) + ')">' + commAutomationOptionsHtml(templates, current ? current.templateId : '') + '</select>' +
+        '<div class="lbl" id="' + jsAttr_('lbl_' + triggerType) + '">' + meta.label + '<small id="' + jsAttr_('hint_' + triggerType) + '">' + meta.hint + '</small></div>' +
+        '<select id="' + jsAttr_('sel_' + triggerType) + '" aria-labelledby="' + jsAttr_('lbl_' + triggerType) + '" aria-describedby="' + jsAttr_('hint_' + triggerType) + '" onchange="saveAutomationRowFromSelect(this, ' + jsAttr_(triggerType) + ')">' + commAutomationOptionsHtml(templates, current ? current.templateId : '') + '</select>' +
+        '<span class="row-saved-tick" id="' + jsAttr_('tick_' + triggerType) + '"></span>' +
       '</div>';
     });
 
@@ -4213,8 +4807,9 @@
       html += '<div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:800; margin:14px 0 2px;">Milestone deadline reminders</div>' +
         '<p style="font-size:11.5px; color:var(--text-muted); margin:0 0 8px;">Applies to every milestone on this entity that has a due date.</p>' +
         '<div class="comm-automation-row" style="border-bottom:none;">' +
-          '<div class="lbl">Remind<small>Days before the due date: <input type="number" min="0" style="width:50px;" value="' + (reminderBinding ? reminderBinding.reminderDaysBefore : 3) + '" id="commReminderDays" onchange="saveMilestoneReminderRow()"></small></div>' +
-          '<select id="commReminderTpl" onchange="saveMilestoneReminderRow()">' + commAutomationOptionsHtml(templates, reminderBinding ? reminderBinding.templateId : '') + '</select>' +
+          '<div class="lbl" id="lbl_MilestoneDeadlineReminder">Remind<small id="hint_MilestoneDeadlineReminder">Days before the due date: <input type="number" min="0" style="width:50px;" value="' + (reminderBinding ? reminderBinding.reminderDaysBefore : 3) + '" id="commReminderDays" aria-label="Days before the due date" onchange="saveMilestoneReminderRow()"></small></div>' +
+          '<select id="commReminderTpl" aria-labelledby="lbl_MilestoneDeadlineReminder" aria-describedby="hint_MilestoneDeadlineReminder" onchange="saveMilestoneReminderRow()">' + commAutomationOptionsHtml(templates, reminderBinding ? reminderBinding.templateId : '') + '</select>' +
+          '<span class="row-saved-tick" id="tick_MilestoneDeadlineReminder"></span>' +
         '</div>';
     }
 
@@ -4237,7 +4832,7 @@
   function saveAutomationRowFromSelect(selectEl, triggerType) {
     var entity = commState.automationEntity;
     google.script.run
-      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); })
+      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); showRowSavedTick_(triggerType); })
       .withFailureHandler(function(err) { showCommAutomationMsg(err.message, true); })
       .saveCommAutomationBinding(ADMIN_TOKEN, { scope: 'Event', eventId: entity.eventId, subEventId: entity.subEventId, triggerType: triggerType, templateId: selectEl.value });
   }
@@ -4247,14 +4842,26 @@
     var templateId = document.getElementById('commReminderTpl').value;
     var days = Number(document.getElementById('commReminderDays').value) || 0;
     google.script.run
-      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); })
+      .withSuccessHandler(function() { showCommAutomationMsg('Saved.', false); showRowSavedTick_('MilestoneDeadlineReminder'); })
       .withFailureHandler(function(err) { showCommAutomationMsg(err.message, true); })
       .saveCommAutomationBinding(ADMIN_TOKEN, { scope: 'Event', eventId: entity.eventId, subEventId: entity.subEventId, triggerType: 'MilestoneDeadlineReminder', reminderDaysBefore: days, templateId: templateId });
   }
 
+  /** Per-row "✓ Saved" confirmation next to the control that actually changed — the
+      shared modal-level banner (showCommAutomationMsg) is easy to miss with several
+      rows in the modal, this makes it obvious which row just saved. Fades after ~1.2s. */
+  function showRowSavedTick_(triggerType) {
+    var el = document.getElementById('tick_' + triggerType);
+    if (!el) return;
+    el.textContent = '✓ Saved';
+    el.classList.remove('fade');
+    void el.offsetWidth; // restart the fade transition on repeated saves
+    setTimeout(function() { el.classList.add('fade'); }, 1200);
+  }
+
   /* ---------------- New Campaign: template -> audience -> preview & send ---------------- */
 
-  function populateCommSendPickers() {
+  function populateCommSendPickers(cb) {
     var evtSel = document.getElementById('commSendEventPicker');
     evtSel.innerHTML = '<option value="">-- Select an event --</option>';
     allEventsTreeCache.forEach(function(evt) { evtSel.innerHTML += '<option value="' + evt.eventId + '">' + escapeHtml(evt.eventName) + '</option>'; });
@@ -4265,6 +4872,7 @@
       .withSuccessHandler(function(list) {
         commState.templates = list;
         list.filter(function(t) { return t.status === 'Active'; }).forEach(function(t) { tplSel.innerHTML += '<option value="' + t.templateId + '">' + escapeHtml(t.name) + '</option>'; });
+        if (cb) cb();
       })
       .listCommTemplates(ADMIN_TOKEN, '');
   }
@@ -4296,6 +4904,100 @@
     document.getElementById('commSendSubEventPickerWrap').style.display = scope === 'subEvent' ? 'block' : 'none';
     document.getElementById('commSubEventStatusWrap').style.display = scope === 'subEvent' ? 'block' : 'none';
     refreshCommAudience();
+  }
+
+  /**
+   * Shared by Duplicate (campaign) and Load-segment (saved audience) --
+   * one function, not two. nativeSpec is the wizard-native shape
+   * buildCommAudienceSpec() itself returns: {eventId, scope, subEventId,
+   * templateId, filters:{registrationTypes,subEventStatuses,hasMeetings}}.
+   * Sets every dependent picker/chip/checkbox and re-resolves the audience.
+   */
+  function applyAudiencePrefill_(nativeSpec, campaignNameForField) {
+    var targetEventId = (nativeSpec.scope === 'subEvent' && nativeSpec.subEventId) ? nativeSpec.subEventId : nativeSpec.eventId;
+    var parent = findParentEventForSubEvent_(targetEventId);
+
+    document.getElementById('commSendTemplatePicker').value = nativeSpec.templateId || '';
+    if (parent) {
+      document.getElementById('commSendEventPicker').value = parent.eventId;
+      onCommSendEventChange();
+      document.getElementById('commSendScopeField').value = 'subEvent';
+      document.getElementById('commSendSubEventPicker').value = targetEventId;
+      onCommSendScopeChange();
+    } else {
+      document.getElementById('commSendEventPicker').value = nativeSpec.eventId || targetEventId || '';
+      onCommSendEventChange();
+    }
+
+    // onCommSendEventChange() already rebuilt the reg-type chips (resetting
+    // commState.selectedRegTypes) and refreshed the audience -- re-apply the
+    // saved selections on top of that freshly-built chip list.
+    var f = nativeSpec.filters || {};
+    var wantedRegTypes = f.registrationTypes || [];
+    document.querySelectorAll('#commRegTypeChips .comm-filter-chip').forEach(function(chip) {
+      if (wantedRegTypes.indexOf(chip.getAttribute('data-type')) !== -1) {
+        chip.classList.add('selected');
+        commState.selectedRegTypes.push(chip.getAttribute('data-type'));
+      }
+    });
+    var wantedStatuses = f.subEventStatuses || ['Confirmed'];
+    commState.selectedSubStatuses = [];
+    document.querySelectorAll('#commSubEventStatusWrap .comm-filter-chip').forEach(function(chip) {
+      var st = chip.getAttribute('data-status');
+      if (wantedStatuses.indexOf(st) !== -1) { chip.classList.add('selected'); commState.selectedSubStatuses.push(st); }
+      else { chip.classList.remove('selected'); }
+    });
+    document.getElementById('commHasMeetingsFilter').checked = !!f.hasMeetings;
+    if (campaignNameForField) document.getElementById('commCampaignNameField').value = campaignNameForField;
+    refreshCommAudience();
+  }
+
+  /* ---------------- Saved audience segments ---------------- */
+
+  function loadCommSavedSegments_() {
+    var sel = document.getElementById('commSavedSegmentPicker');
+    sel.innerHTML = '<option value="">-- None --</option>';
+    google.script.run
+      .withSuccessHandler(function(list) {
+        commState.savedSegments = list;
+        list.forEach(function(s) { sel.innerHTML += '<option value="' + s.segmentId + '">' + escapeHtml(s.name) + '</option>'; });
+      })
+      .listCommSavedSegments(ADMIN_TOKEN);
+  }
+
+  function onCommSavedSegmentPick_() {
+    var id = document.getElementById('commSavedSegmentPicker').value;
+    if (!id) return;
+    var seg = commState.savedSegments.find(function(s) { return s.segmentId === id; });
+    if (!seg) return;
+    applyAudiencePrefill_(seg.spec);
+  }
+
+  function saveCommAudienceSegmentAction_() {
+    if (!document.getElementById('commSendEventPicker').value) { alert('Pick an event and audience first.'); return; }
+    var name = prompt('Name this audience:');
+    if (!name || !name.trim()) return;
+    google.script.run
+      .withSuccessHandler(function() { loadCommSavedSegments_(); })
+      .withFailureHandler(function(err) { alert(err.message); })
+      .saveCommSavedSegment(ADMIN_TOKEN, name.trim(), buildCommAudienceSpec());
+  }
+
+  function deleteCommSavedSegmentAction_() {
+    var id = document.getElementById('commSavedSegmentPicker').value;
+    if (!id) { alert('Pick a saved audience to delete first.'); return; }
+    var seg = commState.savedSegments.find(function(s) { return s.segmentId === id; });
+    openGenericConfirmModal({
+      title: 'Delete this saved audience?',
+      bodyHtml: (seg ? '<strong>' + escapeHtml(seg.name) + '</strong>' : 'This saved audience') + ' will no longer be available to load — the campaigns it was already used for are unaffected.',
+      confirmLabel: 'Delete',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function() { loadCommSavedSegments_(); })
+          .withFailureHandler(function(err) { alert(err.message); })
+          .deleteCommSavedSegment(ADMIN_TOKEN, id);
+      }
+    });
   }
 
   function refreshCommRegTypeChips() {
@@ -4429,13 +5131,21 @@
   function sendCommTest() {
     var templateId = document.getElementById('commSendTemplatePicker').value;
     if (!templateId) { alert('Pick a template first.'); return; }
-    var to = document.getElementById('commTestRecipientField').value.trim();
+    var raw = document.getElementById('commTestRecipientField').value.trim();
+    var recipients = raw ? raw.split(/[,;\s]+/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
     var spec = buildCommAudienceSpec();
     var sampleEmail = document.getElementById('commPreviewSampleEmail').value || '';
     google.script.run
-      .withSuccessHandler(function() { alert('Test email sent.'); })
+      .withSuccessHandler(function(res) {
+        var results = res && res.results ? res.results : [];
+        var failed = results.filter(function(r) { return !r.ok; });
+        if (!results.length) { alert('Test email sent.'); return; }
+        if (!failed.length) { alert('Test email sent to ' + results.length + ' recipient' + (results.length > 1 ? 's' : '') + '.'); return; }
+        alert('Sent to ' + (results.length - failed.length) + ' of ' + results.length + '. Failed: ' +
+          failed.map(function(f) { return f.to + ' (' + f.error + ')'; }).join(', '));
+      })
       .withFailureHandler(function(err) { alert('Test send failed: ' + err.message); })
-      .sendTestCommunication(ADMIN_TOKEN, templateId, spec, sampleEmail, to ? [to] : []);
+      .sendTestCommunication(ADMIN_TOKEN, templateId, spec, sampleEmail, recipients);
   }
 
   /**
@@ -4444,10 +5154,31 @@
    * action in this panel, so it gets a confirmation that actually names
    * what's about to be sent (template + audience), not just a count.
    */
+  function setCommSendWhen_(mode, btnEl) {
+    commState.sendWhen = mode;
+    Array.prototype.forEach.call(document.getElementById('commSendWhenToggle').querySelectorAll('button'), function(b) { b.classList.remove('active'); });
+    btnEl.classList.add('active');
+    document.getElementById('commScheduleForWrap').style.display = mode === 'later' ? 'block' : 'none';
+  }
+
+  /** Returns the schedule field's value as an ISO timestamp, or null if not in "Send later" mode. Validates it's in the future. */
+  function commScheduledForIso_() {
+    if (commState.sendWhen !== 'later') return null;
+    var raw = document.getElementById('commScheduleForField').value;
+    if (!raw) throw new Error('Pick a date and time to schedule for.');
+    var d = new Date(raw);
+    if (isNaN(d.getTime()) || d <= new Date()) throw new Error('Scheduled time must be in the future.');
+    return d.toISOString();
+  }
+
   function confirmSendCommCampaign() {
     var templateId = document.getElementById('commSendTemplatePicker').value;
     if (!templateId) { alert('Pick a template first.'); return; }
     if (!commState.audience || !commState.audience.count) { alert('No recipients match this audience.'); return; }
+
+    var scheduledForIso;
+    try { scheduledForIso = commScheduledForIso_(); }
+    catch (e) { alert(e.message); return; }
 
     var tpl = commState.templates.find(function(t) { return t.templateId === templateId; });
     var eventPicker = document.getElementById('commSendEventPicker');
@@ -4462,7 +5193,9 @@
     document.getElementById('commSendConfirmBody').innerHTML =
       'Template: <strong>' + escapeHtml(tpl ? tpl.name : '(unknown template)') + '</strong><br>' +
       'Audience: <strong>' + escapeHtml(audienceDesc) + '</strong><br>' +
-      'Recipients: <strong>' + commState.audience.count + '</strong>';
+      'Recipients: <strong>' + commState.audience.count + '</strong>' +
+      (scheduledForIso ? '<br>Scheduled for: <strong>' + escapeHtml(new Date(scheduledForIso).toLocaleString()) + '</strong>' : '');
+    document.getElementById('btnConfirmSendCampaign').textContent = scheduledForIso ? 'Schedule Campaign' : 'Send Campaign';
     document.getElementById('commSendConfirmModal').style.display = 'flex';
   }
 
@@ -4470,22 +5203,44 @@
     document.getElementById('commSendConfirmModal').style.display = 'none';
   }
 
+  /**
+   * Generic styled confirm modal — reusable replacement for a bare confirm().
+   * opts: { title, bodyHtml, confirmLabel, onConfirm }
+   */
+  function openGenericConfirmModal(opts) {
+    document.getElementById('genericConfirmTitle').textContent = opts.title;
+    document.getElementById('genericConfirmBody').innerHTML = opts.bodyHtml;
+    var btn = document.getElementById('btnGenericConfirmAction');
+    btn.textContent = opts.confirmLabel || 'Confirm';
+    btn.onclick = function() { closeGenericConfirmModal(); opts.onConfirm(); };
+    document.getElementById('genericConfirmModal').style.display = 'flex';
+  }
+
+  function closeGenericConfirmModal() {
+    document.getElementById('genericConfirmModal').style.display = 'none';
+  }
+
   function executeSendCampaign() {
     var templateId = document.getElementById('commSendTemplatePicker').value;
     var name = document.getElementById('commCampaignNameField').value.trim();
     var spec = buildCommAudienceSpec();
     var msgEl = document.getElementById('commSendMsg');
+    var scheduledForIso;
+    try { scheduledForIso = commScheduledForIso_(); } catch (e) { scheduledForIso = null; }
 
     var btn = document.getElementById('btnConfirmSendCampaign');
     var originalText = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Sending…';
+    btn.disabled = true; btn.textContent = scheduledForIso ? 'Scheduling…' : 'Sending…';
 
     google.script.run
       .withSuccessHandler(function(res) {
         btn.disabled = false; btn.textContent = originalText;
         closeCommSendConfirmModal();
         msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
-        msgEl.textContent = 'Campaign started — ' + res.recipientCount + ' recipients queued.'; msgEl.style.display = 'block';
+        msgEl.textContent = (scheduledForIso
+          ? 'Campaign scheduled for ' + new Date(scheduledForIso).toLocaleString()
+          : 'Campaign started') + ' — ' + res.totalRecipients + ' recipients queued.';
+        msgEl.style.display = 'block';
         switchCommTab('campaigns');
       })
       .withFailureHandler(function(err) {
@@ -4494,18 +5249,18 @@
         msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)';
         msgEl.textContent = err.message; msgEl.style.display = 'block';
       })
-      .sendCampaign(ADMIN_TOKEN, templateId, spec, name);
+      .sendCampaign(ADMIN_TOKEN, templateId, spec, name, scheduledForIso);
   }
 
   /* ---------------- Campaigns & Log ---------------- */
 
-  var COMM_CAMPAIGN_STATUS_TAG_CLASS = { Draft: 'draft', Queued: 'draft', Running: 'live', AwaitingQuota: 'draft', Paused: 'draft', Completed: 'live', Cancelled: 'closed', Failed: 'closed' };
+  var COMM_CAMPAIGN_STATUS_TAG_CLASS = { Draft: 'draft', Queued: 'draft', Scheduled: 'draft', Running: 'running', AwaitingQuota: 'draft', Paused: 'paused', Completed: 'live', Cancelled: 'closed', Failed: 'closed' };
 
   function loadCommCampaignsList() {
     var wrap = document.getElementById('commCampaignsListWrap');
     wrap.innerHTML = '<p>Loading campaigns...</p>';
     google.script.run
-      .withSuccessHandler(renderCommCampaignsList)
+      .withSuccessHandler(function(list) { commState.campaigns = list; renderCommCampaignsList(list); })
       .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
       .listCommCampaigns(ADMIN_TOKEN, '');
   }
@@ -4519,11 +5274,15 @@
       var pct = c.totalRecipients ? Math.round(attempted / c.totalRecipients * 100) : 0;
       html += '<div style="border:1px solid var(--border-color); border-radius:10px; padding:14px 16px; margin-bottom:10px;">' +
         '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
-          '<div><b>' + escapeHtml(c.name) + '</b> <span class="tag ' + (COMM_CAMPAIGN_STATUS_TAG_CLASS[c.status] || 'draft') + '" style="margin-left:6px;">' + escapeHtml(c.status) + '</span></div>' +
+          '<div><b>' + escapeHtml(c.name) + '</b> <span class="tag ' + (COMM_CAMPAIGN_STATUS_TAG_CLASS[c.status] || 'draft') + '" style="margin-left:6px;">' + escapeHtml(c.status) + '</span>' +
+            (c.status === 'Scheduled' && c.scheduledFor ? ' <span style="font-size:11.5px; color:var(--text-muted);">for ' + escapeHtml(new Date(c.scheduledFor).toLocaleString()) + '</span>' : '') +
+          '</div>' +
           '<div>' +
+            (c.status === 'Scheduled' ? '<button class="btn small secondary" onclick="sendScheduledCampaignNowAction_(' + jsAttr_(c.campaignId) + ')">Send now</button> ' : '') +
             (['Queued', 'Running', 'AwaitingQuota'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="pauseCampaignAction(' + jsAttr_(c.campaignId) + ')">Pause</button> ' : '') +
             (c.status === 'Paused' ? '<button class="btn small secondary" onclick="resumeCampaignAction(' + jsAttr_(c.campaignId) + ')">Resume</button> ' : '') +
-            (['Queued', 'Running', 'AwaitingQuota', 'Paused'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="cancelCampaignAction(' + jsAttr_(c.campaignId) + ')">Cancel</button> ' : '') +
+            (['Queued', 'Running', 'AwaitingQuota', 'Paused', 'Scheduled'].indexOf(c.status) !== -1 ? '<button class="btn small secondary" onclick="cancelCampaignAction(' + jsAttr_(c.campaignId) + ')">Cancel</button> ' : '') +
+            '<button class="btn small secondary" onclick="duplicateCampaignAction_(' + jsAttr_(c.campaignId) + ')">Duplicate</button> ' +
             '<button class="btn small secondary" onclick="viewCommCampaignLog(' + jsAttr_(c.campaignId) + ')">View Log</button>' +
           '</div>' +
         '</div>' +
@@ -4536,7 +5295,36 @@
 
   function pauseCampaignAction(id) { google.script.run.withSuccessHandler(loadCommCampaignsList).withFailureHandler(function(e) { alert(e.message); }).pauseCampaign(ADMIN_TOKEN, id); }
   function resumeCampaignAction(id) { google.script.run.withSuccessHandler(loadCommCampaignsList).withFailureHandler(function(e) { alert(e.message); }).resumeCampaign(ADMIN_TOKEN, id); }
-  function cancelCampaignAction(id) { if (!confirm('Cancel this campaign? Remaining recipients will not be sent to.')) return; google.script.run.withSuccessHandler(loadCommCampaignsList).withFailureHandler(function(e) { alert(e.message); }).cancelCampaign(ADMIN_TOKEN, id); }
+  function sendScheduledCampaignNowAction_(id) { google.script.run.withSuccessHandler(loadCommCampaignsList).withFailureHandler(function(e) { alert(e.message); }).sendScheduledCampaignNow(ADMIN_TOKEN, id); }
+
+  function cancelCampaignAction(id) {
+    openGenericConfirmModal({
+      title: 'Cancel this campaign?',
+      bodyHtml: 'Remaining recipients will not be sent to.',
+      confirmLabel: 'Cancel Campaign',
+      onConfirm: function() {
+        google.script.run.withSuccessHandler(loadCommCampaignsList).withFailureHandler(function(e) { alert(e.message); }).cancelCampaign(ADMIN_TOKEN, id);
+      }
+    });
+  }
+
+  /** Switches to the Send tab and prefills the wizard from a past campaign's stored (flattened) audience_spec + template/event columns. */
+  function duplicateCampaignAction_(campaignId) {
+    var campaign = commState.campaigns.find(function(c) { return c.campaignId === campaignId; });
+    if (!campaign) return;
+    switchCommTab('send');
+    populateCommSendPickers(function() {
+      var s = campaign.audienceSpec || {};
+      var parent = findParentEventForSubEvent_(campaign.eventId);
+      applyAudiencePrefill_({
+        eventId: parent ? parent.eventId : campaign.eventId,
+        scope: parent ? 'subEvent' : 'event',
+        subEventId: parent ? campaign.eventId : '',
+        templateId: campaign.templateId,
+        filters: { registrationTypes: s.registrationTypes, subEventStatuses: s.subEventStatuses, hasMeetings: s.hasMeetings }
+      }, 'Copy of ' + campaign.name);
+    });
+  }
 
   function viewCommCampaignLog(campaignId) {
     document.getElementById('commLogCard').style.display = 'block';
