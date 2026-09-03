@@ -1890,7 +1890,27 @@
   // (harmless — adminScreen just stays display:none until a real session
   // is confirmed), and the actual data loads move into initAdminPortal_,
   // called only from checkAdminSession_ once a real session exists.
+  // Per-Tenant Branded Subdomains v1 -- overrides the default CSS vars
+  // when this hostname matches a tenant's custom_domain. Silent no-op
+  // (default Connexa branding stays) for portal.connexaevents.com or any
+  // unrecognized host -- never blocks/delays the rest of the page.
+  function applyTenantBranding_() {
+    google.script.run
+      .withSuccessHandler(function (result) {
+        if (!result || !result.branding) return;
+        var b = result.branding;
+        var root = document.documentElement.style;
+        if (b.primaryColor) root.setProperty('--primary-color', b.primaryColor);
+        if (b.navyColor) root.setProperty('--navy-color', b.navyColor);
+        if (b.accentColor) root.setProperty('--accent-color', b.accentColor);
+        if (b.displayName) document.title = b.displayName;
+      })
+      .withFailureHandler(function () {})
+      .getTenantBrandingByHostname(window.location.hostname);
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
+    applyTenantBranding_();
     document.getElementById('admin-nav-events').addEventListener('click', function() { switchAdminPanel('events'); });
     document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
     document.getElementById('admin-nav-comms').addEventListener('click', function() { switchAdminPanel('comms'); });

@@ -153,8 +153,8 @@
         <h2 id="detailTenantName"></h2>
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="status-badge" id="detailStatusBadge"></span>
-          <a class="btn secondary" href="https://portal.connexaevents.com/AdminPortal.html" target="_blank" rel="noopener">Admin Portal &#8599;</a>
-          <a class="btn secondary" href="https://portal.connexaevents.com/Portal.html" target="_blank" rel="noopener">Attendee Portal &#8599;</a>
+          <a class="btn secondary" id="detailAdminPortalLink" href="https://portal.connexaevents.com/AdminPortal.html" target="_blank" rel="noopener">Admin Portal &#8599;</a>
+          <a class="btn secondary" id="detailAttendeePortalLink" href="https://portal.connexaevents.com/Portal.html" target="_blank" rel="noopener">Attendee Portal &#8599;</a>
         </div>
       </div>
       <div class="detail-grid">
@@ -373,6 +373,9 @@
       document.getElementById('detailPlan').textContent = detail.planId || '—';
       document.getElementById('detailDomain').textContent = detail.customDomain || '—';
       document.getElementById('detailCreated').textContent = formatDate_(detail.createdAt);
+      var portalHost = detail.customDomain || 'portal.connexaevents.com';
+      document.getElementById('detailAdminPortalLink').href = 'https://' + portalHost + '/AdminPortal.html';
+      document.getElementById('detailAttendeePortalLink').href = 'https://' + portalHost + '/Portal.html';
       document.getElementById('statusSelect').value = detail.status;
 
       var admins = detail.admins || [];

@@ -414,6 +414,11 @@
     // distinct "suspended" screen instead of the admin dashboard.
     getAdminSessionStatus: rpc('get_admin_session_status', function () { return {}; }),
 
+    // Per-Tenant Branded Subdomains v1 -- public, no auth. Called on load
+    // with window.location.hostname; returns null for portal.connexaevents.com
+    // or any unrecognized host, which callers treat as "keep default branding."
+    getTenantBrandingByHostname: rpc('get_tenant_branding_by_hostname', function (args) { return { p_hostname: args[0] }; }),
+
     // -- Events / Settings reads+writes --
     getAdminEventsTree: rpc('get_admin_events_tree', function () { return {}; }),
     createOrUpdateEvent: rpc('create_or_update_event', function (args) { return { p_payload: args[1] }; }),
