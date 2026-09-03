@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Connexa Control Centre</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #1C7293;
+      --navy-color: #1B2A4A;
+      --accent-color: #D98E04;
+      --bg-color: #F4F6F8;
+      --font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --text-dark: var(--navy-color);
+      --text-muted: #5B6472;
+      --border-color: #dfe3ea;
+      --success-color: #2E7D5B;
+      --warning-color: #D98E04;
+      --error-color: #C0392B;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); margin: 0; padding: 0; background: var(--bg-color); color: var(--text-dark); -webkit-font-smoothing: antialiased; }
+    button, input, select, textarea { font-family: var(--font-family); }
+
+    .centered { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .card { background: white; border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; width: 100%; max-width: 380px; }
+    .card h1 { font-size: 20px; margin: 0 0 4px; font-weight: 800; }
+    .card .sub { font-size: 13px; color: var(--text-muted); margin: 0 0 20px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .03em; }
+    .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; }
+    .btn { background: var(--primary-color); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .btn:hover { background: var(--navy-color); }
+    .btn.secondary { background: #eef1f5; color: var(--text-dark); }
+    .btn.secondary:hover { background: #e2e6ec; }
+    .btn.danger { background: var(--error-color); }
+    .btn:disabled { background: #bdc1c6; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 8px; }
+    .error-text { color: var(--error-color); font-size: 13px; margin-top: 10px; display: none; }
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 14px; text-align: center; }
+
+    .cc-header { background: var(--navy-color); color: white; display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; }
+    .cc-header h1 { font-size: 17px; margin: 0; font-weight: 800; }
+    .cc-header .who { font-size: 13px; color: #b9c2d0; }
+    .cc-header a { color: #b9c2d0; text-decoration: underline; font-size: 13px; font-weight: 600; margin-left: 14px; cursor: pointer; }
+    .cc-main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+
+    .panel-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+    .panel-header-row h2 { margin: 0; font-weight: 800; font-size: 18px; }
+
+    table.tenant-table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+    table.tenant-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
+    table.tenant-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); font-size: 13px; vertical-align: top; }
+    table.tenant-table tr:last-child td { border-bottom: none; }
+    table.tenant-table tr.tenant-row { cursor: pointer; }
+    table.tenant-table tr.tenant-row:hover { background: #f9fafb; }
+    table.tenant-table .tenant-name { font-weight: 700; }
+    table.tenant-table .tenant-slug { color: var(--text-muted); font-size: 12px; }
+
+    .status-badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+    .status-badge.trial { background: #fdf1dc; color: var(--warning-color); }
+    .status-badge.active { background: #e3f3ec; color: var(--success-color); }
+    .status-badge.suspended { background: #fbe6e2; color: var(--error-color); }
+
+    .back-link { display: inline-block; margin-bottom: 14px; color: var(--primary-color); font-weight: 700; font-size: 13px; cursor: pointer; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 720px) { .detail-grid { grid-template-columns: 1fr; } }
+    .detail-box { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+    .detail-box h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; }
+    .detail-box .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f0f2f5; }
+    .detail-box .kv:last-child { border-bottom: none; }
+    .detail-box .kv .k { color: var(--text-muted); }
+    .status-control { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+    .admin-list-item, .event-list-item { font-size: 13px; padding: 7px 0; border-bottom: 1px solid #f0f2f5; }
+    .admin-list-item:last-child, .event-list-item:last-child { border-bottom: none; }
+    .event-list-item .name { font-weight: 600; }
+    .event-list-item .meta { color: var(--text-muted); font-size: 12px; }
+    .empty-note { color: var(--text-muted); font-size: 13px; }
+
+    .danger-box { border-color: #f2c6bd; }
+    .danger-box h3 { color: var(--error-color); }
+    .reset-scope-list { margin: 0 0 16px; padding-left: 18px; font-size: 12.5px; color: var(--text-muted); }
+    .reset-scope-list li { margin-bottom: 3px; }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(20,26,40,0.5); align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: white; border-radius: 16px; padding: 28px; width: 100%; max-width: 420px; }
+    .modal-box h2 { margin: 0 0 4px; font-size: 17px; font-weight: 800; }
+    .modal-box .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 18px; }
+    .success-text { color: var(--success-color); font-size: 13px; margin-top: 10px; display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div class="centered" id="loginScreen">
+  <div class="card">
+    <h1>Connexa Control Centre</h1>
+    <p class="sub">Internal staff only.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="loginEmail">Email</label>
+        <input type="email" id="loginEmail" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn" id="loginBtn" style="width:100%;">Sign In</button>
+      <p class="error-text" id="loginError"></p>
+    </form>
+  </div>
+</div>
+
+<!-- Rejected: authenticated but not platform staff -->
+<div class="centered" id="notAuthorizedScreen" style="display:none;">
+  <div class="card">
+    <h1>Not Authorized</h1>
+    <p class="sub">This account is not a Control Centre staff member.</p>
+    <a href="#" class="btn secondary" id="notAuthorizedBackLink" style="display:inline-block;text-decoration:none;text-align:center;">&larr; Back to sign in</a>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="ccScreen" style="display:none;">
+  <div class="cc-header">
+    <h1>Connexa Control Centre</h1>
+    <div><span class="who" id="ccWhoEmail"></span><a id="logoutLink">Log out</a></div>
+  </div>
+
+  <div class="cc-main">
+    <!-- Tenant list -->
+    <div id="listPanel">
+      <div class="panel-header-row">
+        <h2>Tenants</h2>
+        <button class="btn" id="newTenantBtn">+ New Tenant</button>
+      </div>
+      <table class="tenant-table">
+        <thead>
+          <tr><th>Tenant</th><th>Status</th><th>Plan</th><th>Admins</th><th>Events</th><th>Registrations</th><th>Created</th></tr>
+        </thead>
+        <tbody id="tenantTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Tenant detail -->
+    <div id="detailPanel" style="display:none;">
+      <span class="back-link" id="backToListLink">&larr; Back to tenants</span>
+      <div class="panel-header-row">
+        <h2 id="detailTenantName"></h2>
+        <span class="status-badge" id="detailStatusBadge"></span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-box">
+          <h3>Tenant</h3>
+          <div class="kv"><span class="k">Slug</span><span id="detailSlug"></span></div>
+          <div class="kv"><span class="k">Plan</span><span id="detailPlan"></span></div>
+          <div class="kv"><span class="k">Custom domain</span><span id="detailDomain"></span></div>
+          <div class="kv"><span class="k">Created</span><span id="detailCreated"></span></div>
+          <div class="status-control">
+            <select id="statusSelect">
+              <option value="trial">trial</option>
+              <option value="active">active</option>
+              <option value="suspended">suspended</option>
+            </select>
+            <button class="btn" id="updateStatusBtn">Update Status</button>
+          </div>
+          <p class="error-text" id="statusError"></p>
+        </div>
+        <div class="detail-box">
+          <h3>Admins</h3>
+          <div id="detailAdmins"></div>
+        </div>
+        <div class="detail-box" style="grid-column: 1 / -1;">
+          <h3>Events</h3>
+          <div id="detailEvents"></div>
+        </div>
+        <div class="detail-box danger-box" style="grid-column: 1 / -1;">
+          <h3>Reset Tenant</h3>
+          <p class="empty-note" style="margin:0 0 14px;">Clears this tenant's data for a fresh demo run. The tenant record and admin logins are never touched, whichever option you use.</p>
+          <div class="btn-row">
+            <button class="btn secondary" id="resetActivityBtn">Reset Activity</button>
+            <button class="btn danger" id="resetFullBtn">Full Reset&hellip;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reset tenant modal -->
+<div class="modal-overlay" id="resetModal">
+  <div class="modal-box">
+    <h2 id="resetModalTitle">Reset Tenant</h2>
+    <p class="sub" id="resetModalSub"></p>
+    <ul class="reset-scope-list" id="resetScopeList"></ul>
+    <div class="field">
+      <label for="resetConfirmInput">Type the tenant slug (<strong id="resetSlugHint"></strong>) to confirm</label>
+      <input type="text" id="resetConfirmInput" autocomplete="off">
+    </div>
+    <div class="btn-row">
+      <button type="button" class="btn danger" id="resetConfirmBtn" disabled>Reset</button>
+      <button type="button" class="btn secondary" id="resetCancelBtn">Cancel</button>
+    </div>
+    <p class="error-text" id="resetError"></p>
+    <p class="success-text" id="resetSuccess"></p>
+  </div>
+</div>
+
+<!-- Create tenant modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal-box">
+    <h2>New Tenant</h2>
+    <p class="sub">The initial admin's account must already exist in Supabase Auth.</p>
+    <form id="createTenantForm">
+      <div class="field">
+        <label for="ctName">Tenant Name</label>
+        <input type="text" id="ctName" required>
+      </div>
+      <div class="field">
+        <label for="ctSlug">Slug</label>
+        <input type="text" id="ctSlug" required pattern="[a-z0-9\-]+" title="Lowercase letters, numbers, and hyphens only">
+      </div>
+      <div class="field">
+        <label for="ctPlan">Plan (optional)</label>
+        <input type="text" id="ctPlan" placeholder="e.g. trial, pro">
+      </div>
+      <div class="field">
+        <label for="ctAdminEmail">Initial Admin Email</label>
+        <input type="email" id="ctAdminEmail" required>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn" id="createTenantBtn">Create Tenant</button>
+        <button type="button" class="btn secondary" id="cancelCreateBtn">Cancel</button>
+      </div>
+      <p class="error-text" id="createError"></p>
+      <p class="success-text" id="createSuccess"></p>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="control-centre-shim.js"></script>
+<script>
+  var state = { tenants: [], currentTenantId: null, currentTenantSlug: null, resetMode: null };
+
+  function escapeHtml_(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function formatDate_(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleDateString(); } catch (e) { return iso; }
+  }
+
+  function showScreen_(id) {
+    ['loginScreen', 'notAuthorizedScreen', 'ccScreen'].forEach(function (s) {
+      document.getElementById(s).style.display = (s === id) ? (s === 'ccScreen' ? 'block' : 'flex') : 'none';
+    });
+  }
+
+  function checkSession() {
+    CC.getSession().then(function (session) {
+      if (!session) { showScreen_('loginScreen'); return; }
+      loadOverviewAndShowApp_(session.user.email);
+    });
+  }
+
+  function loadOverviewAndShowApp_(email) {
+    CC.getTenantsOverview().then(function (tenants) {
+      state.tenants = tenants || [];
+      document.getElementById('ccWhoEmail').textContent = email;
+      showScreen_('ccScreen');
+      showListPanel_();
+    }).catch(function () {
+      // Any failure here (including "Not authorized") means this
+      // account should not be inside the Control Centre at all.
+      CC.staffLogout();
+      showScreen_('notAuthorizedScreen');
+    });
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = document.getElementById('loginEmail').value.trim();
+    var password = document.getElementById('loginPassword').value;
+    var errEl = document.getElementById('loginError');
+    errEl.style.display = 'none';
+    var btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    CC.staffLogin(email, password).then(function () {
+      loadOverviewAndShowApp_(email);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }).finally(function () { btn.disabled = false; });
+  });
+
+  document.getElementById('notAuthorizedBackLink').addEventListener('click', function (e) {
+    e.preventDefault();
+    showScreen_('loginScreen');
+  });
+
+  document.getElementById('logoutLink').addEventListener('click', function () {
+    CC.staffLogout().then(function () { showScreen_('loginScreen'); });
+  });
+
+  /* ================= LIST ================= */
+
+  function showListPanel_() {
+    document.getElementById('detailPanel').style.display = 'none';
+    document.getElementById('listPanel').style.display = 'block';
+    renderTenantList_();
+  }
+
+  function renderTenantList_() {
+    var body = document.getElementById('tenantTableBody');
+    if (!state.tenants.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty-note">No tenants yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = state.tenants.map(function (t) {
+      return '<tr class="tenant-row" data-tenant-id="' + t.tenantId + '">' +
+        '<td><div class="tenant-name">' + escapeHtml_(t.name) + '</div><div class="tenant-slug">' + escapeHtml_(t.slug) + '</div></td>' +
+        '<td><span class="status-badge ' + t.status + '">' + t.status + '</span></td>' +
+        '<td>' + escapeHtml_(t.planId || '—') + '</td>' +
+        '<td>' + escapeHtml_((t.adminEmails || []).join(', ') || '—') + '</td>' +
+        '<td>' + t.eventCount + '</td>' +
+        '<td>' + t.registrationCount + '</td>' +
+        '<td>' + formatDate_(t.createdAt) + '</td>' +
+        '</tr>';
+    }).join('');
+    Array.prototype.forEach.call(body.querySelectorAll('.tenant-row'), function (row) {
+      row.addEventListener('click', function () { showDetail_(row.getAttribute('data-tenant-id')); });
+    });
+  }
+
+  document.getElementById('backToListLink').addEventListener('click', showListPanel_);
+
+  /* ================= DETAIL ================= */
+
+  function showDetail_(tenantId) {
+    state.currentTenantId = tenantId;
+    document.getElementById('statusError').style.display = 'none';
+    CC.getTenantDetail(tenantId).then(function (detail) {
+      document.getElementById('listPanel').style.display = 'none';
+      document.getElementById('detailPanel').style.display = 'block';
+
+      document.getElementById('detailTenantName').textContent = detail.name;
+      var badge = document.getElementById('detailStatusBadge');
+      badge.textContent = detail.status;
+      badge.className = 'status-badge ' + detail.status;
+      document.getElementById('detailSlug').textContent = detail.slug;
+      state.currentTenantSlug = detail.slug;
+      document.getElementById('detailPlan').textContent = detail.planId || '—';
+      document.getElementById('detailDomain').textContent = detail.customDomain || '—';
+      document.getElementById('detailCreated').textContent = formatDate_(detail.createdAt);
+      document.getElementById('statusSelect').value = detail.status;
+
+      var admins = detail.admins || [];
+      document.getElementById('detailAdmins').innerHTML = admins.length
+        ? admins.map(function (a) {
+            return '<div class="admin-list-item"><strong>' + escapeHtml_(a.email) + '</strong> &middot; ' + escapeHtml_(a.role) + '</div>';
+          }).join('')
+        : '<p class="empty-note">No admins yet.</p>';
+
+      var events = detail.events || [];
+      document.getElementById('detailEvents').innerHTML = events.length
+        ? events.map(function (e) {
+            return '<div class="event-list-item"><div class="name">' + escapeHtml_(e.eventName) + '</div>' +
+              '<div class="meta">' + escapeHtml_(e.status) + (e.eventDate ? ' · ' + formatDate_(e.eventDate) : '') +
+              ' · ' + e.registrationCount + ' registration' + (e.registrationCount === 1 ? '' : 's') + '</div></div>';
+          }).join('')
+        : '<p class="empty-note">No events yet.</p>';
+    });
+  }
+
+  document.getElementById('updateStatusBtn').addEventListener('click', function () {
+    var newStatus = document.getElementById('statusSelect').value;
+    var errEl = document.getElementById('statusError');
+    errEl.style.display = 'none';
+    CC.setTenantStatus(state.currentTenantId, newStatus).then(function () {
+      return CC.getTenantsOverview();
+    }).then(function (tenants) {
+      state.tenants = tenants || [];
+      showDetail_(state.currentTenantId);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
+
+  /* ================= RESET ================= */
+
+  var RESET_SCOPE = {
+    activity: {
+      title: 'Reset Activity',
+      sub: 'Clears everything generated by using this tenant. Events, registration types, form fields, comm templates, budget categories and floor plan layouts are kept as-is.',
+      items: ['Registrations & B2B meetings', 'Sent/queued communications & opt-outs', 'Booth holds & the admin audit log', 'Attendee profiles & the company directory'],
+      confirmLabel: 'Reset Activity',
+      danger: false
+    },
+    full: {
+      title: 'Full Reset',
+      sub: 'Wipes this tenant back to literally empty — the way it looked the moment it was created. This cannot be undone.',
+      items: ['Everything Reset Activity clears, plus:', 'Events, registration types & form fields', 'Comm templates, automations & saved segments', 'Budget categories & floor plan templates'],
+      confirmLabel: 'Full Reset',
+      danger: true
+    }
+  };
+
+  function openResetModal_(mode) {
+    var scope = RESET_SCOPE[mode];
+    state.resetMode = mode;
+    document.getElementById('resetModalTitle').textContent = scope.title;
+    document.getElementById('resetModalSub').textContent = scope.sub;
+    document.getElementById('resetScopeList').innerHTML = scope.items.map(function (i) { return '<li>' + escapeHtml_(i) + '</li>'; }).join('');
+    document.getElementById('resetSlugHint').textContent = state.currentTenantSlug;
+    var confirmBtn = document.getElementById('resetConfirmBtn');
+    confirmBtn.textContent = scope.confirmLabel;
+    confirmBtn.disabled = true;
+    confirmBtn.classList.toggle('danger', scope.danger);
+    confirmBtn.classList.toggle('secondary', !scope.danger);
+    var input = document.getElementById('resetConfirmInput');
+    input.value = '';
+    document.getElementById('resetError').style.display = 'none';
+    document.getElementById('resetSuccess').style.display = 'none';
+    document.getElementById('resetModal').classList.add('open');
+  }
+
+  document.getElementById('resetActivityBtn').addEventListener('click', function () { openResetModal_('activity'); });
+  document.getElementById('resetFullBtn').addEventListener('click', function () { openResetModal_('full'); });
+  document.getElementById('resetCancelBtn').addEventListener('click', function () {
+    document.getElementById('resetModal').classList.remove('open');
+  });
+
+  document.getElementById('resetConfirmInput').addEventListener('input', function () {
+    document.getElementById('resetConfirmBtn').disabled = (this.value.trim() !== state.currentTenantSlug);
+  });
+
+  document.getElementById('resetConfirmBtn').addEventListener('click', function () {
+    if (document.getElementById('resetConfirmInput').value.trim() !== state.currentTenantSlug) return;
+    var errEl = document.getElementById('resetError');
+    var okEl = document.getElementById('resetSuccess');
+    errEl.style.display = 'none';
+    okEl.style.display = 'none';
+    var btn = this;
+    btn.disabled = true;
+    CC.resetTenant(state.currentTenantId, state.resetMode).then(function (result) {
+      okEl.textContent = 'Done — ' + result.registrationsDeleted + ' registration(s), ' + result.b2bMeetingsDeleted + ' B2B meeting(s)' + (result.eventsDeleted ? ', ' + result.eventsDeleted + ' event(s)' : '') + ' cleared.';
+      okEl.style.display = 'block';
+      return CC.getTenantsOverview();
+    }).then(function (tenants) {
+      state.tenants = tenants || [];
+      showDetail_(state.currentTenantId);
+      setTimeout(function () { document.getElementById('resetModal').classList.remove('open'); }, 1200);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }).finally(function () { btn.disabled = false; });
+  });
+
+  /* ================= CREATE ================= */
+
+  document.getElementById('newTenantBtn').addEventListener('click', function () {
+    document.getElementById('createTenantForm').reset();
+    document.getElementById('createError').style.display = 'none';
+    document.getElementById('createSuccess').style.display = 'none';
+    document.getElementById('createModal').classList.add('open');
+  });
+
+  document.getElementById('cancelCreateBtn').addEventListener('click', function () {
+    document.getElementById('createModal').classList.remove('open');
+  });
+
+  document.getElementById('createTenantForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = document.getElementById('ctName').value.trim();
+    var slug = document.getElementById('ctSlug').value.trim();
+    var plan = document.getElementById('ctPlan').value.trim();
+    var adminEmail = document.getElementById('ctAdminEmail').value.trim();
+    var errEl = document.getElementById('createError');
+    var okEl = document.getElementById('createSuccess');
+    errEl.style.display = 'none';
+    okEl.style.display = 'none';
+    var btn = document.getElementById('createTenantBtn');
+    btn.disabled = true;
+    CC.createTenant(name, slug, plan, adminEmail).then(function () {
+      return CC.getTenantsOverview();
+    }).then(function (tenants) {
+      state.tenants = tenants || [];
+      okEl.textContent = 'Tenant created.';
+      okEl.style.display = 'block';
+      renderTenantList_();
+      setTimeout(function () { document.getElementById('createModal').classList.remove('open'); }, 700);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }).finally(function () { btn.disabled = false; });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.getElementById('createModal').classList.remove('open');
+      document.getElementById('resetModal').classList.remove('open');
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', checkSession);
+</script>
+</body>
+</html>
