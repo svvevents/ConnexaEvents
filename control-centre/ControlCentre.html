@@ -476,7 +476,7 @@
     var btn = this;
     btn.disabled = true;
     CC.resetTenant(state.currentTenantId, state.resetMode).then(function (result) {
-      okEl.textContent = 'Done — ' + result.registrationsDeleted + ' registration(s), ' + result.b2bMeetingsDeleted + ' B2B meeting(s)' + (result.eventsDeleted ? ', ' + result.eventsDeleted + ' event(s)' : '') + ' cleared.';
+      okEl.textContent = 'Done — ' + result.registrationsDeleted + ' registration(s), ' + result.b2bMeetingsDeleted + ' B2B meeting(s), ' + result.membersDeleted + ' member(s)' + (result.eventsDeleted ? ', ' + result.eventsDeleted + ' event(s)' : '') + ' cleared.';
       okEl.style.display = 'block';
       return CC.getTenantsOverview();
     }).then(function (tenants) {
