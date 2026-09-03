@@ -540,6 +540,64 @@
     },
     saveCommSettings: rpc('save_comm_settings', function (args) { return { p_settings: args[1] }; }),
 
+    // ---- Membership Management Phase 1: AdminPortal.html "Members" panel.
+    // New code, not a Code.js port -- call sites don't carry the vestigial
+    // ADMIN_TOKEN leading arg every ported function above ignores, so
+    // these read straight off args[0] instead of args[1]. ----
+    getMembershipCapability: rpc('get_membership_capability', function () { return {}; }),
+    listTenantMembers: function () {
+      return sb.rpc('list_tenant_members', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'memberId');
+      });
+    },
+    saveMember: function (args) {
+      return sb.rpc('create_or_update_member', { p_payload: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'memberId');
+      });
+    },
+    listMembershipProspects: function () {
+      return sb.rpc('list_membership_prospects', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'prospectId');
+      });
+    },
+    saveProspect: function (args) {
+      return sb.rpc('create_or_update_prospect', { p_payload: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'prospectId');
+      });
+    },
+    setProspectStage: function (args) {
+      return sb.rpc('set_prospect_stage', { p_prospect_id: args[0], p_stage: args[1] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'prospectId');
+      });
+    },
+    convertProspectToMember: function (args) {
+      return sb.rpc('convert_prospect_to_member', { p_prospect_id: args[0] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'memberId');
+      });
+    },
+    listMembershipInteractions: function (args) {
+      return sb.rpc('list_membership_interactions', { p_subject_type: args[0], p_subject_id: args[1] }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'interactionId');
+      });
+    },
+    logMembershipInteraction: function (args) {
+      var payload = args[2] || {};
+      return sb.rpc('log_membership_interaction', {
+        p_subject_type: args[0], p_subject_id: args[1],
+        p_interaction_type: payload.interactionType || 'Note', p_notes: payload.notes || ''
+      }).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRow_(res.data, 'interactionId');
+      });
+    },
+
     // ---- Phase 07 Stage C: AdminFloorPlan.html ----
     // getExhibitionEventOptions was never an RPC even in the original
     // Postgres migration (20260810223009_floor_plan.sql's own header:

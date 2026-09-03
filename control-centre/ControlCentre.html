@@ -171,6 +171,15 @@
           <p class="error-text" id="statusError"></p>
         </div>
         <div class="detail-box">
+          <h3>Modules</h3>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; user-select:none; margin-bottom:12px;">
+            <input type="checkbox" id="membershipEnabledCheckbox">
+            Membership Management enabled
+          </label>
+          <button class="btn" id="updateMembershipBtn">Save</button>
+          <p class="error-text" id="membershipError"></p>
+        </div>
+        <div class="detail-box">
           <h3>Admins</h3>
           <div id="detailAdmins"></div>
         </div>
@@ -378,7 +387,22 @@
           }).join('')
         : '<p class="empty-note">No events yet.</p>';
     });
+
+    document.getElementById('membershipError').style.display = 'none';
+    CC.getTenantMembershipEnabled(tenantId).then(function (enabled) {
+      document.getElementById('membershipEnabledCheckbox').checked = !!enabled;
+    });
   }
+
+  document.getElementById('updateMembershipBtn').addEventListener('click', function () {
+    var enabled = document.getElementById('membershipEnabledCheckbox').checked;
+    var errEl = document.getElementById('membershipError');
+    errEl.style.display = 'none';
+    CC.setTenantMembershipEnabled(state.currentTenantId, enabled).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
 
   document.getElementById('updateStatusBtn').addEventListener('click', function () {
     var newStatus = document.getElementById('statusSelect').value;

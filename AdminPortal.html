@@ -552,6 +552,7 @@
         <div class="admin-nav-item" id="admin-nav-dashboard" role="button" tabindex="0">Dashboard</div>
         <div class="admin-nav-item" id="admin-nav-comms" role="button" tabindex="0">✉️ Communications</div>
         <div class="admin-nav-item" id="admin-nav-databridge" role="button" tabindex="0">🔗 B2B Matching</div>
+        <div class="admin-nav-item" id="admin-nav-members" role="button" tabindex="0" style="display:none;">👥 Members</div>
         <div class="admin-nav-item" id="admin-nav-settings" role="button" tabindex="0">⚙️ Settings</div>
       </div>
 
@@ -832,6 +833,48 @@
               point at real numbers instead of a vague "it went well".
             </p>
             <div id="b2bOutcomesReportContent"></div>
+          </div>
+        </div>
+
+        <!-- ============ MEMBERS ============ -->
+        <div id="admin-panel-members" class="admin-panel">
+          <div class="panel-header-row">
+            <h2>Members</h2>
+          </div>
+
+          <div class="comm-tabs">
+            <div class="comm-tab active" id="members-tab-members" role="tab" tabindex="0" onclick="switchMembersTab('members')">Members</div>
+            <div class="comm-tab" id="members-tab-prospects" role="tab" tabindex="0" onclick="switchMembersTab('prospects')">Prospects</div>
+          </div>
+
+          <!-- ---- MEMBERS LIST ---- -->
+          <div id="members-view-members" class="comm-view active">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">Members</h3>
+              <button class="btn" onclick="openMemberModal()">+ New Member</button>
+            </div>
+            <div id="membersListWrap"><p>Loading members...</p></div>
+          </div>
+
+          <!-- ---- PROSPECTS LIST ---- -->
+          <div id="members-view-prospects" class="comm-view">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">Prospects</h3>
+              <div style="display:flex; align-items:center; gap:16px;">
+                <select id="prospectStageFilter" onchange="renderProspectsList()">
+                  <option value="">All stages</option>
+                  <option value="Suggested">Suggested</option>
+                  <option value="Identified">Identified</option>
+                  <option value="Contacted">Contacted</option>
+                  <option value="In Discussion">In Discussion</option>
+                  <option value="Converted">Converted</option>
+                  <option value="Not a Fit">Not a Fit</option>
+                  <option value="Lost">Lost</option>
+                </select>
+                <button class="btn" onclick="openProspectModal()">+ New Prospect</button>
+              </div>
+            </div>
+            <div id="prospectsListWrap"><p>Loading prospects...</p></div>
           </div>
         </div>
 
@@ -1392,6 +1435,130 @@
     </div>
   </div>
 
+  <div id="memberModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeMemberModal()">&times;</span>
+      <h3 id="memberModalTitle" style="margin-top:0;">Add Member</h3>
+      <div id="memberModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+      <input type="hidden" id="memberIdField">
+      <div class="form-group">
+        <label for="memberCompanyNameField">Company Name *</label>
+        <input type="text" id="memberCompanyNameField">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="memberDomainsField">Email Domain(s)</label>
+          <input type="text" id="memberDomainsField" placeholder="acme.com, acme.co.uk">
+        </div>
+        <div class="form-group">
+          <label for="memberTierField">Tier</label>
+          <input type="text" id="memberTierField" placeholder="e.g. Premium">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="memberStatusField">Status</label>
+          <select id="memberStatusField">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="memberCompaniesHouseField">Companies House Number</label>
+          <input type="text" id="memberCompaniesHouseField">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="memberWebsiteField">Website</label>
+        <input type="text" id="memberWebsiteField">
+      </div>
+      <div class="form-group">
+        <label for="memberBlurbField">Blurb</label>
+        <textarea id="memberBlurbField" rows="2"></textarea>
+      </div>
+      <div class="checkbox-row" style="gap:16px; margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+          <input type="checkbox" id="memberShowInternallyField" checked> Show in internal register
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+          <input type="checkbox" id="memberShowExternallyField"> Show in public register
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="memberNotesField">Notes</label>
+        <textarea id="memberNotesField" rows="2"></textarea>
+      </div>
+      <button class="btn" style="width:100%;" id="btnSaveMember" onclick="saveMemberClient()">Save Member</button>
+    </div>
+  </div>
+
+  <div id="prospectModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeProspectModal()">&times;</span>
+      <h3 id="prospectModalTitle" style="margin-top:0;">Add Prospect</h3>
+      <div id="prospectModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+      <input type="hidden" id="prospectIdField">
+      <div class="form-group">
+        <label for="prospectCompanyNameField">Company Name *</label>
+        <input type="text" id="prospectCompanyNameField">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="prospectDomainField">Email Domain</label>
+          <input type="text" id="prospectDomainField" placeholder="acme.com">
+        </div>
+        <div class="form-group">
+          <label for="prospectCompaniesHouseField">Companies House Number</label>
+          <input type="text" id="prospectCompaniesHouseField">
+        </div>
+      </div>
+      <div class="form-group" id="prospectStageGroup" style="display:none;">
+        <label for="prospectStageField">Stage</label>
+        <select id="prospectStageField">
+          <option value="Identified">Identified</option>
+          <option value="Contacted">Contacted</option>
+          <option value="In Discussion">In Discussion</option>
+          <option value="Not a Fit">Not a Fit</option>
+          <option value="Lost">Lost</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="prospectNotesField">Notes</label>
+        <textarea id="prospectNotesField" rows="2"></textarea>
+      </div>
+      <button class="btn" style="width:100%;" id="btnSaveProspect" onclick="saveProspectClient()">Save Prospect</button>
+    </div>
+  </div>
+
+  <!-- Shared by both Members and Prospects: interaction/history log, plus the "Convert to Member" action when opened for a prospect. -->
+  <div id="interactionModal" class="modal-overlay">
+    <div class="modal-box">
+      <span class="modal-close" onclick="closeInteractionModal()">&times;</span>
+      <h3 id="interactionModalTitle" style="margin-top:0;">History</h3>
+      <div id="interactionModalMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
+      <div id="interactionConvertRow" style="display:none; margin-bottom:14px;">
+        <button class="btn" onclick="convertProspectClient()">Convert to Member</button>
+      </div>
+      <div id="interactionListWrap" style="max-height:240px; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="interactionTypeField">Type</label>
+          <select id="interactionTypeField">
+            <option value="Note">Note</option>
+            <option value="Meeting">Meeting</option>
+            <option value="Call">Call</option>
+            <option value="Email">Email</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="interactionNotesField">Notes</label>
+        <textarea id="interactionNotesField" rows="2"></textarea>
+      </div>
+      <button class="btn" style="width:100%;" id="btnLogInteraction" onclick="logInteractionClient()">Log Interaction</button>
+    </div>
+  </div>
+
   <!-- Send Campaign confirmation — styled replacement for a bare confirm(), since sending is the one irreversible, potentially-large-audience action in this panel -->
   <div id="commSendConfirmModal" class="modal-overlay">
     <div class="modal-box">
@@ -1543,6 +1710,7 @@
     document.getElementById('admin-nav-dashboard').addEventListener('click', function() { switchAdminPanel('dashboard'); });
     document.getElementById('admin-nav-comms').addEventListener('click', function() { switchAdminPanel('comms'); });
     document.getElementById('admin-nav-databridge').addEventListener('click', function() { switchAdminPanel('databridge'); });
+    document.getElementById('admin-nav-members').addEventListener('click', function() { switchAdminPanel('members'); });
     document.getElementById('admin-nav-settings').addEventListener('click', function() { switchAdminPanel('settings'); });
     checkAdminSession_();
   });
@@ -1550,6 +1718,14 @@
   function initAdminPortal_() {
     loadOnboardingData();
     loadEventsList();
+    google.script.run
+      .withSuccessHandler(function(cap) {
+        if (cap && cap.membershipEnabled) {
+          document.getElementById('admin-nav-members').style.display = '';
+        }
+      })
+      .withFailureHandler(function() { /* membership not enabled / not available for this tenant — nav item stays hidden */ })
+      .getMembershipCapability();
   }
 
   // Keyboard support for the div-based controls above (nav items, comm
@@ -1584,6 +1760,7 @@
     if (panelId === 'dashboard') loadDashboardPanel();
     if (panelId === 'comms') loadCommPanel();
     if (panelId === 'databridge') populateDataBridgeEntityPicker();
+    if (panelId === 'members') loadMembersPanel();
     if (panelId === 'settings') loadSettingsPanel();
   }
 
@@ -4535,6 +4712,262 @@
           sel.innerHTML += '<option value="' + sub.eventId + '">' + escapeHtml(evt.eventName) + ' → ' + escapeHtml(sub.eventName) + '</option>';
         }
       });
+    });
+  }
+
+  /* ================= MEMBERSHIP MANAGEMENT — Phase 1 (foundation) =================
+     tenant_members + membership_prospects + membership_interactions.
+     Only visible when this tenant's membership_enabled flag is on (checked
+     once in initAdminPortal_, see getMembershipCapability there). Phases
+     2-4 (engagement dashboard, dues/outreach, SIC prospect discovery) are
+     not part of this panel yet.
+     ================================================================= */
+
+  var membersState = { members: [], prospects: [] };
+  var PROSPECT_ACTIVE_STAGES = ['Suggested', 'Identified', 'Contacted', 'In Discussion'];
+  var PROSPECT_ALL_STAGES = PROSPECT_ACTIVE_STAGES.concat(['Not a Fit', 'Lost']);
+
+  function loadMembersPanel() {
+    listMembers();
+    listProspects();
+  }
+
+  function switchMembersTab(tab) {
+    document.querySelectorAll('#admin-panel-members .comm-tab').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('#admin-panel-members .comm-view').forEach(function(el) { el.classList.remove('active'); });
+    document.getElementById('members-tab-' + tab).classList.add('active');
+    document.getElementById('members-view-' + tab).classList.add('active');
+  }
+
+  /* ---------------- Members ---------------- */
+
+  function listMembers() {
+    var wrap = document.getElementById('membersListWrap');
+    wrap.innerHTML = '<p>Loading members...</p>';
+    google.script.run
+      .withSuccessHandler(function(list) { membersState.members = list || []; renderMembersList(); })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listTenantMembers();
+  }
+
+  function renderMembersList() {
+    var wrap = document.getElementById('membersListWrap');
+    var list = membersState.members;
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No members yet. Click "+ New Member" to add one.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Company</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Tier</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Status</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Member Since</th>' +
+      '<th></th></tr></thead><tbody>';
+    list.forEach(function(m) {
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(m.companyName) + '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(m.tier || '—') + '</td>' +
+        '<td style="padding:8px 10px;"><span class="tag ' + (m.status === 'Active' ? 'live' : 'deleted') + '">' + escapeHtml(m.status) + '</span></td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(m.memberSince || '') + '</td>' +
+        '<td style="padding:8px 10px; text-align:right; white-space:nowrap;">' +
+          '<button class="btn small secondary" onclick="openMemberModal(' + jsAttr_(m.memberId) + ')">Edit</button> ' +
+          '<button class="btn small secondary" onclick="openInteractionModal(' + jsAttr_('member') + ',' + jsAttr_(m.memberId) + ',' + jsAttr_(m.companyName) + ')">History</button>' +
+        '</td></tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function openMemberModal(memberId) {
+    var m = memberId ? membersState.members.filter(function(x) { return x.memberId === memberId; })[0] : null;
+    document.getElementById('memberModalTitle').textContent = m ? 'Edit Member' : 'Add Member';
+    document.getElementById('memberModalMsg').style.display = 'none';
+    document.getElementById('memberIdField').value = m ? m.memberId : '';
+    document.getElementById('memberCompanyNameField').value = m ? m.companyName : '';
+    document.getElementById('memberDomainsField').value = m && m.domains ? m.domains.join(', ') : '';
+    document.getElementById('memberTierField').value = m ? (m.tier || '') : '';
+    document.getElementById('memberStatusField').value = m ? m.status : 'Active';
+    document.getElementById('memberCompaniesHouseField').value = m ? (m.companiesHouseNumber || '') : '';
+    document.getElementById('memberWebsiteField').value = m ? (m.website || '') : '';
+    document.getElementById('memberBlurbField').value = m ? (m.blurb || '') : '';
+    document.getElementById('memberShowInternallyField').checked = m ? !!m.showInternally : true;
+    document.getElementById('memberShowExternallyField').checked = m ? !!m.showExternally : false;
+    document.getElementById('memberNotesField').value = m ? (m.notes || '') : '';
+    document.getElementById('memberModal').style.display = 'flex';
+  }
+
+  function closeMemberModal() { document.getElementById('memberModal').style.display = 'none'; }
+
+  function saveMemberClient() {
+    var name = document.getElementById('memberCompanyNameField').value.trim();
+    var msgEl = document.getElementById('memberModalMsg');
+    if (!name) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Company Name is required.'; msgEl.style.display = 'block'; return; }
+    var domains = document.getElementById('memberDomainsField').value.split(',').map(function(d) { return d.trim(); }).filter(Boolean);
+    var payload = {
+      id: document.getElementById('memberIdField').value || null,
+      companyName: name,
+      domains: domains,
+      tier: document.getElementById('memberTierField').value.trim(),
+      status: document.getElementById('memberStatusField').value,
+      companiesHouseNumber: document.getElementById('memberCompaniesHouseField').value.trim(),
+      website: document.getElementById('memberWebsiteField').value.trim(),
+      blurb: document.getElementById('memberBlurbField').value.trim(),
+      showInternally: document.getElementById('memberShowInternallyField').checked,
+      showExternally: document.getElementById('memberShowExternallyField').checked,
+      notes: document.getElementById('memberNotesField').value.trim()
+    };
+    var btn = document.getElementById('btnSaveMember');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() { btn.disabled = false; closeMemberModal(); listMembers(); })
+      .withFailureHandler(function(err) { btn.disabled = false; msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .saveMember(payload);
+  }
+
+  /* ---------------- Prospects ---------------- */
+
+  function listProspects() {
+    var wrap = document.getElementById('prospectsListWrap');
+    wrap.innerHTML = '<p>Loading prospects...</p>';
+    google.script.run
+      .withSuccessHandler(function(list) { membersState.prospects = list || []; renderProspectsList(); })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listMembershipProspects();
+  }
+
+  function renderProspectsList() {
+    var wrap = document.getElementById('prospectsListWrap');
+    var filter = document.getElementById('prospectStageFilter').value;
+    var list = membersState.prospects.filter(function(p) { return !filter || p.stage === filter; });
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No prospects yet. Click "+ New Prospect" to add one.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Company</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Stage</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Source</th>' +
+      '<th></th></tr></thead><tbody>';
+    list.forEach(function(p) {
+      var isTerminal = (p.stage === 'Converted' || p.stage === 'Not a Fit' || p.stage === 'Lost');
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(p.companyName) + '</td>' +
+        '<td style="padding:8px 10px;">' +
+          (isTerminal
+            ? '<span class="tag ' + (p.stage === 'Converted' ? 'live' : 'deleted') + '">' + escapeHtml(p.stage) + '</span>'
+            : '<select onchange="setProspectStageClient(' + jsAttr_(p.prospectId) + ', this.value)" style="font-size:12px; padding:3px 6px;">' +
+                PROSPECT_ACTIVE_STAGES.concat(['Not a Fit', 'Lost']).map(function(s) {
+                  return '<option value="' + s + '"' + (s === p.stage ? ' selected' : '') + '>' + s + '</option>';
+                }).join('') +
+              '</select>') +
+        '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(p.source || '') + '</td>' +
+        '<td style="padding:8px 10px; text-align:right; white-space:nowrap;">' +
+          '<button class="btn small secondary" onclick="openProspectModal(' + jsAttr_(p.prospectId) + ')">Edit</button> ' +
+          '<button class="btn small secondary" onclick="openInteractionModal(' + jsAttr_('prospect') + ',' + jsAttr_(p.prospectId) + ',' + jsAttr_(p.companyName) + ')">History</button>' +
+        '</td></tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
+  }
+
+  function setProspectStageClient(prospectId, stage) {
+    google.script.run
+      .withSuccessHandler(function() { listProspects(); })
+      .withFailureHandler(function(err) { alert(err.message); listProspects(); })
+      .setProspectStage(prospectId, stage);
+  }
+
+  function openProspectModal(prospectId) {
+    var p = prospectId ? membersState.prospects.filter(function(x) { return x.prospectId === prospectId; })[0] : null;
+    document.getElementById('prospectModalTitle').textContent = p ? 'Edit Prospect' : 'Add Prospect';
+    document.getElementById('prospectModalMsg').style.display = 'none';
+    document.getElementById('prospectIdField').value = p ? p.prospectId : '';
+    document.getElementById('prospectCompanyNameField').value = p ? p.companyName : '';
+    document.getElementById('prospectDomainField').value = p ? (p.domain || '') : '';
+    document.getElementById('prospectCompaniesHouseField').value = p ? (p.companiesHouseNumber || '') : '';
+    document.getElementById('prospectNotesField').value = p ? (p.notes || '') : '';
+    // Stage is only editable for an existing prospect (new ones always start at Identified server-side) — see set_prospect_stage for the actual transition endpoint used by the list row instead once the prospect exists.
+    document.getElementById('prospectStageGroup').style.display = 'none';
+    document.getElementById('prospectModal').style.display = 'flex';
+  }
+
+  function closeProspectModal() { document.getElementById('prospectModal').style.display = 'none'; }
+
+  function saveProspectClient() {
+    var name = document.getElementById('prospectCompanyNameField').value.trim();
+    var msgEl = document.getElementById('prospectModalMsg');
+    if (!name) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Company Name is required.'; msgEl.style.display = 'block'; return; }
+    var payload = {
+      id: document.getElementById('prospectIdField').value || null,
+      companyName: name,
+      domain: document.getElementById('prospectDomainField').value.trim(),
+      companiesHouseNumber: document.getElementById('prospectCompaniesHouseField').value.trim(),
+      notes: document.getElementById('prospectNotesField').value.trim()
+    };
+    var btn = document.getElementById('btnSaveProspect');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() { btn.disabled = false; closeProspectModal(); listProspects(); })
+      .withFailureHandler(function(err) { btn.disabled = false; msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .saveProspect(payload);
+  }
+
+  /* ---------------- Shared interaction log + Convert to Member ---------------- */
+
+  var interactionSubject_ = null; // { type: 'member'|'prospect', id, label }
+
+  function openInteractionModal(subjectType, subjectId, subjectLabel) {
+    interactionSubject_ = { type: subjectType, id: subjectId, label: subjectLabel };
+    document.getElementById('interactionModalTitle').textContent = 'History — ' + subjectLabel;
+    document.getElementById('interactionModalMsg').style.display = 'none';
+    document.getElementById('interactionTypeField').value = 'Note';
+    document.getElementById('interactionNotesField').value = '';
+    var prospect = subjectType === 'prospect' ? membersState.prospects.filter(function(x) { return x.prospectId === subjectId; })[0] : null;
+    document.getElementById('interactionConvertRow').style.display = (prospect && prospect.stage !== 'Converted' && prospect.stage !== 'Not a Fit') ? 'block' : 'none';
+    document.getElementById('interactionListWrap').innerHTML = '<p>Loading...</p>';
+    document.getElementById('interactionModal').style.display = 'flex';
+    renderInteractionList();
+  }
+
+  function closeInteractionModal() { document.getElementById('interactionModal').style.display = 'none'; }
+
+  function renderInteractionList() {
+    var wrap = document.getElementById('interactionListWrap');
+    google.script.run
+      .withSuccessHandler(function(list) {
+        if (!list || !list.length) { wrap.innerHTML = '<p class="empty-state">No interactions logged yet.</p>'; return; }
+        wrap.innerHTML = list.map(function(i) {
+          return '<div style="padding:8px 0; border-bottom:1px solid #eee; font-size:12px;">' +
+            '<span class="tag type">' + escapeHtml(i.interactionType) + '</span> ' +
+            '<span style="color:var(--text-muted);">' + escapeHtml(new Date(i.occurredAt).toLocaleString()) + '</span>' +
+            (i.notes ? '<div style="margin-top:4px;">' + escapeHtml(i.notes) + '</div>' : '') +
+          '</div>';
+        }).join('');
+      })
+      .withFailureHandler(function(err) { wrap.innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .listMembershipInteractions(interactionSubject_.type, interactionSubject_.id);
+  }
+
+  function logInteractionClient() {
+    var payload = { interactionType: document.getElementById('interactionTypeField').value, notes: document.getElementById('interactionNotesField').value.trim() };
+    var btn = document.getElementById('btnLogInteraction');
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function() {
+        btn.disabled = false;
+        document.getElementById('interactionNotesField').value = '';
+        renderInteractionList();
+        if (interactionSubject_.type === 'prospect') listProspects(); // stage may have auto-advanced Identified -> Contacted
+      })
+      .withFailureHandler(function(err) { btn.disabled = false; var msgEl = document.getElementById('interactionModalMsg'); msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; msgEl.style.display = 'block'; })
+      .logMembershipInteraction(interactionSubject_.type, interactionSubject_.id, payload);
+  }
+
+  function convertProspectClient() {
+    var subject = interactionSubject_;
+    openGenericConfirmModal({
+      title: 'Convert to Member',
+      bodyHtml: 'Create a member record for <strong>' + escapeHtml(subject.label) + '</strong>? Its interaction history will carry over to the new member profile.',
+      confirmLabel: 'Convert',
+      onConfirm: function() {
+        google.script.run
+          .withSuccessHandler(function() { closeInteractionModal(); listProspects(); listMembers(); })
+          .withFailureHandler(function(err) { alert(err.message); })
+          .convertProspectToMember(subject.id);
+      }
     });
   }
 

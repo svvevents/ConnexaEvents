@@ -63,6 +63,12 @@
     },
     resetTenant: function (tenantId, mode) {
       return rpc('reset_platform_tenant', { p_tenant_id: tenantId, p_mode: mode });
+    },
+    getTenantMembershipEnabled: function (tenantId) {
+      return rpc('get_platform_tenant_membership_flag', { p_tenant_id: tenantId });
+    },
+    setTenantMembershipEnabled: function (tenantId, enabled) {
+      return rpc('set_platform_tenant_membership_enabled', { p_tenant_id: tenantId, p_enabled: enabled });
     }
   };
 })();
