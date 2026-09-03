@@ -875,9 +875,11 @@
                   <option value="Not a Fit">Not a Fit</option>
                   <option value="Lost">Lost</option>
                 </select>
+                <button class="btn secondary" onclick="findSimilarCompaniesClient()">Find Similar Companies</button>
                 <button class="btn" onclick="openProspectModal()">+ New Prospect</button>
               </div>
             </div>
+            <div id="prospectsFindSimilarMsg" style="display:none; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;"></div>
             <div id="prospectsListWrap"><p>Loading prospects...</p></div>
           </div>
 
@@ -1540,8 +1542,16 @@
         </div>
         <div class="form-group">
           <label for="memberCompaniesHouseField">Companies House Number</label>
-          <input type="text" id="memberCompaniesHouseField">
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="memberCompaniesHouseField" style="flex:1;">
+            <button type="button" class="btn small secondary" onclick="lookupCompaniesHouseClient('member')">Lookup</button>
+          </div>
         </div>
+      </div>
+      <div id="memberChLookupMsg" style="display:none; font-size:12px; margin-bottom:10px;"></div>
+      <div class="form-group">
+        <label for="memberSicCodesField">SIC Codes <span style="font-weight:400; color:var(--text-muted);">(comma-separated — filled in by Lookup, or edit directly)</span></label>
+        <input type="text" id="memberSicCodesField">
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1594,8 +1604,16 @@
         </div>
         <div class="form-group">
           <label for="prospectCompaniesHouseField">Companies House Number</label>
-          <input type="text" id="prospectCompaniesHouseField">
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="prospectCompaniesHouseField" style="flex:1;">
+            <button type="button" class="btn small secondary" onclick="lookupCompaniesHouseClient('prospect')">Lookup</button>
+          </div>
         </div>
+      </div>
+      <div id="prospectChLookupMsg" style="display:none; font-size:12px; margin-bottom:10px;"></div>
+      <div class="form-group">
+        <label for="prospectSicCodesField">SIC Codes <span style="font-weight:400; color:var(--text-muted);">(comma-separated — filled in by Lookup, or edit directly)</span></label>
+        <input type="text" id="prospectSicCodesField">
       </div>
       <div class="form-group" id="prospectStageGroup" style="display:none;">
         <label for="prospectStageField">Stage</label>
@@ -4955,6 +4973,8 @@
     document.getElementById('memberTierField').value = m ? (m.tier || '') : '';
     document.getElementById('memberStatusField').value = m ? m.status : 'Active';
     document.getElementById('memberCompaniesHouseField').value = m ? (m.companiesHouseNumber || '') : '';
+    document.getElementById('memberSicCodesField').value = m && m.sicCodes ? m.sicCodes.join(', ') : '';
+    document.getElementById('memberChLookupMsg').style.display = 'none';
     document.getElementById('memberContactNameField').value = m ? (m.contactName || '') : '';
     document.getElementById('memberContactEmailField').value = m ? (m.contactEmail || '') : '';
     document.getElementById('memberWebsiteField').value = m ? (m.website || '') : '';
@@ -4979,6 +4999,7 @@
       tier: document.getElementById('memberTierField').value.trim(),
       status: document.getElementById('memberStatusField').value,
       companiesHouseNumber: document.getElementById('memberCompaniesHouseField').value.trim(),
+      sicCodes: document.getElementById('memberSicCodesField').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
       contactName: document.getElementById('memberContactNameField').value.trim(),
       contactEmail: document.getElementById('memberContactEmailField').value.trim(),
       website: document.getElementById('memberWebsiteField').value.trim(),
@@ -5053,6 +5074,8 @@
     document.getElementById('prospectCompanyNameField').value = p ? p.companyName : '';
     document.getElementById('prospectDomainField').value = p ? (p.domain || '') : '';
     document.getElementById('prospectCompaniesHouseField').value = p ? (p.companiesHouseNumber || '') : '';
+    document.getElementById('prospectSicCodesField').value = p && p.sicCodes ? p.sicCodes.join(', ') : '';
+    document.getElementById('prospectChLookupMsg').style.display = 'none';
     document.getElementById('prospectNotesField').value = p ? (p.notes || '') : '';
     // Stage is only editable for an existing prospect (new ones always start at Identified server-side) — see set_prospect_stage for the actual transition endpoint used by the list row instead once the prospect exists.
     document.getElementById('prospectStageGroup').style.display = 'none';
@@ -5070,6 +5093,7 @@
       companyName: name,
       domain: document.getElementById('prospectDomainField').value.trim(),
       companiesHouseNumber: document.getElementById('prospectCompaniesHouseField').value.trim(),
+      sicCodes: document.getElementById('prospectSicCodesField').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
       notes: document.getElementById('prospectNotesField').value.trim()
     };
     var btn = document.getElementById('btnSaveProspect');
@@ -5587,6 +5611,39 @@
       })
       .withFailureHandler(function(err) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; })
       .triggerMembershipSendDrain();
+  }
+
+  /* ---------------- Companies House / SIC recommendations (Phase 4) ---------------- */
+
+  function lookupCompaniesHouseClient(kind) {
+    var numberField = document.getElementById(kind + 'CompaniesHouseField');
+    var msgEl = document.getElementById(kind + 'ChLookupMsg');
+    var regNumber = numberField.value.trim();
+    if (!regNumber) { msgEl.style.display = 'block'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = 'Enter a Companies House number first.'; return; }
+    msgEl.style.display = 'block'; msgEl.style.color = 'var(--text-muted)'; msgEl.textContent = 'Looking up...';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.ok) { msgEl.style.color = 'var(--error-color)'; msgEl.textContent = res.error; return; }
+        document.getElementById(kind + 'SicCodesField').value = (res.sicCodes || []).join(', ');
+        msgEl.style.color = 'var(--success-color)';
+        msgEl.textContent = 'Found: ' + res.companyName + ' — SIC codes filled in below.';
+      })
+      .withFailureHandler(function(err) { msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; })
+      .lookupCompaniesHouseCompany(regNumber);
+  }
+
+  function findSimilarCompaniesClient() {
+    var msgEl = document.getElementById('prospectsFindSimilarMsg');
+    msgEl.style.display = 'block'; msgEl.style.background = '#EAF2EF'; msgEl.style.color = 'var(--success-color)';
+    msgEl.textContent = 'Searching Companies House for similar companies...';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.ok) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = res.error; return; }
+        msgEl.textContent = res.inserted + ' new suggestion(s) added, ' + res.revived + ' re-surfaced, ' + res.skipped + ' already known — check the Suggested filter above.';
+        listProspects();
+      })
+      .withFailureHandler(function(err) { msgEl.style.background = '#F9EBEA'; msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; })
+      .triggerMembershipSicRecommendations();
   }
 
   function generateDataBridgeSql() {

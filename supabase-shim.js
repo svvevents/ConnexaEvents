@@ -690,6 +690,11 @@
       return { p_tenant_id: args[0], p_member_id: args[1], p_inquirer_name: args[2], p_inquirer_email: args[3], p_message: args[4] };
     }),
 
+    // ---- Membership Management Phase 4: SIC-code prospect discovery ----
+    lookupCompaniesHouseCompany: rpc('lookup_companies_house_company', function (args) { return { p_registration_number: args[0] }; }),
+    searchCompaniesHouseByName: rpc('search_companies_house_by_name', function (args) { return { p_query: args[0] }; }),
+    triggerMembershipSicRecommendations: rpc('trigger_membership_sic_recommendations', function () { return {}; }),
+
     // ---- Phase 07 Stage C: AdminFloorPlan.html ----
     // getExhibitionEventOptions was never an RPC even in the original
     // Postgres migration (20260810223009_floor_plan.sql's own header:
