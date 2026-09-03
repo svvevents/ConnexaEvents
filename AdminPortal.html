@@ -845,6 +845,7 @@
           <div class="comm-tabs">
             <div class="comm-tab active" id="members-tab-members" role="tab" tabindex="0" onclick="switchMembersTab('members')">Members</div>
             <div class="comm-tab" id="members-tab-prospects" role="tab" tabindex="0" onclick="switchMembersTab('prospects')">Prospects</div>
+            <div class="comm-tab" id="members-tab-engagement" role="tab" tabindex="0" onclick="switchMembersTab('engagement')">Engagement</div>
           </div>
 
           <!-- ---- MEMBERS LIST ---- -->
@@ -875,6 +876,23 @@
               </div>
             </div>
             <div id="prospectsListWrap"><p>Loading prospects...</p></div>
+          </div>
+
+          <!-- ---- ENGAGEMENT + ROLLUP (Phase 2) ---- -->
+          <div id="members-view-engagement" class="comm-view">
+            <div class="panel-header-row">
+              <h3 style="margin:0;">Rollup</h3>
+            </div>
+            <div id="membershipRollupTiles" class="tiles-row"></div>
+
+            <div class="panel-header-row" style="margin-top:24px;">
+              <h3 style="margin:0;">Engagement — real event activity, matched by email domain</h3>
+            </div>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">
+              Registrations and spend across every event, for anyone whose email domain matches an Active member.
+              Zero events, or zero registrations from a member's domain, just shows zero here — nothing required.
+            </p>
+            <div id="membershipEngagementWrap"><p>Loading engagement data...</p></div>
           </div>
         </div>
 
@@ -4737,6 +4755,7 @@
     document.querySelectorAll('#admin-panel-members .comm-view').forEach(function(el) { el.classList.remove('active'); });
     document.getElementById('members-tab-' + tab).classList.add('active');
     document.getElementById('members-view-' + tab).classList.add('active');
+    if (tab === 'engagement') loadMembershipEngagement();
   }
 
   /* ---------------- Members ---------------- */
@@ -4969,6 +4988,52 @@
           .convertProspectToMember(subject.id);
       }
     });
+  }
+
+  /* ---------------- Engagement + Rollup (Phase 2) ---------------- */
+
+  function loadMembershipEngagement() {
+    document.getElementById('membershipRollupTiles').innerHTML = '<p>Loading...</p>';
+    document.getElementById('membershipEngagementWrap').innerHTML = '<p>Loading engagement data...</p>';
+    google.script.run
+      .withSuccessHandler(renderMembershipRollup)
+      .withFailureHandler(function(err) { document.getElementById('membershipRollupTiles').innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .getMembershipRollup();
+    google.script.run
+      .withSuccessHandler(renderMembershipEngagement)
+      .withFailureHandler(function(err) { document.getElementById('membershipEngagementWrap').innerHTML = '<p class="msg-error">' + escapeHtml(err.message) + '</p>'; })
+      .getMembershipEngagementDashboard();
+  }
+
+  function renderMembershipRollup(rollup) {
+    var wrap = document.getElementById('membershipRollupTiles');
+    var html = tileHtml(rollup.totalActiveMembers, 'Active Members') + tileHtml(rollup.totalMembers, 'Total Members');
+    (rollup.byTier || []).forEach(function(t) { html += tileHtml(t.count, t.tier); });
+    wrap.innerHTML = html;
+  }
+
+  function renderMembershipEngagement(list) {
+    var wrap = document.getElementById('membershipEngagementWrap');
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No Active members yet — add one on the Members tab.</div>'; return; }
+    var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;"><thead><tr>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Company</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Tier</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Registrations</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Spend</th>' +
+      '<th style="text-align:left; padding:8px 10px; color:var(--text-muted); font-size:11px; text-transform:uppercase;">Last Active</th>' +
+      '</tr></thead><tbody>';
+    list.forEach(function(m) {
+      var spend = (m.spendByCurrency || []).map(function(s) { return fmtMoney(s.amount, s.currency); }).join(', ') || '—';
+      var lastActive = m.lastActiveAt ? new Date(m.lastActiveAt).toLocaleDateString() : '—';
+      html += '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:8px 10px;">' + escapeHtml(m.companyName) + '</td>' +
+        '<td style="padding:8px 10px;">' + escapeHtml(m.tier || '—') + '</td>' +
+        '<td style="padding:8px 10px;">' + m.registrationCount + '</td>' +
+        '<td style="padding:8px 10px;">' + spend + '</td>' +
+        '<td style="padding:8px 10px;">' + lastActive + '</td>' +
+      '</tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table></div>';
   }
 
   function generateDataBridgeSql() {

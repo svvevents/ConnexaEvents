@@ -598,6 +598,20 @@
       });
     },
 
+    // ---- Membership Management Phase 2: engagement + rollup dashboards.
+    // Both RPCs return jsonb built server-side (jsonb_agg/jsonb_build_object),
+    // not `setof <table>`, so res.data is already the plain value -- the
+    // engagement rows still get toCamelRows_ for their snake_case column
+    // aliases (member_id etc.), the rollup object was already built with
+    // camelCase keys directly in SQL so it needs no conversion at all. ----
+    getMembershipEngagementDashboard: function () {
+      return sb.rpc('get_membership_engagement_dashboard', {}).then(function (res) {
+        if (res.error) throw res.error;
+        return toCamelRows_(res.data, 'memberId');
+      });
+    },
+    getMembershipRollup: rpc('get_membership_rollup', function () { return {}; }),
+
     // ---- Phase 07 Stage C: AdminFloorPlan.html ----
     // getExhibitionEventOptions was never an RPC even in the original
     // Postgres migration (20260810223009_floor_plan.sql's own header:
