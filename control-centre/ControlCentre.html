@@ -175,6 +175,28 @@
           <p class="error-text" id="statusError"></p>
         </div>
         <div class="detail-box">
+          <h3>Branding</h3>
+          <p class="empty-note" style="margin:0 0 12px;">Shown at this tenant's own subdomain (<span id="brandingDomainHint">—</span>). Blank fields fall back to Connexa's default.</p>
+          <div class="field">
+            <label for="brandingDisplayName">Display Name (page title)</label>
+            <input type="text" id="brandingDisplayName" placeholder="e.g. RVN Events Portal">
+          </div>
+          <div class="field">
+            <label for="brandingPrimaryColor">Primary Color</label>
+            <input type="text" id="brandingPrimaryColor" placeholder="#1C7293">
+          </div>
+          <div class="field">
+            <label for="brandingNavyColor">Navy Color</label>
+            <input type="text" id="brandingNavyColor" placeholder="#1B2A4A">
+          </div>
+          <div class="field">
+            <label for="brandingAccentColor">Accent Color</label>
+            <input type="text" id="brandingAccentColor" placeholder="#D98E04">
+          </div>
+          <button class="btn" id="updateBrandingBtn">Save Branding</button>
+          <p class="error-text" id="brandingError"></p>
+        </div>
+        <div class="detail-box">
           <h3>Modules</h3>
           <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; user-select:none; margin-bottom:12px;">
             <input type="checkbox" id="membershipEnabledCheckbox">
@@ -378,6 +400,14 @@
       document.getElementById('detailAttendeePortalLink').href = 'https://' + portalHost + '/Portal.html';
       document.getElementById('statusSelect').value = detail.status;
 
+      var branding = detail.branding || {};
+      document.getElementById('brandingDomainHint').textContent = portalHost;
+      document.getElementById('brandingDisplayName').value = branding.displayName || '';
+      document.getElementById('brandingPrimaryColor').value = branding.primaryColor || '';
+      document.getElementById('brandingNavyColor').value = branding.navyColor || '';
+      document.getElementById('brandingAccentColor').value = branding.accentColor || '';
+      document.getElementById('brandingError').style.display = 'none';
+
       var admins = detail.admins || [];
       document.getElementById('detailAdmins').innerHTML = admins.length
         ? admins.map(function (a) {
@@ -400,6 +430,22 @@
       document.getElementById('membershipEnabledCheckbox').checked = !!enabled;
     });
   }
+
+  document.getElementById('updateBrandingBtn').addEventListener('click', function () {
+    var branding = {
+      displayName: document.getElementById('brandingDisplayName').value.trim(),
+      primaryColor: document.getElementById('brandingPrimaryColor').value.trim(),
+      navyColor: document.getElementById('brandingNavyColor').value.trim(),
+      accentColor: document.getElementById('brandingAccentColor').value.trim()
+    };
+    Object.keys(branding).forEach(function (k) { if (!branding[k]) delete branding[k]; });
+    var errEl = document.getElementById('brandingError');
+    errEl.style.display = 'none';
+    CC.setTenantBranding(state.currentTenantId, branding).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
 
   document.getElementById('updateMembershipBtn').addEventListener('click', function () {
     var enabled = document.getElementById('membershipEnabledCheckbox').checked;

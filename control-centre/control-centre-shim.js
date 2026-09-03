@@ -69,6 +69,9 @@
     },
     setTenantMembershipEnabled: function (tenantId, enabled) {
       return rpc('set_platform_tenant_membership_enabled', { p_tenant_id: tenantId, p_enabled: enabled });
+    },
+    setTenantBranding: function (tenantId, branding) {
+      return rpc('set_platform_tenant_branding', { p_tenant_id: tenantId, p_branding: branding });
     }
   };
 })();
