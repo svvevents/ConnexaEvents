@@ -6267,9 +6267,9 @@
       .withSuccessHandler(function(res) {
         var results = res && res.results ? res.results : [];
         var failed = results.filter(function(r) { return !r.ok; });
-        if (!results.length) { alert('Test email sent.'); return; }
-        if (!failed.length) { alert('Test email sent to ' + results.length + ' recipient' + (results.length > 1 ? 's' : '') + '.'); return; }
-        alert('Sent to ' + (results.length - failed.length) + ' of ' + results.length + '. Failed: ' +
+        if (!results.length) { alert('Test email dispatched — check your inbox shortly.'); return; }
+        if (!failed.length) { alert('Test email dispatched to ' + results.length + ' recipient' + (results.length > 1 ? 's' : '') + ' — check your inbox shortly.'); return; }
+        alert('Dispatched to ' + (results.length - failed.length) + ' of ' + results.length + '. Failed: ' +
           failed.map(function(f) { return f.to + ' (' + f.error + ')'; }).join(', '));
       })
       .withFailureHandler(function(err) { alert('Test send failed: ' + err.message); })
