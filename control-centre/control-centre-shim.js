@@ -78,6 +78,21 @@
     },
     deleteTenant: function (tenantId, confirmSlug) {
       return rpc('delete_platform_tenant', { p_tenant_id: tenantId, p_confirm_slug: confirmSlug });
+    },
+    listIdeas: function (status, category) {
+      return rpc('list_product_ideas', { p_status: status || null, p_category: category || null });
+    },
+    createIdea: function (title, description, category, priority, relatedArea, sourceNote) {
+      return rpc('create_product_idea', { p_title: title, p_description: description, p_category: category, p_priority: priority, p_related_area: relatedArea, p_source_note: sourceNote });
+    },
+    updateIdea: function (id, title, description, category, priority, relatedArea, sourceNote) {
+      return rpc('update_product_idea', { p_id: id, p_title: title, p_description: description, p_category: category, p_priority: priority, p_related_area: relatedArea, p_source_note: sourceNote });
+    },
+    setIdeaStatus: function (id, status) {
+      return rpc('set_product_idea_status', { p_id: id, p_status: status });
+    },
+    deleteIdea: function (id) {
+      return rpc('delete_product_idea', { p_id: id });
     }
   };
 })();

@@ -91,6 +91,32 @@
     .modal-box h2 { margin: 0 0 4px; font-size: 17px; font-weight: 800; }
     .modal-box .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 18px; }
     .success-text { color: var(--success-color); font-size: 13px; margin-top: 10px; display: none; }
+
+    .cc-nav { display: flex; gap: 4px; }
+    .cc-nav-item { padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #b9c2d0; cursor: pointer; user-select: none; }
+    .cc-nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .cc-nav-item.active { background: var(--primary-color); color: #fff; }
+
+    .filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .filter-row select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; }
+
+    table.idea-table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+    table.idea-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
+    table.idea-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); font-size: 13px; vertical-align: top; }
+    table.idea-table tr:last-child td { border-bottom: none; }
+    table.idea-table .idea-title { font-weight: 700; color: var(--primary-color); cursor: pointer; }
+    table.idea-table .idea-title:hover { text-decoration: underline; }
+    table.idea-table select.idea-status-select { padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
+    .delete-idea-link { color: var(--error-color); font-size: 12px; font-weight: 700; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+
+    .category-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #eef1f5; color: var(--text-dark); }
+    .priority-chip { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .priority-chip.low { background: #eef1f5; color: var(--text-muted); }
+    .priority-chip.medium { background: #fdf1dc; color: var(--warning-color); }
+    .priority-chip.high { background: #fbe6e2; color: var(--error-color); }
+
+    .modal-box.wide { max-width: 520px; }
+    textarea.field-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; font-family: var(--font-family); resize: vertical; min-height: 70px; }
   </style>
 </head>
 <body>
@@ -128,10 +154,45 @@
 <div id="ccScreen" style="display:none;">
   <div class="cc-header">
     <h1>Connexa Control Centre</h1>
+    <nav class="cc-nav" id="ccNav">
+      <span class="cc-nav-item active" id="navTenants" data-section="tenants">Tenants</span>
+      <span class="cc-nav-item" id="navIdeas" data-section="ideas">Ideas</span>
+    </nav>
     <div><span class="who" id="ccWhoEmail"></span><a id="logoutLink">Log out</a></div>
   </div>
 
   <div class="cc-main">
+    <!-- Ideas backlog -->
+    <div id="ideasPanel" style="display:none;">
+      <div class="panel-header-row">
+        <h2>Ideas</h2>
+        <button class="btn" id="newIdeaBtn">+ New Idea</button>
+      </div>
+      <div class="filter-row">
+        <select id="ideaCategoryFilter">
+          <option value="">All categories</option>
+          <option value="future_stage">Future Stage</option>
+          <option value="improvement">Improvement</option>
+          <option value="new_feature">New Feature</option>
+          <option value="new_product">New Product</option>
+        </select>
+        <select id="ideaStatusFilter">
+          <option value="">All statuses</option>
+          <option value="backlog">Backlog</option>
+          <option value="planned">Planned</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+      <table class="idea-table">
+        <thead>
+          <tr><th>Idea</th><th>Category</th><th>Priority</th><th>Area</th><th>Status</th><th>Updated</th><th></th></tr>
+        </thead>
+        <tbody id="ideaTableBody"></tbody>
+      </table>
+    </div>
+
     <!-- Tenant list -->
     <div id="listPanel">
       <div class="panel-header-row">
@@ -249,6 +310,54 @@
   </div>
 </div>
 
+<!-- New/Edit idea modal (same modal, toggled by whether state.editingIdeaId is set) -->
+<div class="modal-overlay" id="ideaModal">
+  <div class="modal-box wide">
+    <h2 id="ideaModalTitle">New Idea</h2>
+    <form id="ideaForm">
+      <div class="field">
+        <label for="ideaTitle">Title</label>
+        <input type="text" id="ideaTitle" required>
+      </div>
+      <div class="field">
+        <label for="ideaDescription">Description</label>
+        <textarea id="ideaDescription" class="field-textarea"></textarea>
+      </div>
+      <div class="field">
+        <label for="ideaCategory">Category</label>
+        <select id="ideaCategory" required>
+          <option value="future_stage">Future Stage</option>
+          <option value="improvement">Improvement</option>
+          <option value="new_feature">New Feature</option>
+          <option value="new_product">New Product</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ideaPriority">Priority (optional)</label>
+        <select id="ideaPriority">
+          <option value="">—</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ideaRelatedArea">Related Area (optional)</label>
+        <input type="text" id="ideaRelatedArea" placeholder="e.g. Communications, Membership">
+      </div>
+      <div class="field">
+        <label for="ideaSourceNote">Source Note (optional)</label>
+        <input type="text" id="ideaSourceNote" placeholder="e.g. surfaced by QA session, 2026-09-04">
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn" id="ideaSaveBtn">Save</button>
+        <button type="button" class="btn secondary" id="ideaCancelBtn">Cancel</button>
+      </div>
+      <p class="error-text" id="ideaError"></p>
+    </form>
+  </div>
+</div>
+
 <!-- Reset tenant modal -->
 <div class="modal-overlay" id="resetModal">
   <div class="modal-box">
@@ -303,7 +412,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="control-centre-shim.js"></script>
 <script>
-  var state = { tenants: [], currentTenantId: null, currentTenantSlug: null, resetMode: null };
+  var state = { tenants: [], currentTenantId: null, currentTenantSlug: null, resetMode: null, ideas: [], editingIdeaId: null };
 
   function escapeHtml_(str) {
     var div = document.createElement('div');
@@ -367,6 +476,25 @@
   document.getElementById('logoutLink').addEventListener('click', function () {
     CC.staffLogout().then(function () { showScreen_('loginScreen'); });
   });
+
+  /* ================= NAV ================= */
+
+  function showSection_(section) {
+    document.getElementById('navTenants').classList.toggle('active', section === 'tenants');
+    document.getElementById('navIdeas').classList.toggle('active', section === 'ideas');
+    if (section === 'ideas') {
+      document.getElementById('listPanel').style.display = 'none';
+      document.getElementById('detailPanel').style.display = 'none';
+      document.getElementById('ideasPanel').style.display = 'block';
+      loadAndRenderIdeas_();
+    } else {
+      document.getElementById('ideasPanel').style.display = 'none';
+      showListPanel_();
+    }
+  }
+
+  document.getElementById('navTenants').addEventListener('click', function () { showSection_('tenants'); });
+  document.getElementById('navIdeas').addEventListener('click', function () { showSection_('ideas'); });
 
   /* ================= LIST ================= */
 
@@ -664,6 +792,116 @@
       document.getElementById('createModal').classList.remove('open');
       document.getElementById('resetModal').classList.remove('open');
     }
+  });
+
+  /* ================= IDEAS ================= */
+
+  var CATEGORY_LABELS = { future_stage: 'Future Stage', improvement: 'Improvement', new_feature: 'New Feature', new_product: 'New Product' };
+  var STATUS_ORDER = ['backlog', 'planned', 'in_progress', 'done', 'archived'];
+
+  function loadAndRenderIdeas_() {
+    var status = document.getElementById('ideaStatusFilter').value;
+    var category = document.getElementById('ideaCategoryFilter').value;
+    CC.listIdeas(status, category).then(function (ideas) {
+      state.ideas = ideas || [];
+      renderIdeaTable_();
+    });
+  }
+
+  function renderIdeaTable_() {
+    var body = document.getElementById('ideaTableBody');
+    if (!state.ideas.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty-note">No ideas yet.</td></tr>';
+      return;
+    }
+    var sorted = state.ideas.slice().sort(function (a, b) {
+      return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+    });
+    body.innerHTML = sorted.map(function (idea) {
+      return '<tr>' +
+        '<td><span class="idea-title" data-idea-id="' + idea.id + '">' + escapeHtml_(idea.title) + '</span></td>' +
+        '<td><span class="category-chip">' + escapeHtml_(CATEGORY_LABELS[idea.category] || idea.category) + '</span></td>' +
+        '<td>' + (idea.priority ? '<span class="priority-chip ' + idea.priority + '">' + escapeHtml_(idea.priority) + '</span>' : '—') + '</td>' +
+        '<td>' + escapeHtml_(idea.relatedArea || '—') + '</td>' +
+        '<td><select class="idea-status-select" data-idea-id="' + idea.id + '">' +
+          STATUS_ORDER.map(function (s) {
+            return '<option value="' + s + '"' + (s === idea.status ? ' selected' : '') + '>' + s.replace('_', ' ') + '</option>';
+          }).join('') +
+          '</select></td>' +
+        '<td>' + formatDate_(idea.updatedAt) + '</td>' +
+        '<td><a href="#" class="delete-idea-link" data-idea-id="' + idea.id + '">Delete</a></td>' +
+        '</tr>';
+    }).join('');
+
+    Array.prototype.forEach.call(body.querySelectorAll('.idea-title'), function (el) {
+      el.addEventListener('click', function () { openIdeaModal_(el.getAttribute('data-idea-id')); });
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('.idea-status-select'), function (sel) {
+      sel.addEventListener('change', function () {
+        CC.setIdeaStatus(sel.getAttribute('data-idea-id'), sel.value).then(loadAndRenderIdeas_).catch(function (err) {
+          alert(err.message);
+          loadAndRenderIdeas_();
+        });
+      });
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('.delete-idea-link'), function (link) {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (!confirm('Delete this idea? This cannot be undone.')) return;
+        CC.deleteIdea(link.getAttribute('data-idea-id')).then(loadAndRenderIdeas_).catch(function (err) { alert(err.message); });
+      });
+    });
+  }
+
+  document.getElementById('ideaCategoryFilter').addEventListener('change', loadAndRenderIdeas_);
+  document.getElementById('ideaStatusFilter').addEventListener('change', loadAndRenderIdeas_);
+
+  function openIdeaModal_(ideaId) {
+    state.editingIdeaId = ideaId || null;
+    document.getElementById('ideaError').style.display = 'none';
+    if (ideaId) {
+      var idea = state.ideas.filter(function (i) { return i.id === ideaId; })[0];
+      document.getElementById('ideaModalTitle').textContent = 'Edit Idea';
+      document.getElementById('ideaTitle').value = idea ? idea.title : '';
+      document.getElementById('ideaDescription').value = (idea && idea.description) || '';
+      document.getElementById('ideaCategory').value = idea ? idea.category : 'future_stage';
+      document.getElementById('ideaPriority').value = (idea && idea.priority) || '';
+      document.getElementById('ideaRelatedArea').value = (idea && idea.relatedArea) || '';
+      document.getElementById('ideaSourceNote').value = (idea && idea.sourceNote) || '';
+    } else {
+      document.getElementById('ideaModalTitle').textContent = 'New Idea';
+      document.getElementById('ideaForm').reset();
+    }
+    document.getElementById('ideaModal').classList.add('open');
+  }
+
+  document.getElementById('newIdeaBtn').addEventListener('click', function () { openIdeaModal_(null); });
+  document.getElementById('ideaCancelBtn').addEventListener('click', function () {
+    document.getElementById('ideaModal').classList.remove('open');
+  });
+
+  document.getElementById('ideaForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var title = document.getElementById('ideaTitle').value.trim();
+    var description = document.getElementById('ideaDescription').value.trim();
+    var category = document.getElementById('ideaCategory').value;
+    var priority = document.getElementById('ideaPriority').value;
+    var relatedArea = document.getElementById('ideaRelatedArea').value.trim();
+    var sourceNote = document.getElementById('ideaSourceNote').value.trim();
+    var errEl = document.getElementById('ideaError');
+    errEl.style.display = 'none';
+    var btn = document.getElementById('ideaSaveBtn');
+    btn.disabled = true;
+    var call = state.editingIdeaId
+      ? CC.updateIdea(state.editingIdeaId, title, description, category, priority, relatedArea, sourceNote)
+      : CC.createIdea(title, description, category, priority, relatedArea, sourceNote);
+    call.then(function () {
+      document.getElementById('ideaModal').classList.remove('open');
+      loadAndRenderIdeas_();
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }).finally(function () { btn.disabled = false; });
   });
 
   document.addEventListener('DOMContentLoaded', checkSession);
