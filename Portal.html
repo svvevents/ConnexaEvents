@@ -2247,7 +2247,7 @@
             if (child.isExhibition) {
               var exhWrap = document.createElement('div');
               cardBody.appendChild(exhWrap);
-              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
+              renderExhibitionPanel(exhWrap, child.exhibitionTables || [], child.exhibitionDecor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
             } else if (hasRankedOptions) {
               var optWrap = document.createElement('div');
               cardBody.appendChild(optWrap);
@@ -3249,7 +3249,7 @@
             if (child.isExhibition) {
               var exhWrap = document.createElement('div');
               body.appendChild(exhWrap);
-              renderExhibitionPanel(exhWrap, child.tables || [], child.decor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
+              renderExhibitionPanel(exhWrap, child.exhibitionTables || [], child.exhibitionDecor || [], child.eventId, child.eventName, child.currency, child.canvasWidth, child.canvasHeight);
             } else if (hasRankedOptions) {
               var optWrap = document.createElement('div');
               body.appendChild(optWrap);
@@ -4107,7 +4107,7 @@
     function getSelectionPriceInfo(child, sel, fallbackCurrency, regType) {
       var currency = (child && child.currency) || fallbackCurrency || 'USD';
       if (sel.rankedOptionIds && sel.rankedOptionIds.length) {
-        var pool = child.isExhibition ? (child.tables || []) : (child.options || []);
+        var pool = child.isExhibition ? (child.exhibitionTables || []) : (child.options || []);
         var prices = sel.rankedOptionIds.map(function(id) {
           var opt = pool.filter(function(o) { return (o.elementId || o.id) === id; })[0];
           return opt ? (Number(opt.price) || 0) : null;
