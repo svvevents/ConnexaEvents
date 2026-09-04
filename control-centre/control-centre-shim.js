@@ -72,6 +72,12 @@
     },
     setTenantBranding: function (tenantId, branding) {
       return rpc('set_platform_tenant_branding', { p_tenant_id: tenantId, p_branding: branding });
+    },
+    removeTenantAdmin: function (tenantId, adminUserId) {
+      return rpc('remove_platform_tenant_admin', { p_tenant_id: tenantId, p_admin_user_id: adminUserId });
+    },
+    deleteTenant: function (tenantId, confirmSlug) {
+      return rpc('delete_platform_tenant', { p_tenant_id: tenantId, p_confirm_slug: confirmSlug });
     }
   };
 })();

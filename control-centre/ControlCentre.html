@@ -208,6 +208,7 @@
         <div class="detail-box">
           <h3>Admins</h3>
           <div id="detailAdmins"></div>
+          <p class="error-text" id="adminsError"></p>
         </div>
         <div class="detail-box" style="grid-column: 1 / -1;">
           <h3>Events</h3>
@@ -221,8 +222,30 @@
             <button class="btn danger" id="resetFullBtn">Full Reset&hellip;</button>
           </div>
         </div>
+        <div class="detail-box danger-box" style="grid-column: 1 / -1;">
+          <h3>Delete Tenant</h3>
+          <p class="empty-note" style="margin:0 0 14px;">Permanently removes this tenant and everything in it &mdash; events, registrations, admins, all of it. Cannot be undone.</p>
+          <button class="btn danger" id="deleteTenantBtn">Delete Tenant&hellip;</button>
+        </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Delete tenant modal -->
+<div class="modal-overlay" id="deleteTenantModal">
+  <div class="modal-box">
+    <h2>Delete Tenant</h2>
+    <p class="sub">This permanently deletes the tenant and everything in it. There is no undo.</p>
+    <div class="field">
+      <label for="deleteTenantConfirmInput">Type the tenant slug (<strong id="deleteTenantSlugHint"></strong>) to confirm</label>
+      <input type="text" id="deleteTenantConfirmInput" autocomplete="off">
+    </div>
+    <div class="btn-row">
+      <button type="button" class="btn danger" id="deleteTenantConfirmBtn" disabled>Delete Tenant</button>
+      <button type="button" class="btn secondary" id="deleteTenantCancelBtn">Cancel</button>
+    </div>
+    <p class="error-text" id="deleteTenantError"></p>
   </div>
 </div>
 
@@ -409,11 +432,28 @@
       document.getElementById('brandingError').style.display = 'none';
 
       var admins = detail.admins || [];
+      document.getElementById('adminsError').style.display = 'none';
       document.getElementById('detailAdmins').innerHTML = admins.length
         ? admins.map(function (a) {
-            return '<div class="admin-list-item"><strong>' + escapeHtml_(a.email) + '</strong> &middot; ' + escapeHtml_(a.role) + '</div>';
+            return '<div class="admin-list-item" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">' +
+              '<span><strong>' + escapeHtml_(a.email) + '</strong> &middot; ' + escapeHtml_(a.role) + '</span>' +
+              '<a href="#" class="remove-admin-link" data-admin-user-id="' + escapeHtml_(a.adminUserId) + '" style="color:var(--error-color); font-size:12px; font-weight:700; text-decoration:underline; flex-shrink:0;">Remove</a>' +
+              '</div>';
           }).join('')
         : '<p class="empty-note">No admins yet.</p>';
+      Array.prototype.forEach.call(document.querySelectorAll('.remove-admin-link'), function (link) {
+        link.addEventListener('click', function (e) {
+          e.preventDefault();
+          var errEl = document.getElementById('adminsError');
+          errEl.style.display = 'none';
+          CC.removeTenantAdmin(state.currentTenantId, link.getAttribute('data-admin-user-id')).then(function () {
+            showDetail_(state.currentTenantId);
+          }).catch(function (err) {
+            errEl.textContent = err.message;
+            errEl.style.display = 'block';
+          });
+        });
+      });
 
       var events = detail.events || [];
       document.getElementById('detailEvents').innerHTML = events.length
@@ -469,6 +509,44 @@
     }).catch(function (err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
+    });
+  });
+
+  /* ================= DELETE TENANT ================= */
+
+  document.getElementById('deleteTenantBtn').addEventListener('click', function () {
+    document.getElementById('deleteTenantSlugHint').textContent = state.currentTenantSlug;
+    document.getElementById('deleteTenantConfirmInput').value = '';
+    document.getElementById('deleteTenantConfirmBtn').disabled = true;
+    document.getElementById('deleteTenantError').style.display = 'none';
+    document.getElementById('deleteTenantModal').classList.add('open');
+  });
+
+  document.getElementById('deleteTenantCancelBtn').addEventListener('click', function () {
+    document.getElementById('deleteTenantModal').classList.remove('open');
+  });
+
+  document.getElementById('deleteTenantConfirmInput').addEventListener('input', function () {
+    document.getElementById('deleteTenantConfirmBtn').disabled = (this.value.trim() !== state.currentTenantSlug);
+  });
+
+  document.getElementById('deleteTenantConfirmBtn').addEventListener('click', function () {
+    var slugInput = document.getElementById('deleteTenantConfirmInput').value.trim();
+    if (slugInput !== state.currentTenantSlug) return;
+    var errEl = document.getElementById('deleteTenantError');
+    errEl.style.display = 'none';
+    var btn = this;
+    btn.disabled = true;
+    CC.deleteTenant(state.currentTenantId, slugInput).then(function () {
+      return CC.getTenantsOverview();
+    }).then(function (tenants) {
+      state.tenants = tenants || [];
+      document.getElementById('deleteTenantModal').classList.remove('open');
+      showListPanel_();
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
     });
   });
 
