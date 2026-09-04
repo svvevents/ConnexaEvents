@@ -93,6 +93,30 @@
     },
     deleteIdea: function (id) {
       return rpc('delete_product_idea', { p_id: id });
+    },
+    listProspects: function (stage) {
+      return rpc('list_crm_prospects', { p_stage: stage || null });
+    },
+    getProspectDetail: function (id) {
+      return rpc('get_crm_prospect_detail', { p_id: id });
+    },
+    createProspect: function (companyName, contactName, contactEmail, contactPhone, source, vertical, estimatedValue, nextFollowUpDate, notesSummary) {
+      return rpc('create_crm_prospect', { p_company_name: companyName, p_contact_name: contactName, p_contact_email: contactEmail, p_contact_phone: contactPhone, p_source: source, p_vertical: vertical, p_estimated_value: estimatedValue, p_next_follow_up_date: nextFollowUpDate, p_notes_summary: notesSummary });
+    },
+    updateProspect: function (id, companyName, contactName, contactEmail, contactPhone, source, vertical, estimatedValue, nextFollowUpDate, notesSummary) {
+      return rpc('update_crm_prospect', { p_id: id, p_company_name: companyName, p_contact_name: contactName, p_contact_email: contactEmail, p_contact_phone: contactPhone, p_source: source, p_vertical: vertical, p_estimated_value: estimatedValue, p_next_follow_up_date: nextFollowUpDate, p_notes_summary: notesSummary });
+    },
+    setProspectStage: function (id, stage, lostReason) {
+      return rpc('set_crm_prospect_stage', { p_id: id, p_stage: stage, p_lost_reason: lostReason || null });
+    },
+    deleteProspect: function (id) {
+      return rpc('delete_crm_prospect', { p_id: id });
+    },
+    addProspectInteraction: function (prospectId, type, summary) {
+      return rpc('add_crm_interaction', { p_prospect_id: prospectId, p_type: type, p_summary: summary });
+    },
+    markProspectWon: function (id, tenantName, tenantSlug, tenantPlanId) {
+      return rpc('mark_crm_prospect_won', { p_id: id, p_tenant_name: tenantName, p_tenant_slug: tenantSlug, p_tenant_plan_id: tenantPlanId || null });
     }
   };
 })();

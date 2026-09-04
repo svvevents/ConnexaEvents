@@ -117,6 +117,28 @@
 
     .modal-box.wide { max-width: 520px; }
     textarea.field-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; font-family: var(--font-family); resize: vertical; min-height: 70px; }
+
+    table.crm-table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+    table.crm-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
+    table.crm-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); font-size: 13px; vertical-align: top; }
+    table.crm-table tr:last-child td { border-bottom: none; }
+    table.crm-table tr.prospect-row { cursor: pointer; }
+    table.crm-table tr.prospect-row:hover { background: #f9fafb; }
+    table.crm-table .company-name { font-weight: 700; }
+    table.crm-table .contact-name { color: var(--text-muted); font-size: 12px; }
+
+    .stage-badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap; }
+    .stage-badge.lead, .stage-badge.qualified { background: #eef1f5; color: var(--text-dark); }
+    .stage-badge.demo_scheduled, .stage-badge.demo_done, .stage-badge.proposal_sent, .stage-badge.negotiation { background: #fdf1dc; color: var(--warning-color); }
+    .stage-badge.won { background: #e3f3ec; color: var(--success-color); }
+    .stage-badge.lost { background: #fbe6e2; color: var(--error-color); }
+
+    .interaction-item { font-size: 13px; padding: 8px 0; border-bottom: 1px solid #f0f2f5; }
+    .interaction-item:last-child { border-bottom: none; }
+    .interaction-item .type-chip { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; background: #eef1f5; color: var(--text-dark); margin-right: 6px; }
+    .interaction-item .meta { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+    .field-row { display: flex; gap: 10px; }
+    .field-row .field { flex: 1; }
   </style>
 </head>
 <body>
@@ -157,6 +179,7 @@
     <nav class="cc-nav" id="ccNav">
       <span class="cc-nav-item active" id="navTenants" data-section="tenants">Tenants</span>
       <span class="cc-nav-item" id="navIdeas" data-section="ideas">Ideas</span>
+      <span class="cc-nav-item" id="navCrm" data-section="crm">CRM</span>
     </nav>
     <div><span class="who" id="ccWhoEmail"></span><a id="logoutLink">Log out</a></div>
   </div>
@@ -191,6 +214,119 @@
         </thead>
         <tbody id="ideaTableBody"></tbody>
       </table>
+    </div>
+
+    <!-- CRM: prospect list -->
+    <div id="crmListPanel" style="display:none;">
+      <div class="panel-header-row">
+        <h2>CRM</h2>
+        <button class="btn" id="newProspectBtn">+ New Prospect</button>
+      </div>
+      <div class="filter-row">
+        <select id="prospectStageFilter">
+          <option value="">All stages</option>
+          <option value="lead">Lead</option>
+          <option value="qualified">Qualified</option>
+          <option value="demo_scheduled">Demo Scheduled</option>
+          <option value="demo_done">Demo Done</option>
+          <option value="proposal_sent">Proposal Sent</option>
+          <option value="negotiation">Negotiation</option>
+          <option value="won">Won</option>
+          <option value="lost">Lost</option>
+        </select>
+      </div>
+      <table class="crm-table">
+        <thead>
+          <tr><th>Prospect</th><th>Stage</th><th>Est. Value</th><th>Next Follow-up</th><th>Owner</th><th>Created</th></tr>
+        </thead>
+        <tbody id="prospectTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- CRM: prospect detail -->
+    <div id="crmDetailPanel" style="display:none;">
+      <span class="back-link" id="backToCrmListLink">&larr; Back to CRM</span>
+      <div class="panel-header-row">
+        <h2 id="prospectCompanyName"></h2>
+        <span class="stage-badge" id="prospectStageBadge"></span>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-box">
+          <h3>Contact &amp; Deal</h3>
+          <div class="field"><label for="prospectCompanyInput">Company Name</label><input type="text" id="prospectCompanyInput"></div>
+          <div class="field-row">
+            <div class="field"><label for="prospectContactName">Contact Name</label><input type="text" id="prospectContactName"></div>
+            <div class="field"><label for="prospectContactEmail">Contact Email</label><input type="email" id="prospectContactEmail"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="prospectContactPhone">Contact Phone</label><input type="text" id="prospectContactPhone"></div>
+            <div class="field"><label for="prospectSource">Source</label><input type="text" id="prospectSource" placeholder="referral, inbound, outbound, event"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="prospectVertical">Vertical</label><input type="text" id="prospectVertical" placeholder="e.g. UK trade association"></div>
+            <div class="field"><label for="prospectEstimatedValue">Estimated Value</label><input type="number" id="prospectEstimatedValue"></div>
+          </div>
+          <div class="field"><label for="prospectNextFollowUp">Next Follow-up</label><input type="date" id="prospectNextFollowUp"></div>
+          <div class="field"><label for="prospectNotesSummary">Notes Summary</label><textarea id="prospectNotesSummary" class="field-textarea"></textarea></div>
+          <button class="btn" id="updateProspectBtn">Save</button>
+          <p class="error-text" id="prospectError"></p>
+        </div>
+        <div class="detail-box">
+          <h3>Stage</h3>
+          <div class="status-control">
+            <select id="prospectStageSelect">
+              <option value="lead">Lead</option>
+              <option value="qualified">Qualified</option>
+              <option value="demo_scheduled">Demo Scheduled</option>
+              <option value="demo_done">Demo Done</option>
+              <option value="proposal_sent">Proposal Sent</option>
+              <option value="negotiation">Negotiation</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+            <button class="btn" id="updateStageBtn">Update Stage</button>
+          </div>
+          <div class="field" id="lostReasonField" style="display:none; margin-top:12px;">
+            <label for="prospectLostReason">Lost Reason</label>
+            <input type="text" id="prospectLostReason">
+          </div>
+          <p class="error-text" id="stageError"></p>
+
+          <h3 style="margin-top:22px;">Mark Won</h3>
+          <p class="empty-note" style="margin:0 0 10px;">Creates a real tenant from this prospect. The contact email must already have an account.</p>
+          <div class="field"><label for="wonTenantName">Tenant Name</label><input type="text" id="wonTenantName"></div>
+          <div class="field"><label for="wonTenantSlug">Slug</label><input type="text" id="wonTenantSlug" pattern="[a-z0-9\-]+"></div>
+          <div class="field"><label for="wonTenantPlan">Plan (optional)</label><input type="text" id="wonTenantPlan"></div>
+          <button class="btn" id="markWonBtn">Mark Won &amp; Create Tenant</button>
+          <p class="error-text" id="wonError"></p>
+        </div>
+        <div class="detail-box" style="grid-column: 1 / -1;">
+          <h3>Interactions</h3>
+          <div id="interactionTimeline"></div>
+          <div class="field-row" style="margin-top:14px; align-items:flex-end;">
+            <div class="field" style="flex:0 0 130px;">
+              <label for="interactionType">Type</label>
+              <select id="interactionType">
+                <option value="call">Call</option>
+                <option value="email">Email</option>
+                <option value="demo">Demo</option>
+                <option value="meeting">Meeting</option>
+                <option value="note">Note</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="interactionSummary">Summary</label>
+              <input type="text" id="interactionSummary">
+            </div>
+          </div>
+          <button class="btn secondary" id="addInteractionBtn">Add Interaction</button>
+          <p class="error-text" id="interactionError"></p>
+        </div>
+        <div class="detail-box danger-box" style="grid-column: 1 / -1;">
+          <h3>Delete Prospect</h3>
+          <button class="btn danger" id="deleteProspectBtn">Delete Prospect</button>
+        </div>
+      </div>
     </div>
 
     <!-- Tenant list -->
@@ -311,6 +447,34 @@
 </div>
 
 <!-- New/Edit idea modal (same modal, toggled by whether state.editingIdeaId is set) -->
+<!-- New prospect modal -->
+<div class="modal-overlay" id="prospectModal">
+  <div class="modal-box wide">
+    <h2>New Prospect</h2>
+    <form id="prospectForm">
+      <div class="field"><label for="newProspectCompany">Company Name</label><input type="text" id="newProspectCompany" required></div>
+      <div class="field-row">
+        <div class="field"><label for="newProspectContactName">Contact Name</label><input type="text" id="newProspectContactName"></div>
+        <div class="field"><label for="newProspectContactEmail">Contact Email</label><input type="email" id="newProspectContactEmail"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="newProspectContactPhone">Contact Phone</label><input type="text" id="newProspectContactPhone"></div>
+        <div class="field"><label for="newProspectSource">Source</label><input type="text" id="newProspectSource" placeholder="referral, inbound, outbound, event"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="newProspectVertical">Vertical</label><input type="text" id="newProspectVertical" placeholder="e.g. UK trade association"></div>
+        <div class="field"><label for="newProspectEstimatedValue">Estimated Value</label><input type="number" id="newProspectEstimatedValue"></div>
+      </div>
+      <div class="field"><label for="newProspectNextFollowUp">Next Follow-up</label><input type="date" id="newProspectNextFollowUp"></div>
+      <div class="btn-row">
+        <button type="submit" class="btn" id="createProspectBtn">Create Prospect</button>
+        <button type="button" class="btn secondary" id="cancelProspectBtn">Cancel</button>
+      </div>
+      <p class="error-text" id="createProspectError"></p>
+    </form>
+  </div>
+</div>
+
 <div class="modal-overlay" id="ideaModal">
   <div class="modal-box wide">
     <h2 id="ideaModalTitle">New Idea</h2>
@@ -412,7 +576,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="control-centre-shim.js"></script>
 <script>
-  var state = { tenants: [], currentTenantId: null, currentTenantSlug: null, resetMode: null, ideas: [], editingIdeaId: null };
+  var state = { tenants: [], currentTenantId: null, currentTenantSlug: null, resetMode: null, ideas: [], editingIdeaId: null, prospects: [], currentProspectId: null };
 
   function escapeHtml_(str) {
     var div = document.createElement('div');
@@ -482,19 +646,26 @@
   function showSection_(section) {
     document.getElementById('navTenants').classList.toggle('active', section === 'tenants');
     document.getElementById('navIdeas').classList.toggle('active', section === 'ideas');
+    document.getElementById('navCrm').classList.toggle('active', section === 'crm');
+    document.getElementById('listPanel').style.display = 'none';
+    document.getElementById('detailPanel').style.display = 'none';
+    document.getElementById('ideasPanel').style.display = 'none';
+    document.getElementById('crmListPanel').style.display = 'none';
+    document.getElementById('crmDetailPanel').style.display = 'none';
     if (section === 'ideas') {
-      document.getElementById('listPanel').style.display = 'none';
-      document.getElementById('detailPanel').style.display = 'none';
       document.getElementById('ideasPanel').style.display = 'block';
       loadAndRenderIdeas_();
+    } else if (section === 'crm') {
+      document.getElementById('crmListPanel').style.display = 'block';
+      loadAndRenderProspects_();
     } else {
-      document.getElementById('ideasPanel').style.display = 'none';
       showListPanel_();
     }
   }
 
   document.getElementById('navTenants').addEventListener('click', function () { showSection_('tenants'); });
   document.getElementById('navIdeas').addEventListener('click', function () { showSection_('ideas'); });
+  document.getElementById('navCrm').addEventListener('click', function () { showSection_('crm'); });
 
   /* ================= LIST ================= */
 
@@ -898,6 +1069,198 @@
     call.then(function () {
       document.getElementById('ideaModal').classList.remove('open');
       loadAndRenderIdeas_();
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }).finally(function () { btn.disabled = false; });
+  });
+
+  /* ================= CRM ================= */
+
+  var STAGE_LABELS = { lead: 'Lead', qualified: 'Qualified', demo_scheduled: 'Demo Scheduled', demo_done: 'Demo Done', proposal_sent: 'Proposal Sent', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
+
+  function loadAndRenderProspects_() {
+    var stage = document.getElementById('prospectStageFilter').value;
+    CC.listProspects(stage).then(function (prospects) {
+      state.prospects = prospects || [];
+      renderProspectTable_();
+    });
+  }
+
+  function renderProspectTable_() {
+    var body = document.getElementById('prospectTableBody');
+    if (!state.prospects.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty-note">No prospects yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = state.prospects.map(function (p) {
+      return '<tr class="prospect-row" data-prospect-id="' + p.id + '">' +
+        '<td><div class="company-name">' + escapeHtml_(p.companyName) + '</div><div class="contact-name">' + escapeHtml_(p.contactName || '') + '</div></td>' +
+        '<td><span class="stage-badge ' + p.stage + '">' + escapeHtml_(STAGE_LABELS[p.stage] || p.stage) + '</span></td>' +
+        '<td>' + (p.estimatedValue != null ? Number(p.estimatedValue).toLocaleString() : '—') + '</td>' +
+        '<td>' + formatDate_(p.nextFollowUpDate) + '</td>' +
+        '<td>' + escapeHtml_(p.ownerEmail || '—') + '</td>' +
+        '<td>' + formatDate_(p.createdAt) + '</td>' +
+        '</tr>';
+    }).join('');
+    Array.prototype.forEach.call(body.querySelectorAll('.prospect-row'), function (row) {
+      row.addEventListener('click', function () { showProspectDetail_(row.getAttribute('data-prospect-id')); });
+    });
+  }
+
+  document.getElementById('prospectStageFilter').addEventListener('change', loadAndRenderProspects_);
+  document.getElementById('backToCrmListLink').addEventListener('click', function () {
+    document.getElementById('crmDetailPanel').style.display = 'none';
+    document.getElementById('crmListPanel').style.display = 'block';
+    loadAndRenderProspects_();
+  });
+
+  function toggleLostReasonField_() {
+    document.getElementById('lostReasonField').style.display = (document.getElementById('prospectStageSelect').value === 'lost') ? 'block' : 'none';
+  }
+  document.getElementById('prospectStageSelect').addEventListener('change', toggleLostReasonField_);
+
+  function showProspectDetail_(id) {
+    state.currentProspectId = id;
+    ['prospectError', 'stageError', 'wonError', 'interactionError'].forEach(function (elId) { document.getElementById(elId).style.display = 'none'; });
+    CC.getProspectDetail(id).then(function (p) {
+      document.getElementById('crmListPanel').style.display = 'none';
+      document.getElementById('crmDetailPanel').style.display = 'block';
+
+      document.getElementById('prospectCompanyName').textContent = p.companyName;
+      var badge = document.getElementById('prospectStageBadge');
+      badge.textContent = STAGE_LABELS[p.stage] || p.stage;
+      badge.className = 'stage-badge ' + p.stage;
+
+      document.getElementById('prospectCompanyInput').value = p.companyName || '';
+      document.getElementById('prospectContactName').value = p.contactName || '';
+      document.getElementById('prospectContactEmail').value = p.contactEmail || '';
+      document.getElementById('prospectContactPhone').value = p.contactPhone || '';
+      document.getElementById('prospectSource').value = p.source || '';
+      document.getElementById('prospectVertical').value = p.vertical || '';
+      document.getElementById('prospectEstimatedValue').value = p.estimatedValue != null ? p.estimatedValue : '';
+      document.getElementById('prospectNextFollowUp').value = p.nextFollowUpDate || '';
+      document.getElementById('prospectNotesSummary').value = p.notesSummary || '';
+
+      document.getElementById('prospectStageSelect').value = p.stage;
+      document.getElementById('prospectLostReason').value = p.lostReason || '';
+      toggleLostReasonField_();
+
+      document.getElementById('wonTenantName').value = p.companyName || '';
+      document.getElementById('wonTenantSlug').value = '';
+      document.getElementById('wonTenantPlan').value = '';
+
+      var interactions = p.interactions || [];
+      document.getElementById('interactionTimeline').innerHTML = interactions.length
+        ? interactions.map(function (i) {
+            return '<div class="interaction-item"><span class="type-chip">' + escapeHtml_(i.type) + '</span>' + escapeHtml_(i.summary) +
+              '<div class="meta">' + escapeHtml_(i.loggedByEmail || '') + ' &middot; ' + formatDate_(i.occurredAt) + '</div></div>';
+          }).join('')
+        : '<p class="empty-note">No interactions logged yet.</p>';
+    });
+  }
+
+  document.getElementById('updateProspectBtn').addEventListener('click', function () {
+    var errEl = document.getElementById('prospectError');
+    errEl.style.display = 'none';
+    CC.updateProspect(
+      state.currentProspectId,
+      document.getElementById('prospectCompanyInput').value.trim(),
+      document.getElementById('prospectContactName').value.trim(),
+      document.getElementById('prospectContactEmail').value.trim(),
+      document.getElementById('prospectContactPhone').value.trim(),
+      document.getElementById('prospectSource').value.trim(),
+      document.getElementById('prospectVertical').value.trim(),
+      document.getElementById('prospectEstimatedValue').value === '' ? null : Number(document.getElementById('prospectEstimatedValue').value),
+      document.getElementById('prospectNextFollowUp').value || null,
+      document.getElementById('prospectNotesSummary').value.trim()
+    ).then(function () {
+      showProspectDetail_(state.currentProspectId);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
+
+  document.getElementById('updateStageBtn').addEventListener('click', function () {
+    var errEl = document.getElementById('stageError');
+    errEl.style.display = 'none';
+    var stage = document.getElementById('prospectStageSelect').value;
+    var lostReason = document.getElementById('prospectLostReason').value.trim();
+    CC.setProspectStage(state.currentProspectId, stage, lostReason).then(function () {
+      showProspectDetail_(state.currentProspectId);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
+
+  document.getElementById('addInteractionBtn').addEventListener('click', function () {
+    var errEl = document.getElementById('interactionError');
+    errEl.style.display = 'none';
+    var summary = document.getElementById('interactionSummary').value.trim();
+    if (!summary) { errEl.textContent = 'Summary is required.'; errEl.style.display = 'block'; return; }
+    CC.addProspectInteraction(state.currentProspectId, document.getElementById('interactionType').value, summary).then(function () {
+      document.getElementById('interactionSummary').value = '';
+      showProspectDetail_(state.currentProspectId);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
+
+  document.getElementById('markWonBtn').addEventListener('click', function () {
+    var errEl = document.getElementById('wonError');
+    errEl.style.display = 'none';
+    var name = document.getElementById('wonTenantName').value.trim();
+    var slug = document.getElementById('wonTenantSlug').value.trim();
+    var plan = document.getElementById('wonTenantPlan').value.trim();
+    if (!name || !slug) { errEl.textContent = 'Tenant name and slug are required.'; errEl.style.display = 'block'; return; }
+    CC.markProspectWon(state.currentProspectId, name, slug, plan).then(function () {
+      showProspectDetail_(state.currentProspectId);
+    }).catch(function (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    });
+  });
+
+  document.getElementById('deleteProspectBtn').addEventListener('click', function () {
+    if (!confirm('Delete this prospect and all its interactions? This cannot be undone.')) return;
+    CC.deleteProspect(state.currentProspectId).then(function () {
+      document.getElementById('crmDetailPanel').style.display = 'none';
+      document.getElementById('crmListPanel').style.display = 'block';
+      loadAndRenderProspects_();
+    }).catch(function (err) { alert(err.message); });
+  });
+
+  document.getElementById('newProspectBtn').addEventListener('click', function () {
+    document.getElementById('prospectForm').reset();
+    document.getElementById('createProspectError').style.display = 'none';
+    document.getElementById('prospectModal').classList.add('open');
+  });
+  document.getElementById('cancelProspectBtn').addEventListener('click', function () {
+    document.getElementById('prospectModal').classList.remove('open');
+  });
+
+  document.getElementById('prospectForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var errEl = document.getElementById('createProspectError');
+    errEl.style.display = 'none';
+    var btn = document.getElementById('createProspectBtn');
+    btn.disabled = true;
+    CC.createProspect(
+      document.getElementById('newProspectCompany').value.trim(),
+      document.getElementById('newProspectContactName').value.trim(),
+      document.getElementById('newProspectContactEmail').value.trim(),
+      document.getElementById('newProspectContactPhone').value.trim(),
+      document.getElementById('newProspectSource').value.trim(),
+      document.getElementById('newProspectVertical').value.trim(),
+      document.getElementById('newProspectEstimatedValue').value === '' ? null : Number(document.getElementById('newProspectEstimatedValue').value),
+      document.getElementById('newProspectNextFollowUp').value || null,
+      null
+    ).then(function () {
+      document.getElementById('prospectModal').classList.remove('open');
+      loadAndRenderProspects_();
     }).catch(function (err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
