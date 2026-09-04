@@ -28,8 +28,21 @@
   // own header notes on the equivalent distinction for the Resend key.
   var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6em5wZHh4bWxhc25hZnhva3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzNjUyMTIsImV4cCI6MjEwMTk0MTIxMn0.tcx_W9MLP1wT3IpzV8wHx4xDT1NyihAxzlZ2PZBidOo';
 
+  // Tenant-resolution fix (2026-09-04): the browser calls this Supabase
+  // project's own domain directly, never proxied through a tenant's
+  // branded subdomain, so Postgres never sees qa.connexaevents.com /
+  // rvnevents.connexaevents.com etc. as a real HTTP Host header -- it's
+  // only ever visible client-side as window.location.hostname. Sending
+  // it as a custom header on every request lets admin_tenant_id() (and,
+  // for attendees, current_request_tenant_id_()) resolve it server-side
+  // via PostgREST's request.headers GUC, without changing any RPC's
+  // signature. Safe for the admin case specifically because the server
+  // independently re-verifies real tenant_admins membership regardless
+  // of what this header claims -- see the DB migration's own comments
+  // for the full reasoning.
   window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true }
+    auth: { persistSession: true, autoRefreshToken: true },
+    global: { headers: { 'x-app-hostname': window.location.hostname } }
   });
 
   var sb = window.supabaseClient;
