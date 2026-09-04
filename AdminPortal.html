@@ -1520,7 +1520,11 @@
       <input type="hidden" id="memberIdField">
       <div class="form-group">
         <label for="memberCompanyNameField">Company Name *</label>
-        <input type="text" id="memberCompanyNameField">
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="memberCompanyNameField" style="flex:1;">
+          <button type="button" class="btn small secondary" onclick="searchCompaniesHouseClient('member')">Search Companies House</button>
+        </div>
+        <div id="memberChSearchResults" style="display:none; margin-top:6px; border:1px solid #ddd; border-radius:4px; max-height:180px; overflow-y:auto;"></div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1595,7 +1599,11 @@
       <input type="hidden" id="prospectIdField">
       <div class="form-group">
         <label for="prospectCompanyNameField">Company Name *</label>
-        <input type="text" id="prospectCompanyNameField">
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="prospectCompanyNameField" style="flex:1;">
+          <button type="button" class="btn small secondary" onclick="searchCompaniesHouseClient('prospect')">Search Companies House</button>
+        </div>
+        <div id="prospectChSearchResults" style="display:none; margin-top:6px; border:1px solid #ddd; border-radius:4px; max-height:180px; overflow-y:auto;"></div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -5650,6 +5658,47 @@
       })
       .withFailureHandler(function(err) { msgEl.style.color = 'var(--error-color)'; msgEl.textContent = err.message; })
       .lookupCompaniesHouseCompany(regNumber);
+  }
+
+  // Was a live backend RPC with no UI at all (Finding 8) -- the
+  // registration-number Lookup above only helps once you already know
+  // the number; this covers the more common case of only knowing the
+  // company name.
+  function searchCompaniesHouseClient(kind) {
+    var nameField = document.getElementById(kind + 'CompanyNameField');
+    var numberField = document.getElementById(kind + 'CompaniesHouseField');
+    var resultsEl = document.getElementById(kind + 'ChSearchResults');
+    var query = nameField.value.trim();
+    if (!query) {
+      resultsEl.style.display = 'block';
+      resultsEl.innerHTML = '<div style="padding:8px; color:var(--error-color); font-size:12px;">Enter a company name first.</div>';
+      return;
+    }
+    resultsEl.style.display = 'block';
+    resultsEl.innerHTML = '<div style="padding:8px; color:var(--text-muted); font-size:12px;">Searching...</div>';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.ok) { resultsEl.innerHTML = '<div style="padding:8px; color:var(--error-color); font-size:12px;">' + escapeHtml(res.error) + '</div>'; return; }
+        var items = res.results || [];
+        if (!items.length) { resultsEl.innerHTML = '<div style="padding:8px; color:var(--text-muted); font-size:12px;">No matches found.</div>'; return; }
+        resultsEl.innerHTML = items.map(function(item, idx) {
+          return '<div class="ch-search-result" data-idx="' + idx + '" style="padding:8px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;">' +
+            '<div style="font-weight:500;">' + escapeHtml(item.title) + '</div>' +
+            '<div style="color:var(--text-muted); font-size:11px;">' + escapeHtml(item.companyNumber) + (item.addressSnippet ? ' — ' + escapeHtml(item.addressSnippet) : '') + '</div>' +
+          '</div>';
+        }).join('');
+        Array.prototype.forEach.call(resultsEl.querySelectorAll('.ch-search-result'), function(row) {
+          row.addEventListener('click', function() {
+            var item = items[parseInt(row.dataset.idx, 10)];
+            nameField.value = item.title;
+            numberField.value = item.companyNumber;
+            resultsEl.style.display = 'none';
+            resultsEl.innerHTML = '';
+          });
+        });
+      })
+      .withFailureHandler(function(err) { resultsEl.innerHTML = '<div style="padding:8px; color:var(--error-color); font-size:12px;">' + escapeHtml(err.message) + '</div>'; })
+      .searchCompaniesHouseByName(query);
   }
 
   function findSimilarCompaniesClient() {

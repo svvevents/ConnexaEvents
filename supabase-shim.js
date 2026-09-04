@@ -404,6 +404,10 @@
     // (Phase 07 Stage A covers register / complete a milestone / request
     // a B2B meeting -- these aren't on that path) ----
     getUpdateRegistrationData: rpc('get_update_registration_data', function (args) { return { p_event_id: args[1] }; }),
+    // Was silently unmapped -- onAttendeeEmailBlur()'s co-attendee auto-fill
+    // call hit "No shim mapping" and failed quietly (no .withFailureHandler
+    // on that call site). Backend RPC already existed and was live.
+    lookupAttendeeInfoForRegistration: rpc('lookup_attendee_info_for_registration', function (args) { return { p_email: args[1] }; }),
     addSubEventSelectionsForAttendee: rpc('add_sub_event_selections_for_attendee', function (args) {
       return { p_event_id: args[1], p_selections: args[2] };
     }),
